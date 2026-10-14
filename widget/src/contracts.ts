@@ -17,6 +17,8 @@ export interface ChatRequest {
   kbId: string;
   /** Continue an own conversation in the same knowledge base. */
   conversationId?: string;
+  /** One id per question; generated when omitted. The server accepts it once and never answers a repeat again. */
+  clientRequestId?: string;
 }
 
 /** Resolve per request in a future adapter. Do not persist or log returned tokens. */

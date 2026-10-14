@@ -23,6 +23,8 @@ function streamResponse(parts: (string | Uint8Array)[], init: ResponseInit = {})
 
 const base = { endpoint: "https://kb.example.test/api/chat", request: { question: "年假几天?", kbId: "kb-1" } };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 describe("streamChat", () => {
   it("completes after draft, validated and done, reassembling split UTF-8", async () => {
     const bytes = enc.encode(happy.join(""));
@@ -44,7 +46,17 @@ describe("streamChat", () => {
     expect(init.credentials).toBe("omit");
     expect(headers.get("Authorization")).toBe("Bearer short-lived");
     expect(headers.get("Accept")).toBe("text/event-stream");
-    expect(JSON.parse(String(init.body))).toEqual({ question: "年假几天?", kbId: "kb-1" });
+    expect(JSON.parse(String(init.body))).toEqual({ question: "年假几天?", kbId: "kb-1", clientRequestId: expect.stringMatching(UUID) });
+  });
+
+  it("sends a new request id per question, or the one supplied, so the server never answers a repeat twice", async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => streamResponse(happy));
+    await streamChat({ ...base, fetchImpl });
+    await streamChat({ ...base, fetchImpl });
+    await streamChat({ ...base, request: { ...base.request, clientRequestId: "11111111-1111-4111-8111-111111111111" }, fetchImpl });
+    const ids = fetchImpl.mock.calls.map(([, init]) => JSON.parse(String(init.body)).clientRequestId);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids[2]).toBe("11111111-1111-4111-8111-111111111111");
   });
 
   it("omits Authorization when no token is provided", async () => {
