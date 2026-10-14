@@ -154,6 +154,7 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .debug-query { margin-bottom: 16px; }
 .debug-input { width: min(520px, 70vw); }
 .debug-k { width: 120px; }
+.debug-version { min-width: 180px; }
 
 .role-matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
 .role-matrix th, .role-matrix td { padding: 8px 6px; border-bottom: 1px solid #f0f2f5; text-align: center; }

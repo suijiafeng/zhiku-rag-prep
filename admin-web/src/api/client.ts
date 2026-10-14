@@ -118,6 +118,8 @@ export interface TraceResult {
   at: string;
   embeddingModel: string;
   dimension: number;
+  /** 本次检索采用的配置版本；0 为部署默认值。 */
+  configVersion?: number;
   stages: TraceStage[];
   candidates: {
     chunkId: string; documentId: string; title: string; versionId: string; versionLabel: string; seq: number;
@@ -408,8 +410,8 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       return request<{ jobId: string }>(`${version(kbId, doc, v)}/content`, { method: "PUT", body: form });
     },
     reindex: (kbId: string, doc: string, v: string) => request<void>(`${version(kbId, doc, v)}/reindex`, { method: "POST" }),
-    retrievalDebug: (kbId: string, query: string, k?: number) =>
-      request<TraceResult>(`${kb(kbId)}/retrieval-debug`, post(k === undefined ? { query } : { query, k })),
+    retrievalDebug: (kbId: string, query: string, k?: number, configVersion?: number) =>
+      request<TraceResult>(`${kb(kbId)}/retrieval-debug`, post({ query, ...(k === undefined ? {} : { k }), ...(configVersion === undefined ? {} : { configVersion }) })),
     overview: (kbId: string) => request<OverviewApi>(`${kb(kbId)}/overview`),
     evalCases: (kbId: string) => request<EvalCase[]>(`${kb(kbId)}/eval-cases`),
     createEvalCase: (kbId: string, body: { question: string; label: EvalCase["label"]; source?: string; originMessageId?: string;

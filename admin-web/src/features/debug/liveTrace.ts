@@ -15,7 +15,7 @@ export function traceFromResult(result: TraceResult, knowledgeBase: string, scop
     question: result.question,
     knowledgeBase,
     scopeVersion,
-    configVersion: "当前服务配置",
+    configVersion: result.configVersion === undefined ? "当前服务配置" : result.configVersion === 0 ? "部署默认值" : `配置版本 ${result.configVersion}`,
     stages,
     candidates: result.candidates.map((c) => ({
       chunk: `#${String(c.seq).padStart(3, "0")}`,
