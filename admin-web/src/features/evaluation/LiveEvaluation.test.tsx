@@ -36,9 +36,9 @@ describe("live evaluation", () => {
 
 describe("records to evaluation candidates", () => {
   it("enables the candidate action only for visible disliked questions", () => {
-    const html = renderToStaticMarkup(<RecordsTable onStatus={() => {}} onCandidate={() => {}} items={[
-      { messageId: "a", createdAt: "2026-10-14T00:00:00Z", own: true, question: "年假?", citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, outcome: "complete" },
-      { messageId: "b", createdAt: "2026-10-14T00:00:00Z", own: false, question: null, citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, outcome: "complete" },
+    const html = renderToStaticMarkup(<RecordsTable onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} items={[
+      { messageId: "a", createdAt: "2026-10-14T00:00:00Z", own: true, question: "年假?", citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
+      { messageId: "b", createdAt: "2026-10-14T00:00:00Z", own: false, question: null, citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
     ]} />);
     const buttons = html.match(/<button[^>]*>(?:(?!<\/button>).)*加入评测候选/gs) ?? [];
     expect(buttons).toHaveLength(2);

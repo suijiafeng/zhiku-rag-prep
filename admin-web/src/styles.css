@@ -168,6 +168,10 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .feedback-form .ant-input { width: 240px; }
 .record-status { display: flex; gap: 6px; flex-wrap: wrap; }
 .record-cause { width: 170px; }
+.record-history { padding: 0; height: auto; align-self: flex-start; }
+.close-form { width: 100%; }
+.close-form .ant-select { width: 100%; }
+.handling-list { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .reasons-title { margin-top: 16px; }
 .reason-row { display: grid; grid-template-columns: 72px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
 .reason-row .ant-progress { margin: 0; }

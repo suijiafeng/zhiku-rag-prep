@@ -1,16 +1,13 @@
-import { Alert, Button, Card, Col, Progress, Row, Segmented, Select, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Modal, Progress, Row, Segmented, Select, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, type ApiClient, type FeedbackReason, type FeedbackStatus, type RecordItem, type RecordStats } from "../../api/client";
+import { ApiError, type ApiClient, type EvalCase, type FeedbackReason, type FeedbackStatus, type FeedbackUpdate, type HandlingEntry, type RecordItem, type RecordStats } from "../../api/client";
+import { CloseFeedbackModal, HandlingList, STATUS_LABEL, type ClosingStatus } from "./CloseFeedback";
 import { ROOT_CAUSES } from "../evaluation/fixtures";
 import { REASON_LABEL } from "../qa/FeedbackBar";
 import { OUTCOME_LABEL } from "../qa/outcome";
 import { EmptyState, LoadingList } from "../../components/StateViews";
 
 type Filter = "all" | "up" | "down" | "none";
-
-const STATUS_LABEL: Record<FeedbackStatus, string> = {
-  open: "待处理", in_progress: "处理中", to_verify: "待验证", resolved: "已解决", wont_fix: "无需处理",
-};
 
 export function praiseRate(stats: RecordStats) {
   const rated = stats.up + stats.down;
@@ -22,9 +19,13 @@ export function topReasons(reasons: RecordStats["reasons"]) {
     .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key, count]) => ({ key, count }));
 }
 
-export function RecordsTable({ items, onStatus, onCandidate }: {
+const isClosing = (s: FeedbackStatus): s is ClosingStatus => s === "resolved" || s === "wont_fix";
+
+export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate }: {
   items: RecordItem[];
   onStatus: (messageId: string, status: FeedbackStatus, rootCause: string | undefined) => void;
+  onClose: (item: RecordItem, status: ClosingStatus) => void;
+  onHistory: (item: RecordItem) => void;
   onCandidate: (item: RecordItem) => void;
 }) {
   return (
@@ -68,12 +69,15 @@ export function RecordsTable({ items, onStatus, onCandidate }: {
           render: (_, r) => !r.status ? "—" : (
             <div className="record-status">
               <Select<FeedbackStatus> size="small" value={r.status} aria-label="处理状态"
-                onChange={(s) => onStatus(r.messageId, s, r.rootCause ?? undefined)}
+                onChange={(s) => (isClosing(s) ? onClose(r, s) : onStatus(r.messageId, s, r.rootCause ?? undefined))}
                 options={(Object.keys(STATUS_LABEL) as FeedbackStatus[]).map((k) => ({ value: k, label: STATUS_LABEL[k] }))} />
               <Select<string> size="small" placeholder="根因" aria-label="根因" className="record-cause"
                 {...(r.rootCause ? { value: r.rootCause } : {})}
+                disabled={isClosing(r.status)}
                 onChange={(c) => onStatus(r.messageId, r.status ?? "open", c)}
                 options={ROOT_CAUSES.map((c) => ({ value: c, label: c }))} />
+              {r.resolution && <div className="card-unit">{r.status === "resolved" ? "修复：" : "理由："}{r.resolution}</div>}
+              <Button type="link" size="small" className="record-history" onClick={() => onHistory(r)}>处理记录</Button>
             </div>
           ),
         },
@@ -129,8 +133,47 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
     await load();
   };
 
+  const [closing, setClosing] = useState<{ item: RecordItem; status: ClosingStatus }>();
+  const [cases, setCases] = useState<EvalCase[]>([]);
+  const onClose = async (item: RecordItem, status: ClosingStatus) => {
+    setClosing({ item, status });
+    if (status === "resolved" && client && kbId) {
+      try {
+        setCases(await client.evalCases(kbId));
+      } catch {
+        setCases([]);
+      }
+    }
+  };
+  const submitClose = async (body: FeedbackUpdate) => {
+    if (!client || !kbId || !closing) return undefined;
+    try {
+      await client.updateFeedback(kbId, closing.item.messageId, body);
+    } catch (e) {
+      return e instanceof ApiError ? `${e.message}（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）` : "关闭失败";
+    }
+    setClosing(undefined);
+    await load();
+    return undefined;
+  };
+
+  const [history, setHistory] = useState<HandlingEntry[]>();
+  const onHistory = async (item: RecordItem) => {
+    if (!client || !kbId) return;
+    try {
+      setHistory(await client.feedbackHistory(kbId, item.messageId));
+    } catch (e) {
+      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "读取处理记录失败");
+    }
+  };
+
   return (
     <div className="page">
+      <CloseFeedbackModal status={closing?.status} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
+        onSubmit={submitClose} onCancel={() => setClosing(undefined)} />
+      <Modal open={history !== undefined} title="处理记录" footer={null} onCancel={() => setHistory(undefined)}>
+        {history && <HandlingList entries={history} />}
+      </Modal>
       <div className="page-head">
         <div>
           <Typography.Title level={3} className="page-title">问答记录与反馈</Typography.Title>
@@ -148,7 +191,8 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
             <Card className="doc-table">
               {!data && !error && <div className="state-pad"><LoadingList /></div>}
               {data?.items.length === 0 && <EmptyState icon="chat" title="暂无问答记录" description="员工在问答工作台或挂件中提问后，记录会出现在这里。" />}
-              {data && data.items.length > 0 && <RecordsTable items={data.items} onStatus={(m, s, c) => void onStatus(m, s, c)} onCandidate={(r) => void onCandidate(r)} />}
+              {data && data.items.length > 0 && <RecordsTable items={data.items} onStatus={(m, s, c) => void onStatus(m, s, c)}
+                onClose={(r, s) => void onClose(r, s)} onHistory={(r) => void onHistory(r)} onCandidate={(r) => void onCandidate(r)} />}
             </Card>
           </Col>
           <Col xs={24} xl={7}>
@@ -175,7 +219,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
                 <li>员工在问答中点赞或点踩，点踩须选原因（已实现）。</li>
                 <li>运营在本页按状态和根因处理反馈（已实现）。</li>
                 <li>点踩记录加入评测候选，在评测中心补齐原文证据后批准（已实现）。</li>
-                <li>修复经回归验证后关闭反馈。</li>
+                <li>关闭须有依据：已解决须填修复方案并选一条在最近一次评测中全部证据被召回的用例；无需处理须填理由（已实现，仅验证检索）。</li>
               </ol>
             </Card>
           </Col>

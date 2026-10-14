@@ -6,11 +6,11 @@ import type { RecordItem } from "../../api/client";
 
 const items: RecordItem[] = [
   { messageId: "m1", createdAt: "2026-10-14T01:00:00Z", own: true, question: "年假有几天?", citationCount: 2, rating: "down",
-    reason: "WRONG", comment: "不对", status: "open", rootCause: null, outcome: "complete" },
+    reason: "WRONG", comment: "不对", status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
   { messageId: "m2", createdAt: "2026-10-14T02:00:00Z", own: false, question: null, citationCount: 1, rating: "up",
-    reason: null, comment: null, status: "open", rootCause: null, outcome: "complete" },
+    reason: null, comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
   { messageId: "m3", createdAt: "2026-10-14T03:00:00Z", own: false, question: null, citationCount: 3, rating: null,
-    reason: null, comment: null, status: null, rootCause: null, outcome: "complete" },
+    reason: null, comment: null, status: null, rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
 ];
 
 describe("records page", () => {
@@ -24,15 +24,22 @@ describe("records page", () => {
   });
 
   it("shows own text but hides other people's questions", () => {
-    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} onCandidate={() => {}} />);
+    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} />);
     expect(html).toContain("年假有几天?");
     expect(html.match(/无权查看他人问答正文/g)).toHaveLength(2);
     expect(html).toContain("答错了");
   });
 
   it("offers the candidate action only on disliked rows", () => {
-    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} onCandidate={() => {}} />);
+    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} />);
     expect((html.match(/加入评测候选/g) ?? []).length).toBe(1);
+  });
+
+  it("shows the basis a closed feedback was closed with", () => {
+    const closed: RecordItem = { ...items[0]!, status: "wont_fix", resolution: "超出试点范围" };
+    const html = renderToStaticMarkup(<RecordsTable items={[closed]} onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} />);
+    expect(html).toContain("理由：超出试点范围");
+    expect(html).toContain("处理记录");
   });
 
   it("asks to connect instead of showing invented records", () => {

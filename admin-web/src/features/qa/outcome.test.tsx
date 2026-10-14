@@ -13,9 +13,9 @@ describe("turn outcomes", () => {
   });
 
   it("shows the outcome in Q&A records", () => {
-    const html = renderToStaticMarkup(<RecordsTable onStatus={() => {}} onCandidate={() => {}} items={[
+    const html = renderToStaticMarkup(<RecordsTable onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} items={[
       { messageId: "a", createdAt: "2026-10-14T00:00:00Z", own: true, question: "年假?", citationCount: 0, rating: null, reason: null,
-        comment: null, status: null, rootCause: null, outcome: "refused" },
+        comment: null, status: null, rootCause: null, resolution: null, verificationCaseId: null, outcome: "refused" },
     ]} />);
     expect(html).toContain("已拒答");
   });

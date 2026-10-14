@@ -104,7 +104,25 @@ export interface RecordItem {
   comment: string | null;
   status: FeedbackStatus | null;
   rootCause: string | null;
+  resolution: string | null;
+  verificationCaseId: string | null;
   outcome: TurnOutcome;
+}
+
+export interface HandlingEntry {
+  status: FeedbackStatus;
+  rootCause: string | null;
+  resolution: string | null;
+  verificationCaseId: string | null;
+  changedBy: string;
+  changedAt: string;
+}
+
+export interface FeedbackUpdate {
+  status: FeedbackStatus;
+  rootCause?: string;
+  resolution?: string;
+  verificationCaseId?: string;
 }
 
 export interface RecordStats {
@@ -311,8 +329,9 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       request<FeedbackInfo>(`/api/messages/${e(messageId)}/feedback`, { ...post(body), method: "PUT" }),
     records: (kbId: string, filter: "all" | "up" | "down" | "none") =>
       request<{ items: RecordItem[]; stats: RecordStats; canReadOthers: boolean }>(`${kb(kbId)}/records?filter=${filter}`),
-    updateFeedback: (kbId: string, messageId: string, body: { status: FeedbackStatus; rootCause?: string }) =>
+    updateFeedback: (kbId: string, messageId: string, body: FeedbackUpdate) =>
       request<void>(`${kb(kbId)}/feedback/${e(messageId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    feedbackHistory: (kbId: string, messageId: string) => request<HandlingEntry[]>(`${kb(kbId)}/feedback/${e(messageId)}/history`),
     conversations: () => request<Conversation[]>("/api/conversations"),
     messages: (id: string) => request<HistoryMessage[]>(`/api/conversations/${e(id)}/messages`),
   };
