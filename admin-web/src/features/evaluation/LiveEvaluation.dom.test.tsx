@@ -32,7 +32,7 @@ async function edit(client: ApiClient) {
 }
 async function select(label: string, text: string) {
   fireEvent.mouseDown(screen.getByLabelText(label));
-  fireEvent.click(await screen.findByText(text, { selector: ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content" }));
+  fireEvent.click(await screen.findByText(text, { selector: ".ant-select-dropdown:not(.ant-select-dropdown-hidden):not([class*=\"-leave\"]) .ant-select-item-option-content" }));
 }
 
 describe("evaluation evidence interactions", () => {
