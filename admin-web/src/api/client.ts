@@ -270,6 +270,8 @@ export interface EvidenceInput {
   quote: string;
   /** 从 1 开始；引文在该版本中出现不止一次时需要。 */
   occurrence?: number;
+  /** 规范化原文中的固定起点；服务端核对摘录，不能与 occurrence 同时使用。 */
+  startOffset?: number;
 }
 
 export interface EvalEvidence {

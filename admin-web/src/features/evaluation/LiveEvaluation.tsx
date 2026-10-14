@@ -136,10 +136,38 @@ function EvidenceForm({ docs, initial, onSubmit, onCancel, submitLabel }: {
     queryAt: localDateTimeValue(initial?.queryAt ?? null),
   });
   const [question, setQuestion] = useState(initialQuestion ?? "");
-  const [label, setLabel] = useState<EvalCase["label"]>("answerable");
-  const [versionId, setVersionId] = useState<string>();
-  const [quote, setQuote] = useState("");
-  const [occurrence, setOccurrence] = useState<number>();
+  const [label, setLabel] = useState<EvalCase["label"]>(initial?.label ?? "answerable");
+  type Row = { key: number; versionId: string; quote: string; occurrence?: number; startOffset?: number };
+  const [evidence, setEvidence] = useState<Row[]>(() => (initial?.evidence ?? []).map((e, key) => ({
+    key, versionId: e.versionId, quote: e.quote ?? "", startOffset: e.startOffset,
+  })));
+  const nextKey = useRef(evidence.length);
+  const pending = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string>();
+  const update = (key: number, change: Partial<Row>) => setEvidence((rows) => rows.map((row) => {
+    if (row.key !== key) return row;
+    // 编辑内容或选址后不复用旧位置；未改的重复摘录保留服务端已确认起点。
+    const { startOffset: _offset, ...rest } = row;
+    return { ...rest, ...change };
+  }));
+  const invalid = evidence.some((e) => !e.versionId || e.quote.trim().length < 2);
+  const submit = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setSubmitting(true);
+    setFormError(undefined);
+    try {
+      await onSubmit({ question: question.trim(), label, evidence: evidence.map((e) => e.startOffset === undefined
+        ? evidenceEntry(e.versionId, e.quote, e.occurrence)
+        : { versionId: e.versionId, quote: e.quote.trim(), startOffset: e.startOffset }), details: detailsBody(details) });
+    } catch {
+      setFormError("保存失败，请核对输入后重试");
+    } finally {
+      pending.current = false;
+      setSubmitting(false);
+    }
+  };
   const versions = docs.flatMap((d) => d.versions.map((v) => ({ value: v.id, label: `${d.title} ${v.versionLabel}` })));
   return (
     <div className="eval-form">
@@ -150,10 +178,32 @@ function EvidenceForm({ docs, initial, onSubmit, onCancel, submitLabel }: {
             options={(Object.keys(LABEL) as EvalCase["label"][]).map((k) => ({ value: k, label: LABEL[k] }))} />
         </>
       )}
-      <Select<string> placeholder="证据所在文档版本" options={versions} onChange={setVersionId} aria-label="证据版本" {...(versionId ? { value: versionId } : {})} />
-      <Input.TextArea rows={2} placeholder="粘贴原文摘录（服务端在该版本原文中定位字符区间）" value={quote} onChange={(e) => setQuote(e.target.value)} aria-label="原文摘录" />
-      <InputNumber min={1} precision={0} placeholder="第几处（摘录在原文重复出现时填写）" value={occurrence ?? null}
-        onChange={(v) => setOccurrence(v ?? undefined)} aria-label="第几处" className="eval-occurrence" />
+      {evidence.map((e, i) => (
+        <div key={e.key} className="eval-form">
+          <Typography.Text>证据 {i + 1}</Typography.Text>
+          <Select<string> placeholder="证据所在文档版本" options={versions} disabled={submitting}
+            onChange={(v) => update(e.key, { versionId: v })} aria-label={`证据版本 ${i + 1}`} value={e.versionId || null} />
+          <Input.TextArea rows={2} maxLength={2000} disabled={submitting} placeholder="粘贴原文摘录" value={e.quote}
+            onChange={(event) => update(e.key, { quote: event.target.value })} aria-label={`原文摘录 ${i + 1}`} />
+          <InputNumber min={1} precision={0} disabled={submitting} placeholder="重复摘录选第几处；未改条目保留原位置" value={e.occurrence ?? null}
+            onChange={(v) => {
+              if (v !== null) update(e.key, { occurrence: v });
+              else setEvidence((rows) => rows.map((row) => {
+                if (row.key !== e.key) return row;
+                const { occurrence: _occurrence, startOffset: _offset, ...rest } = row;
+                return rest;
+              }));
+            }} aria-label={`第几处 ${i + 1}`} />
+          <Button size="small" disabled={submitting} aria-label={`删除证据 ${i + 1}`}
+            onClick={() => setEvidence((rows) => rows.filter((row) => row.key !== e.key))}>删除此证据</Button>
+        </div>
+      ))}
+      <Button size="small" disabled={submitting || evidence.length >= 10} onClick={() => {
+        const key = nextKey.current++;
+        setEvidence((rows) => [...rows, { key, versionId: "", quote: "" }]);
+      }}>新增证据</Button>
+      <Typography.Text type="secondary">最多 10 条；保存会更新完整证据列表，删除条目须明确操作。</Typography.Text>
+      {formError && <Alert type="error" title={formError} />}
       <Input.TextArea rows={2} maxLength={2000} placeholder="参考答案" value={details.expectedAnswer} aria-label="参考答案"
         onChange={(e) => setDetails({ ...details, expectedAnswer: e.target.value })} />
       <Input.TextArea rows={2} placeholder="必要事实，每行一条（最多 10 条）" value={details.facts} aria-label="必要事实"
@@ -163,12 +213,12 @@ function EvidenceForm({ docs, initial, onSubmit, onCancel, submitLabel }: {
       <Input type="datetime-local" value={details.queryAt} aria-label="查询时点（可空，默认运行时刻）"
         onChange={(e) => setDetails({ ...details, queryAt: e.target.value })} />
       <Space>
-        <Button type="primary" size="small" disabled={!question.trim() || (!initial && label === "answerable" && (!versionId || quote.trim().length < 2))}
-          onClick={() => void onSubmit({ question: question.trim(), label, evidence: versionId && quote.trim() ? [evidenceEntry(versionId, quote, occurrence)] : [],
-            details: detailsBody(details) })}>
+        <Button type="primary" size="small" loading={submitting}
+          disabled={submitting || !question.trim() || invalid || (!initial && label === "answerable" && evidence.length === 0)}
+          onClick={() => void submit()}>
           {submitLabel}
         </Button>
-        {onCancel && <Button size="small" onClick={onCancel}>取消</Button>}
+        {onCancel && <Button size="small" disabled={submitting} onClick={onCancel}>取消</Button>}
       </Space>
     </div>
   );
@@ -277,8 +327,7 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
             {editing ? (
               <EvidenceForm key={editing.id} docs={docs} initial={editing} submitLabel="保存" onCancel={() => setEditing(undefined)}
                 onSubmit={(v) => act(async () => {
-                  // 未填写新证据时保留原证据，只更新样本字段。
-                  if (v.evidence.length) await client.setEvalEvidence(kbId, editing.id, v.evidence);
+                  await client.setEvalEvidence(kbId, editing.id, v.evidence);
                   await client.setEvalCaseDetails(kbId, editing.id, v.details);
                 })} />
             ) : (
