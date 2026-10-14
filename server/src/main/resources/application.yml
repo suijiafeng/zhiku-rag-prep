@@ -59,6 +59,8 @@ zhiku:
     stream-timeout: PT150S
     # 等待检索或模型期间按此间隔发送 SSE 注释保持连接；注释不是内容，客户端忽略。
     heartbeat-interval: PT15S
+    # 拒答与敏感输入提示中指向的人工渠道，由业务负责人确认后填写；为空时提示"尚未配置"。
+    handoff-channel: ${ZHIKU_HANDOFF_CHANNEL:}
     # 草稿流式输出期间，授权和来源效力最多按此频率重新读取；变更会在此间隔内被发现。
     recheck-interval: PT1S
   widget:

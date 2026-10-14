@@ -199,6 +199,31 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void questionsWithPersonalNumbersStopBeforeRetrievalAndAreStoredRedacted() throws Exception {
+    var embedded = new java.util.concurrent.atomic.AtomicInteger();
+    embeddings.beforeEmbed = embedded::incrementAndGet;
+    model.script = m -> { throw new AssertionError("sensitive questions must not reach the model"); };
+    var frames = ask("我的身份证号是11010119900307123X，年假还剩几天");
+    assertThat(names(frames)).containsExactly("start", "error");
+    var error = last(frames).data();
+    assertThat(error.get("code").asText()).isEqualTo("SENSITIVE_INPUT");
+    assertThat(error.get("retryable").asBoolean()).isFalse();
+    assertThat(error.get("message").asText()).contains("人工渠道");
+    assertThat(embedded.get()).isZero();
+    var stored = jdbc.queryForObject("SELECT m.question || '|' || c.title FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ?",
+        String.class, kb);
+    assertThat(stored).doesNotContain("11010119900307123X").contains("[已隐藏]");
+    assertThat(lastStatus()).isEqualTo("refused:SENSITIVE_INPUT:true");
+  }
+
+  @Test
+  void theModelIsToldToAskForMissingConditionsAndNotToResolveConflicts() throws Exception {
+    ask("年假有几天?");
+    var system = model.lastPrompt.getFirst().content();
+    assertThat(system).contains("需要确认的条件").contains("相互矛盾").contains("适用对象");
+  }
+
+  @Test
   void sourcesAreDelimitedAsUntrustedDataInThePrompt() throws Exception {
     ask("年假有几天?");
     var system = model.lastPrompt.getFirst();

@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties("zhiku.chat")
 public record ChatSettings(String provider, String baseUrl, String model, int contextChunks, int maxChunkChars,
     Duration timeout, Duration streamTimeout, Duration recheckInterval, Duration idleTimeout, int maxAnswerChars,
-    Duration heartbeatInterval) {
+    Duration heartbeatInterval, String handoffChannel) {
 
   public ChatSettings {
     if (recheckInterval == null) recheckInterval = Duration.ofSeconds(1);

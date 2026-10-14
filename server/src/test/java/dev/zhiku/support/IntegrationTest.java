@@ -11,7 +11,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * ../.env（由 application.yml 导入）永远无法改变测试行为；由测试替身代替。
  */
 @SpringBootTest(properties = {"zhiku.chat.provider=none", "zhiku.embedding.provider=none", "zhiku.widget.allowed-origins=",
-    "zhiku.chat.recheck-interval=PT0S", "zhiku.chat.max-answer-chars=200"})
+    "zhiku.chat.recheck-interval=PT0S", "zhiku.chat.max-answer-chars=200", "zhiku.chat.handoff-channel="})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, TestEmbeddingConfiguration.class})
 public abstract class IntegrationTest {

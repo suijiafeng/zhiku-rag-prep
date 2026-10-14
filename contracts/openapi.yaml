@@ -740,6 +740,7 @@ x-sse:
   rules:
     - All events use JSON data. Start comes first; error is terminal; done requires preceding validated.
     - While waiting the server sends SSE comment lines (":keepalive", every zhiku.chat.heartbeat-interval); they are not content and clients ignore them.
+    - A question containing an ID card, bank card or mobile number (format match only; may miss or over-match) ends with SENSITIVE_INPUT before retrieval and the model; the turn is stored as refused with the numbers replaced by [已隐藏]. Refusals point to zhiku.chat.handoff-channel, or say it is not configured.
     - retryable is true only for MODEL_UNAVAILABLE and DEPENDENCY_UNAVAILABLE; a retry is a new question with a new clientRequestId, never an automatic re-POST.
     - Draft is provisional. Metadata validation does not establish semantic correctness.
     - Disconnect, cancellation or error must not preserve a usable answer. Every turn is stored with status complete | refused (NO_EVIDENCE) | cancelled | failed; only complete turns keep answer text and sources, and only they enter follow-up context or accept feedback.
@@ -747,7 +748,7 @@ x-sse:
     - done.data includes conversationId (to continue), messageId (for feedback) and traceId; error.data includes traceId once retrieval has started.
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
     - Follow-ups (conversationId) use at most the last three prior turns as non-evidence context; turns with unavailable sources are excluded entirely, answers based on non-current versions keep only the question. Retrieval uses the previous visible question plus the new one; facts still come only from freshly retrieved eligible sources.
-  errorCodes: [NO_EVIDENCE, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, ANSWER_TOO_LONG]
+  errorCodes: [NO_EVIDENCE, SENSITIVE_INPUT, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, ANSWER_TOO_LONG]
 x-auth:
   status: implemented (local HS256 issuer; OIDC provider replaceable)
   claims:
