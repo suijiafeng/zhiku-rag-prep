@@ -78,6 +78,19 @@ describe("streamAnswer", () => {
     expect(conversation).toBe("c1");
   });
 
+  it("posts each question with its own request id", async () => {
+    const bodies: unknown[] = [];
+    const client = createClient("tok", async (_u, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return json({ code: "FORBIDDEN", message: "x" }, 403);
+    });
+    await streamAnswer(client, { kbId: "kb", question: "年假?" }, () => {});
+    await streamAnswer(client, { kbId: "kb", question: "年假?" }, () => {});
+    const ids = bodies.map((b) => (b as { clientRequestId: string }).clientRequestId);
+    expect(ids[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
   it("turns HTTP errors into a failed state", async () => {
     const { state } = await run(json({ code: "DEPENDENCY_UNAVAILABLE", message: "x", requestId: "r" }, 503));
     expect(state).toMatchObject({ status: "failed", error: { code: "DEPENDENCY_UNAVAILABLE" } });

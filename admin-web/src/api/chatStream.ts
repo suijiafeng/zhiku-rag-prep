@@ -33,6 +33,16 @@ function toEvent(name: string, raw: string): ChatEvent | null {
   return protocol();
 }
 
+/** v4 UUID; randomUUID needs a secure context, getRandomValues works everywhere. */
+export function newRequestId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 const fail = (code: string, message: string): ChatEvent => ({ event: "error", data: { code, message, requestId: "" } });
 const protocol = () => fail("PROTOCOL", "响应不符合问答协议");
 
@@ -49,7 +59,7 @@ export async function streamAnswer(
     res = await client.raw("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify(request),
+      body: JSON.stringify({ ...request, clientRequestId: newRequestId() }),
       ...(signal ? { signal } : {}),
     });
   } catch {
