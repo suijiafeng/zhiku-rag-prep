@@ -156,6 +156,13 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void recordsLinkEachAnswerToItsTrace() throws Exception {
+    var traceId = last(ask("年假有几天?")).data().get("traceId").asText();
+    mvc.perform(get("/api/knowledge-bases/{kb}/records", kb).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
+        .andExpect(jsonPath("$.items[0].traceId").value(traceId));
+  }
+
+  @Test
   void aFailedAnswerRecordsWhichStageFailed() throws Exception {
     model.failMidway = true;
     var error = last(ask("年假有几天?")).data();

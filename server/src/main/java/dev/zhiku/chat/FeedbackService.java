@@ -33,7 +33,7 @@ class FeedbackService {
 
   record RecordItem(UUID messageId, Instant createdAt, boolean own, String question, int citationCount, String rating,
       String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
-      Boolean sourceAvailable) {}
+      Boolean sourceAvailable, UUID traceId) {}
 
   record Stats(int total, int up, int down, int unrated, Map<String, Integer> reasons) {}
 
@@ -74,7 +74,7 @@ class FeedbackService {
       boolean commentVisible = visible && !Boolean.FALSE.equals(r.sourceAvailable());
       return new RecordItem(r.messageId(), r.createdAt(), own, visible ? r.question() : null, r.citationCount(), r.rating(),
           r.reason(), commentVisible ? r.comment() : null, r.status(), r.rootCause(), r.resolution(), r.verificationCaseId(), r.outcome(),
-          r.sourceAvailable());
+          r.sourceAvailable(), r.traceId());
     }).toList();
     var raw = repository.stats(kbId, Instant.now().minus(Duration.ofDays(7)));
     var reasons = new LinkedHashMap<String, Integer>();

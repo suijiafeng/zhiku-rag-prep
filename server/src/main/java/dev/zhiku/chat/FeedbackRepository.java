@@ -20,7 +20,7 @@ class FeedbackRepository {
 
   record RecordRow(UUID messageId, Instant createdAt, UUID userId, String question, int citationCount, String rating,
       String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
-      Boolean sourceAvailable) {}
+      Boolean sourceAvailable, UUID traceId) {}
 
   record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt,
       Integer feedbackVersion) {}
@@ -108,14 +108,15 @@ class FeedbackRepository {
         SELECT m.id, m.created_at, c.user_id, m.question,
                (SELECT count(*) FROM message_source s WHERE s.message_id = m.id) AS citations,
                f.rating, f.reason, f.comment, f.status, f.root_cause, f.resolution, f.verification_case_id, m.status AS outcome,
-               %s AS source_available
+               %s AS source_available,
+               (SELECT t.id FROM retrieval_trace t WHERE t.message_id = m.id ORDER BY t.created_at DESC LIMIT 1) AS trace_id
         FROM message m JOIN conversation c ON c.id = m.conversation_id LEFT JOIN feedback f ON f.message_id = m.id
         WHERE c.kb_id = ?""".formatted(SOURCE_AVAILABLE) + where + " ORDER BY m.created_at DESC, m.id LIMIT 200";
     return jdbc.query(sql,
         (rs, i) -> new RecordRow(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant(), rs.getObject("user_id", UUID.class),
             rs.getString("question"), rs.getInt("citations"), rs.getString("rating"), rs.getString("reason"), rs.getString("comment"),
             rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"), rs.getObject("verification_case_id", UUID.class),
-            rs.getString("outcome"), (Boolean) rs.getObject("source_available")), kbId);
+            rs.getString("outcome"), (Boolean) rs.getObject("source_available"), rs.getObject("trace_id", UUID.class)), kbId);
   }
 
   Map<String, Integer> stats(UUID kbId, Instant since) {
