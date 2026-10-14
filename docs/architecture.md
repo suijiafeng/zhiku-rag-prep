@@ -3,13 +3,14 @@
 ## 当前存在
 - server：单个 Spring Boot 应用，包 auth / knowledgebase / document / ingestion / embedding / retrieval / chat / audit / platform。
   - 身份：JWT 资源服务器；授权库每请求从数据库读取；挂件令牌限单库且只能调用 /api/chat。
-  - 数据：Flyway V1–V6（知识库与授权、文档与内容版本、内容与摄取任务、切块、向量、会话与来源依赖、审计）。
+  - 数据：Flyway V1–V10（知识库与授权、文档与内容版本、内容与摄取任务、切块、向量、会话与来源依赖、审计、反馈、评测、问答结果状态、文档删除）。
+  - 删除：标记删除即退出资格、检索、引用、评测证据与总览统计，依赖它的历史回答隐藏；数据库租约任务随后清理原文、切块、向量与摄取任务，状态 pending/running/done/failed 可查，失败只写 ERROR 日志，无外部告警；备份不在清理范围内。
   - 摄取：数据库租约队列（FOR UPDATE SKIP LOCKED），租约内一次性写入切块与向量；无 @Async。
   - 检索：先按授权与效力得出合格版本，再在同一 embedding 模型与维度内做精确余弦检索；无 ANN、无融合、无重排。
   - 问答：SSE draft → validated → done；披露前检查引用编号并重读授权与效力；只保存完成的回答。
 - admin-web：管理端，示例模式与已连接模式；令牌只在页面内存。
 - widget：可嵌入问答组件。
-未实现：生产 IdP、多轮上下文、引用语义验证、评测运行、反馈闭环、配置发布流程。
+未实现：生产 IdP、对话摘要、引用语义验证、回答正确性人工评测、反馈处理闭环、配置候选/发布流程。
 
 ## 目标模块依赖（设计约束，非实现清单）
 单体按业务包：auth → 身份/权限；knowledgebase → 授权库；document → 内容版本/业务效力；ingestion → 持久任务与解析；retrieval → 合格版本内检索；chat → 编排；citation → 来源解析；evaluation → 独立真值与回归；audit → 脱敏追加事件。
