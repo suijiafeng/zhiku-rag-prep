@@ -45,7 +45,7 @@ public class SecurityConfiguration {
     var errors = new ApiErrorResponses(json);
     var origins = widgetOrigins.stream().map(String::strip).filter(o -> !o.isEmpty()).toList();
     if (!origins.isEmpty()) {
-      // Only explicitly configured widget hosts, only the widget endpoints, never credentials.
+      // 仅限显式配置的 widget 宿主、仅限 widget 端点，绝不携带凭据。
       var cors = new CorsConfiguration();
       cors.setAllowedOrigins(origins);
       cors.setAllowedMethods(List.of("POST", "PUT"));
@@ -58,14 +58,14 @@ public class SecurityConfiguration {
       http.cors(c -> c.configurationSource(source));
     }
     return http
-        // Stateless bearer tokens only: no cookie or session authentication exists, so CSRF does not apply.
+        // 仅使用无状态 bearer token：不存在 cookie 或 session 认证，因此 CSRF 不适用。
         .csrf(AbstractHttpConfigurer::disable)
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(a -> a
             .requestMatchers(HttpMethod.GET, "/api/status").permitAll()
             .requestMatchers(HttpMethod.POST, "/api/chat").authenticated()
             .requestMatchers(HttpMethod.PUT, "/api/messages/*/feedback").authenticated()
-            // Widget tokens may only ask and rate their own answers.
+            // Widget token 只能提问和评价自己的回答。
             .requestMatchers("/api/**").access((auth, ctx) -> new AuthorizationDecision(auth.get() instanceof JwtAuthenticationToken t
                 && t.isAuthenticated() && !JwtAccessScopeResolver.WIDGET.equals(t.getToken().getClaimAsString(JwtAccessScopeResolver.TOKEN_USE))))
             .anyRequest().denyAll())

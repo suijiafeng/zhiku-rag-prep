@@ -14,7 +14,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/** Server-generated request id; a client-supplied X-Request-Id is never trusted. */
+/** 服务端生成的请求 id；从不信任客户端提供的 X-Request-Id。 */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestIdFilter extends OncePerRequestFilter {
@@ -39,7 +39,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
     return request.getAttribute(ATTRIBUTE) instanceof String id ? id : "unassigned";
   }
 
-  /** Request id of the current servlet request, or "unassigned" outside a request. */
+  /** 当前 servlet 请求的请求 id，请求之外为 "unassigned"。 */
   public static String current() {
     return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes a ? of(a.getRequest()) : "unassigned";
   }

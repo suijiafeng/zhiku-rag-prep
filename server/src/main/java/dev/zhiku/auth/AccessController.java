@@ -9,7 +9,7 @@ import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Lets clients render the caller's identity and the server's role policy instead of hard-coding a copy. */
+/** 让客户端渲染调用方身份和服务端角色策略，而不是硬编码一份副本。 */
 @RestController
 class AccessController {
   record Me(UUID userId, UUID enterpriseId, Set<Role> roles, Set<UUID> knowledgeBaseIds) {}

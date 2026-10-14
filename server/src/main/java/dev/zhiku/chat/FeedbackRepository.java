@@ -26,9 +26,9 @@ class FeedbackRepository {
       Integer feedbackVersion) {}
 
   /**
-   * Same rule as the history view: a completed answer is available only while, for it and every earlier turn it was
-   * generated from, each source document exists and is not deleted, its version is not withdrawn, the chunk still
-   * exists, and it belongs to the conversation's knowledge base. Null for turns that are not completed answers.
+   * 与历史视图规则相同：已完成回答仅当其自身及生成它所依据的每个较早轮次满足以下条件时可用：
+   * 每个来源文档存在且未删除、其版本未撤回、chunk 仍
+   * 存在，并且属于该会话的知识库。对非已完成回答的轮次返回 null。
    */
   private static final String SOURCE_AVAILABLE = """
       CASE WHEN m.status <> 'complete' THEN NULL ELSE NOT EXISTS (
@@ -60,8 +60,8 @@ class FeedbackRepository {
   }
 
   /**
-   * Stores the asker's feedback. An unchanged resubmission changes nothing. A changed feedback gets a new version and,
-   * when it had been handled, reopens: the old conclusion was about the previous version (C16).
+   * 保存提问者的反馈。未改变的重复提交不产生任何变化。改变后的反馈获得新版本，
+   * 若此前已处理则重新打开：旧结论针对的是上一版本（C16）。
    */
   FeedbackView upsert(UUID messageId, UUID userId, String rating, String reason, String comment) {
     record Current(FeedbackView view, boolean handled) {}
@@ -151,7 +151,7 @@ class FeedbackRepository {
         """, messageId, status, rootCause, resolution, verificationCaseId, handledBy, messageId);
   }
 
-  /** Handling changes of feedback in this knowledge base only; another knowledge base's id yields nothing. */
+  /** 仅限本知识库内反馈的处理变更；其他知识库的 id 不返回任何内容。 */
   List<HandlingView> handlingHistory(UUID kbId, UUID messageId) {
     return jdbc.query("""
         SELECT h.status, h.root_cause, h.resolution, h.verification_case_id, h.changed_by, h.changed_at, h.feedback_version

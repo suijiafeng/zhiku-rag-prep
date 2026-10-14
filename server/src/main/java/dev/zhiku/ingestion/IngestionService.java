@@ -31,7 +31,7 @@ public class IngestionService {
     this.audit = audit;
   }
 
-  /** Stores the file and a queued job in one transaction; parsing happens later in the worker. */
+  /** 在同一事务中保存文件和一个排队任务；解析稍后在 worker 中进行。 */
   @Transactional
   public UUID upload(UUID kbId, UUID documentId, UUID versionId, MultipartFile file) throws IOException {
     var scope = access.require(kbId, MANAGE_DOCUMENTS);
@@ -42,7 +42,7 @@ public class IngestionService {
     }
     var bytes = file.getBytes();
     var accepted = UploadValidator.validate(file.getOriginalFilename(), bytes);
-    // Validation above may take a while; a deletion committed meanwhile must win (no content written after cleanup).
+    // 上面的校验可能耗时较长；期间已提交的删除必须优先（清理之后不再写入内容）。
     if (!documents.lockLiveDocument(documentId)) throw ApiException.forbidden();
     if (repository.hasBlob(versionId)) throw ApiException.conflict("Version content already uploaded; create a new version");
     repository.insertBlob(versionId, accepted, bytes, scope.userId());

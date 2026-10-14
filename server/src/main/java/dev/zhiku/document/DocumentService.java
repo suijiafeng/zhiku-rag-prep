@@ -49,7 +49,7 @@ public class DocumentService {
     return id;
   }
 
-  /** Creates version metadata. Content is attached separately and indexed by the ingestion job. */
+  /** 创建版本元数据。内容单独附加，并由导入任务建立索引。 */
   @Transactional
   public UUID createVersion(UUID kbId, UUID documentId, String label, LocalDate from, LocalDate until) {
     var scope = access.require(kbId, MANAGE_DOCUMENTS);
@@ -80,8 +80,8 @@ public class DocumentService {
   }
 
   /**
-   * Deletion stops every read at once (versions of deleted documents are never selected); content, chunks and vectors
-   * are removed later by {@link DocumentCleanupWorker}. Deleting again re-queues a cleanup that failed permanently.
+   * 删除会立即停止所有读取（已删除文档的版本绝不会被选中）；内容、chunk 和向量
+   * 稍后由 {@link DocumentCleanupWorker} 删除。再次删除会重新排队一次永久失败的清理。
    */
   @Transactional
   public void delete(UUID kbId, UUID documentId) {
@@ -99,14 +99,14 @@ public class DocumentService {
     }
   }
 
-  /** Per-document outcome at a point in time; the caller's grants are re-checked inside the policy. */
+  /** 某一时间点上每个文档的结果；调用方的授权在策略内部重新检查。 */
   @Transactional(readOnly = true)
   public List<EligibilityView> eligibility(UUID kbId, Instant at) {
     var scope = access.require(kbId, ASK_AND_CITE);
     return evaluate(scope, repository.versionsIn(kbId), at);
   }
 
-  /** Eligible version ids in a knowledge base, used by retrieval. */
+  /** 知识库中有效的版本 id，供检索使用。 */
   public List<UUID> eligibleVersionIds(AccessScope scope, UUID kbId, Instant at) {
     return evaluate(scope, repository.versionsIn(kbId), at).stream()
         .filter(e -> e.outcome() == VersionEligibility.Outcome.ELIGIBLE).map(EligibilityView::versionId).toList();

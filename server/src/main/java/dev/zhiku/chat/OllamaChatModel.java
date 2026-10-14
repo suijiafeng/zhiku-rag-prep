@@ -26,9 +26,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * Local Ollama /api/chat streaming (NDJSON). No data leaves the machine; content is never logged.
- * Cancellation, the idle timeout and the total timeout reach the HTTP exchange itself: the header wait is polled and
- * a watchdog closes the body, which also ends a read that is blocked in the middle of a line.
+ * 本地 Ollama /api/chat 流式调用（NDJSON）。数据不离开本机；内容从不写入日志。
+ * 取消、空闲超时和总超时都作用于 HTTP 交换本身：轮询等待响应头，
+ * 并由看门狗关闭正文，这也能结束阻塞在一行中间的读取。
  */
 @Component
 @ConditionalOnProperty(name = "zhiku.chat.provider", havingValue = "ollama")
@@ -75,7 +75,7 @@ public class OllamaChatModel implements ChatModel {
     }
   }
 
-  /** Waits for response headers while honouring cancellation and the total deadline; null when cancelled. */
+  /** 等待响应头，同时响应取消和总截止时间；取消时返回 null。 */
   private static HttpResponse<InputStream> awaitHeaders(java.util.concurrent.CompletableFuture<HttpResponse<InputStream>> future,
       long deadline, BooleanSupplier cancelled) {
     while (true) {
@@ -90,7 +90,7 @@ public class OllamaChatModel implements ChatModel {
       try {
         return future.get(POLL_MILLIS, TimeUnit.MILLISECONDS);
       } catch (TimeoutException e) {
-        // keep polling
+        // 继续轮询
       } catch (ExecutionException e) {
         throw new IllegalStateException("Chat model is unavailable", e.getCause());
       } catch (InterruptedException e) {
@@ -112,7 +112,7 @@ public class OllamaChatModel implements ChatModel {
         try {
           in.close();
         } catch (IOException ignored) {
-          // closing is best effort; the reader sees end of stream or an error
+          // 关闭只是尽力而为；读取方会看到流结束或错误
         }
       }
     }, POLL_MILLIS, POLL_MILLIS, TimeUnit.MILLISECONDS);
@@ -139,7 +139,7 @@ public class OllamaChatModel implements ChatModel {
     throw new IllegalStateException("Chat model stream ended early");
   }
 
-  /** One NDJSON line, bounded so a malformed upstream cannot grow a single line without limit; null at end of stream. */
+  /** 读取一行 NDJSON，有长度上限，防止异常上游让单行无限增长；流结束时返回 null。 */
   static String readLine(Reader reader) throws IOException {
     var sb = new StringBuilder();
     int c;

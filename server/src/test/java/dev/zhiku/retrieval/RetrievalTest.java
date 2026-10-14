@@ -60,7 +60,7 @@ class RetrievalTest extends IntegrationTest {
     return id;
   }
 
-  /** Creates a published version effective in [from, until) and ingests its content. */
+  /** 创建一个在 [from, until) 内生效的已发布版本，并导入其内容。 */
   UUID ingest(UUID kbId, String title, String text, String from, String until, boolean publish) throws Exception {
     var doc = UUID.randomUUID();
     var version = UUID.randomUUID();
@@ -120,7 +120,7 @@ class RetrievalTest extends IntegrationTest {
   @Test
   void neverReturnsChunksFromOtherKnowledgeBases() throws Exception {
     var mine = ingest(kb, "员工手册", LEAVE, "2025-01-01T00:00:00Z", null, true);
-    var other = newKb(operator); // same user can read both bases; search is still scoped to the requested one
+    var other = newKb(operator); // 同一用户可读取两个知识库；检索仍限定在所请求的那个
     ingest(other, "相同内容", LEAVE, "2025-01-01T00:00:00Z", null, true);
     assertThat(versionsOf(search(kb, "{\"query\":\"年假\",\"k\":30}", operator, Role.KB_OPERATOR))).containsOnly(mine.toString());
   }

@@ -6,12 +6,12 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-/** TEST ONLY scripted chat model: emits the scripted answer in small pieces and can run a hook before finishing. */
+/** 仅用于测试的脚本化聊天模型：将预设回答分成小片段输出，并可在结束前运行钩子。 */
 public class TestChatModel implements ChatModel {
   public volatile Function<List<Message>, String> script = messages -> "年假按司龄计算[1]。";
   public volatile Runnable beforeFinish = () -> {};
   public volatile boolean failMidway = false;
-  /** Runs after the n-th piece (0-based) was handed to the caller, e.g. to revoke access mid-stream. */
+  /** 在第 n 个片段（从 0 开始）交给调用方之后运行，例如在流中途撤销访问权限。 */
   public volatile java.util.function.IntConsumer afterPiece = n -> {};
   public volatile List<Message> lastPrompt = List.of();
 

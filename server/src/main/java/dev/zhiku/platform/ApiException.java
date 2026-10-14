@@ -24,7 +24,7 @@ public class ApiException extends RuntimeException {
     return new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication required");
   }
 
-  /** Same response for "not granted" and "does not exist" so hidden resources are not revealed. */
+  /** “未授权”和“不存在”返回相同响应，以免暴露隐藏资源。 */
   public static ApiException forbidden() {
     return new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied");
   }

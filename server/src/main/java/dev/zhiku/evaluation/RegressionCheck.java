@@ -5,9 +5,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Public evaluation query for other modules. "Passed" is a retrieval check only: every evidence span of an approved
- * case made from the given feedback message was retrieved in the knowledge base's latest run. It does not show that a
- * generated answer is correct.
+ * 供其他模块使用的公开评测查询。"Passed" 仅是检索检查：由给定反馈消息生成的已批准用例的
+ * 每个证据片段都在该知识库最近一次运行中被检索到。它不能说明
+ * 生成的回答正确。
  */
 @Component
 public class RegressionCheck {

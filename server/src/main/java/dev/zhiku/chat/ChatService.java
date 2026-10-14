@@ -32,8 +32,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Answer pipeline: authorized retrieval -> model draft -> citation metadata check -> fresh access and
- * eligibility re-check -> persist -> validated -> done. Any failure emits a terminal error and stores nothing.
+ * 回答流水线：授权检索 -> 模型草稿 -> 引用元数据检查 -> 重新检查访问权限和
+ * 效力 -> 持久化 -> validated -> done。任何失败都发出终止错误且不保存任何内容。
  */
 @Service
 public class ChatService {
@@ -78,8 +78,8 @@ public class ChatService {
   }
 
   /**
-   * Accepts a client request id before streaming (PRD Q04). A repeat never starts another generation: the same question
-   * is a duplicate whose outcome can be looked up, a different question under the same id is a conflict.
+   * 在流式输出前接受客户端请求 id（PRD Q04）。重复请求绝不会再启动生成：相同问题
+   * 视为重复，可查询其结果；同一 id 下的不同问题视为冲突。
    */
   void accept(AccessScope scope, UUID clientRequestId, UUID kbId, UUID conversationId, String question) {
     var digest = digest(kbId, conversationId, question);
@@ -91,14 +91,14 @@ public class ChatService {
     throw new ApiException(HttpStatus.CONFLICT, "REQUEST_CONFLICT", "This request id was used for a different question");
   }
 
-  /** Frees an id whose stream never started, so the client may retry with it. */
+  /** 释放一个从未开始流式输出的 id，使客户端可用它重试。 */
   void release(AccessScope scope, UUID clientRequestId) {
     repository.release(scope.enterpriseId(), scope.userId(), clientRequestId);
   }
 
   public record RequestView(String status, UUID conversationId, UUID messageId, Instant acceptedAt) {}
 
-  /** Outcome of the caller's own request; no answer text, which is read from history with its source checks. */
+  /** 调用方自己请求的结果；不含回答正文，正文从历史中读取并经过来源检查。 */
   RequestView request(AccessScope scope, UUID clientRequestId) {
     var row = repository.request(scope.enterpriseId(), scope.userId(), clientRequestId).orElseThrow(ApiException::notFound);
     if (!scope.permits(scope.enterpriseId(), row.kbId(), ASK_AND_CITE)) throw ApiException.forbidden();
@@ -118,7 +118,7 @@ public class ChatService {
     }
   }
 
-  /** Runs one answer. The scope was authorized by the caller; access is re-read from the grant store before disclosure. */
+  /** 执行一次回答。范围已由调用方授权；披露前会从授权存储重新读取访问权限。 */
   public void stream(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId) {
     try {
       run(scope, kbId, question, conversationId, clientRequestId, sink, requestId);
@@ -132,7 +132,7 @@ public class ChatService {
     var model = requireModel();
     var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId);
     var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
-    // Follow-ups are retrieved together with the previous visible question so references like "那试用期呢" resolve.
+    // 追问与上一个可见问题一起检索，使“那试用期呢”这类指代能够解析。
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
     List<Candidate> sources;
     try {
@@ -146,7 +146,7 @@ public class ChatService {
       return;
     }
 
-    // Access or sources may change while retrieval ran: check again before anything reaches the model.
+    // 检索期间访问权限或来源可能已变化：在任何内容到达模型之前再次检查。
     var changed = recheck(scope, kbId, sources, conversationId, context);
     if (changed != null) {
       fail(turn, sink, changed, STOP_MESSAGE.get(changed), requestId);
@@ -156,7 +156,7 @@ public class ChatService {
     var lastCheck = new long[] {System.nanoTime()};
     try {
       model.stream(prompt(question, sources, context), token -> {
-        // Re-read grants and eligibility before disclosing more drafts (at most once per recheck interval).
+        // 披露更多草稿前重新读取授权和效力（每个重新检查间隔内最多一次）。
         if (System.nanoTime() - lastCheck[0] >= settings.recheckInterval().toNanos()) {
           lastCheck[0] = System.nanoTime();
           var code = recheck(scope, kbId, sources, conversationId, context);
@@ -199,8 +199,8 @@ public class ChatService {
       case OK -> { }
     }
 
-    // Revocation and withdrawal can happen while the model runs: re-read grants and eligibility before disclosure,
-    // and confirm every earlier turn that went into the prompt is still available.
+    // 模型运行期间可能发生撤权和撤回：披露前重新读取授权和效力，
+    // 并确认进入 prompt 的每个较早轮次仍然可用。
     var stopped = recheck(scope, kbId, sources, conversationId, context);
     if (stopped != null) {
       fail(turn, sink, stopped, STOP_MESSAGE.get(stopped), requestId);
@@ -226,15 +226,15 @@ public class ChatService {
   }
 
   /**
-   * Prior turns usable as conversational context (PRD Q03): turns whose sources are unavailable are dropped entirely;
-   * answers based on versions that are no longer current keep only the question. At most the last three turns.
+   * 可用作对话上下文的历史轮次（PRD Q03）：来源不可用的轮次整体丢弃；
+   * 基于已非当前版本的回答只保留问题。最多取最近三轮。
    */
   private List<MessageView> priorContext(AccessScope scope, UUID conversationId) {
     var visible = messages(scope, conversationId).stream().filter(m -> !m.hidden() && "complete".equals(m.status())).toList();
     return visible.subList(Math.max(0, visible.size() - 3), visible.size());
   }
 
-  /** The earlier turns used as context plus everything they depended on, so later checks need only one level. */
+  /** 用作上下文的较早轮次及其依赖的全部内容，使后续检查只需检查一层。 */
   private Set<UUID> dependencies(UUID conversationId, List<MessageView> context) {
     if (context.isEmpty()) return Set.of();
     var known = repository.context(conversationId);
@@ -272,8 +272,8 @@ public class ChatService {
       "ANSWER_TOO_LONG", "回答超出长度上限，已停止并丢弃");
 
   /**
-   * Re-reads grants and current eligibility of this turn's sources, and confirms every earlier turn put into the prompt
-   * is still available; returns the stop code, or null when the answer may still be disclosed.
+   * 重新读取本轮来源的授权和当前效力，并确认放入 prompt 的每个较早轮次
+   * 仍然可用；返回停止码，若回答仍可披露则返回 null。
    */
   private String recheck(AccessScope scope, UUID kbId, List<Candidate> sources, UUID conversationId, List<MessageView> context) {
     var fresh = new AccessScope(scope.enterpriseId(), scope.userId(), grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()), scope.roles());
@@ -286,7 +286,7 @@ public class ChatService {
     return context.stream().allMatch(m -> stillVisible.contains(m.id())) ? null : "SOURCE_UNAVAILABLE";
   }
 
-  /** Persists a refused or failed turn (no draft text) and then sends the terminal error event. */
+  /** 保存被拒答或失败的轮次（不含草稿正文），然后发送终止错误事件。 */
   private void fail(Turn turn, ChatSink sink, String code, String message, String requestId) throws IOException {
     record(turn, "NO_EVIDENCE".equals(code) ? "refused" : "failed", code);
     error(sink, code, message, requestId);
@@ -339,7 +339,7 @@ public class ChatService {
     }
   }
 
-  /** Read side of history: every derived answer is re-checked against its source dependencies. */
+  /** 历史的读取端：每个派生回答都会按其来源依赖重新检查。 */
   public record CitationView(String documentId, String versionId, String title, String excerpt) {}
 
   public record MessageView(UUID id, String question, String answer, boolean hidden, String reason, boolean stale,
@@ -369,11 +369,11 @@ public class ChatService {
         return new MessageView(m.id(), m.question(), null, false, null, false, List.of(), m.createdAt(), null, m.status(), m.errorCode());
       }
       var sources = sourcesByMessage.getOrDefault(m.id(), List.of());
-      // An answer is available only while its own sources and those of every earlier turn it was generated from are.
+      // 只有当回答自身的来源以及生成它所依据的每个较早轮次的来源都可用时，该回答才可用。
       boolean available = ownSourcesOk.getOrDefault(m.id(), false)
           && context.getOrDefault(m.id(), Set.of()).stream().allMatch(d -> ownSourcesOk.getOrDefault(d, false));
       if (!available) {
-        // The comment is free text that may quote the hidden answer: only structured feedback stays visible.
+        // 评论是自由文本，可能引用被隐藏的回答：只保留结构化反馈可见。
         var rating = ratings.get(m.id());
         var safe = rating == null ? null : new FeedbackRepository.FeedbackView(rating.rating(), rating.reason(), null, rating.version(),
             rating.status(), rating.updatedAt());

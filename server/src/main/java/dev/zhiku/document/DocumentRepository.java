@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class DocumentRepository {
-  /** Row of content_version joined with its document and knowledge base. */
+  /** content_version 关联其文档和知识库后的一行。 */
   public record VersionRow(UUID id, UUID documentId, String documentTitle, UUID kbId, UUID enterpriseId, String versionLabel,
       Instant effectiveFrom, Instant effectiveUntil, boolean approved, boolean published, boolean withdrawn, boolean superseded,
       String indexStatus, String indexError, Instant documentCreatedAt) {
@@ -98,21 +98,21 @@ public class DocumentRepository {
   }
 
   /**
-   * Share-locks the document row for the rest of the transaction; false when it is deleted. Writers of content call this
-   * right before writing: a deletion then waits for them to commit (so cleanup sees their rows), and once a deletion
-   * has committed every later writer is refused.
+   * 在事务剩余期间对文档行加共享锁；文档已删除时返回 false。内容写入方在写入前
+   * 调用此方法：删除会等待它们提交（因此清理能看到它们的行），而删除一旦
+   * 提交，之后的所有写入方都会被拒绝。
    */
   public boolean lockLiveDocument(UUID documentId) {
     return !jdbc.queryForList("SELECT 1 FROM document WHERE id = ? AND deleted_at IS NULL FOR SHARE", Integer.class, documentId).isEmpty();
   }
 
-  /** Marks the document deleted and queues cleanup; returns 0 when it is already deleted. */
+  /** 将文档标记为已删除并排队清理；已删除时返回 0。 */
   public int markDeleted(UUID documentId, UUID by) {
     return jdbc.update("UPDATE document SET deleted_at = now(), deleted_by = ?, cleanup_status = 'pending' WHERE id = ? AND deleted_at IS NULL",
         by, documentId);
   }
 
-  /** Re-queues a cleanup that failed permanently; returns 0 when it is pending, running or done. */
+  /** 重新排队一次永久失败的清理；处于 pending、running 或 done 时返回 0。 */
   public int retryCleanup(UUID documentId, UUID kbId) {
     return jdbc.update("UPDATE document SET cleanup_status = 'pending', cleanup_attempts = 0, cleanup_error = NULL, cleanup_lease_until = NULL "
         + "WHERE id = ? AND kb_id = ? AND cleanup_status = 'failed'", documentId, kbId);
@@ -128,7 +128,7 @@ public class DocumentRepository {
         + "WHERE cleanup_status = 'running' AND cleanup_lease_until < now() AND cleanup_attempts >= ?", maxAttempts);
   }
 
-  /** One claim of a deleted document's cleanup; the token identifies this attempt. */
+  /** 对已删除文档清理的一次认领；token 标识这次尝试。 */
   public record CleanupClaim(UUID documentId, UUID token, int attempts) {}
 
   public Optional<CleanupClaim> claimCleanup(int leaseSeconds, int maxAttempts) {
@@ -144,8 +144,8 @@ public class DocumentRepository {
   }
 
   /**
-   * Removes jobs first: deleting a job row waits for a worker that still holds it, so its chunks are removed afterwards.
-   * Does nothing and returns false unless this claim still owns the running cleanup (row locked for the transaction).
+   * 先删除任务：删除任务行会等待仍持有它的 worker，因此其 chunk 会在之后被删除。
+   * 除非本次认领仍拥有正在运行的清理（行在事务内被锁定），否则不做任何事并返回 false。
    */
   public boolean purgeContent(UUID documentId, UUID token) {
     if (jdbc.queryForList("SELECT 1 FROM document WHERE id = ? AND cleanup_token = ? AND cleanup_status = 'running' FOR UPDATE",

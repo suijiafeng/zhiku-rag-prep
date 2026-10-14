@@ -7,8 +7,8 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * Shared Spring context against a real pgvector container. Model providers and CORS are pinned here so a
- * developer's ../.env (imported by application.yml) can never change test behaviour; test doubles stand in.
+ * 基于真实 pgvector 容器的共享 Spring 上下文。模型提供方和 CORS 在此固定，使开发者的
+ * ../.env（由 application.yml 导入）永远无法改变测试行为；由测试替身代替。
  */
 @SpringBootTest(properties = {"zhiku.chat.provider=none", "zhiku.embedding.provider=none", "zhiku.widget.allowed-origins=",
     "zhiku.chat.recheck-interval=PT0S", "zhiku.chat.max-answer-chars=200"})
@@ -18,7 +18,7 @@ public abstract class IntegrationTest {
   @DynamicPropertySource
   static void jwt(DynamicPropertyRegistry registry) {
     registry.add("zhiku.auth.jwt-secret", () -> TestJwt.SECRET);
-    // Tests drive the ingestion worker explicitly instead of the scheduler.
+    // 测试显式驱动 ingestion worker，而不是依赖调度器。
     registry.add("zhiku.ingestion.worker-enabled", () -> "false");
     registry.add("zhiku.document.cleanup-enabled", () -> "false");
   }

@@ -27,7 +27,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-/** PRD Q04: a client request id is accepted once; repeats never start another generation, and the outcome can be looked up. */
+/** PRD Q04：客户端请求 id 只接受一次；重复请求不会再启动生成，且可查询其结果。 */
 class ChatRequestTest extends IntegrationTest {
   @Autowired MockMvc mvc;
   @Autowired JdbcTemplate jdbc;

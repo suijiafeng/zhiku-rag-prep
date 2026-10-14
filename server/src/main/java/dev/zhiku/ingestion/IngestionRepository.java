@@ -89,13 +89,13 @@ public class IngestionRepository {
         (rs, i) -> new Blob(rs.getString("media_type"), rs.getBytes("content")), versionId);
   }
 
-  /** Locks the job row; true only while this worker still owns an active lease. */
+  /** 锁定任务行；仅当本 worker 仍持有有效 lease 时返回 true。 */
   public boolean holdsLease(UUID jobId, String owner) {
     return !jdbc.queryForList("SELECT 1 FROM ingestion_job WHERE id = ? AND status = 'running' AND lease_owner = ? FOR UPDATE",
         Integer.class, jobId, owner).isEmpty();
   }
 
-  /** Replaces all chunks of the version and returns their ids in sequence order. */
+  /** 替换该版本的全部 chunk，并按序号顺序返回其 id。 */
   public List<UUID> replaceChunks(UUID versionId, List<Chunk> chunks) {
     jdbc.update("DELETE FROM chunk WHERE version_id = ?", versionId);
     var ids = chunks.stream().map(c -> UUID.randomUUID()).toList();

@@ -12,9 +12,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Removes content, chunks, vectors and ingestion jobs of deleted documents. Access already stopped when the document
- * was marked deleted; this only reclaims storage. Claims use FOR UPDATE SKIP LOCKED plus a lease, like ingestion.
- * Failures are logged at ERROR and shown on the document; there is no external alerting.
+ * 删除已删除文档的内容、chunk、向量和导入任务。文档被标记删除时访问已停止；
+ * 这里只回收存储。认领使用 FOR UPDATE SKIP LOCKED 加 lease，与导入相同。
+ * 失败以 ERROR 级别记录并显示在文档上；没有外部告警。
  */
 @Component
 public class DocumentCleanupWorker {
@@ -30,7 +30,7 @@ public class DocumentCleanupWorker {
     this.tx = tx;
   }
 
-  /** Cleans at most one document; returns whether one was claimed. */
+  /** 最多清理一个文档；返回是否认领到文档。 */
   public boolean processNext() {
     repository.failExhaustedCleanups(MAX_ATTEMPTS);
     var claimed = claim();
@@ -42,7 +42,7 @@ public class DocumentCleanupWorker {
     return repository.claimCleanup(LEASE_SECONDS, MAX_ATTEMPTS);
   }
 
-  /** Cleans under this claim; a claim whose lease was taken over changes nothing. */
+  /** 在此认领下执行清理；lease 已被接管的认领不做任何改变。 */
   public void clean(CleanupClaim claim) {
     try {
       var done = Boolean.TRUE.equals(tx.execute(status -> repository.purgeContent(claim.documentId(), claim.token())));
@@ -53,7 +53,7 @@ public class DocumentCleanupWorker {
     }
   }
 
-  /** Polls for deleted documents awaiting cleanup. Disabled in tests, which call the worker directly. */
+  /** 轮询等待清理的已删除文档。测试中禁用，测试直接调用 worker。 */
   @Configuration
   @EnableScheduling
   @ConditionalOnProperty(name = "zhiku.document.cleanup-enabled", havingValue = "true")
@@ -67,7 +67,7 @@ public class DocumentCleanupWorker {
     @Scheduled(fixedDelayString = "${zhiku.document.cleanup-poll-interval}")
     void poll() {
       while (worker.processNext()) {
-        // drain pending cleanups, one claim at a time
+        // 逐个认领，处理完所有待清理项
       }
     }
   }

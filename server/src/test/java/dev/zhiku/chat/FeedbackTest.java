@@ -140,7 +140,7 @@ class FeedbackTest extends IntegrationTest {
         .contentType("application/json").content(body));
   }
 
-  /** A case created from the asker's feedback (its origin), as the records page does. */
+  /** 由提问者反馈创建的用例（反馈为其来源），与记录页的做法一致。 */
   UUID evalCase(String status) {
     return evalCase(status, askerMessage);
   }
@@ -256,7 +256,7 @@ class FeedbackTest extends IntegrationTest {
         .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
   }
 
-  /** A completed answer whose single source really exists, so withdrawing it makes the answer unavailable. */
+  /** 一个已完成回答，其唯一来源真实存在，因此撤回该来源会使回答不可用。 */
   UUID[] answeredFromRealSource(UUID user) {
     var doc = UUID.randomUUID();
     var version = UUID.randomUUID();

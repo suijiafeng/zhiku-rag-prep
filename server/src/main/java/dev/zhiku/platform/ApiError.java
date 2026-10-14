@@ -1,4 +1,4 @@
 package dev.zhiku.platform;
 
-/** Contract error body. Messages are fixed text: no documents, SQL, credentials or stack traces. */
+/** 契约错误体。消息为固定文本：不含文档、SQL、凭据或堆栈跟踪。 */
 public record ApiError(String code, String message, String requestId) {}

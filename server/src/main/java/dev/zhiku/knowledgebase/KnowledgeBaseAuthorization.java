@@ -8,10 +8,10 @@ import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * Application-level gate for every knowledge base data entry point (query, export, history,
- * citations, file reads). The caller never supplies identity; it comes from the resolver.
- * Role permission and knowledge base scope must both hold (PRD v0.3 chapter 3); the role
- * matrix is the PRD suggestion pending D02. Shared-audience splitting is a data rule, not code.
+ * 每个知识库数据入口（查询、导出、历史、引用、文件读取）
+ * 的应用层闸门。调用方从不提供身份；身份来自 resolver。
+ * 角色权限和知识库范围必须同时满足（PRD v0.3 第 3 章）；角色
+ * 矩阵为 PRD 建议，待决 D02。共享受众的拆分是数据规则，不是代码。
  */
 @Component
 public final class KnowledgeBaseAuthorization {

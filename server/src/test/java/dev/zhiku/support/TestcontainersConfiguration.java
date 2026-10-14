@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/** Real PostgreSQL + pgvector, same image as compose.yaml. */
+/** 真实的 PostgreSQL + pgvector，镜像与 compose.yaml 相同。 */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
   @Bean

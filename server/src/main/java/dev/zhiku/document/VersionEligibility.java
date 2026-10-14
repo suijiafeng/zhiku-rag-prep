@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Minimal policy for one document (one confirmed subject). Applicability and supersession graph are not implemented. */
+/** 单个文档（一个已确认主题）的最小策略。适用条件和替代关系图尚未实现。 */
 public final class VersionEligibility {
   private VersionEligibility() {}
 
@@ -25,7 +25,7 @@ public final class VersionEligibility {
     }
   }
 
-  /** The chosen version is present only for ELIGIBLE; never a fallback to an older version. */
+  /** 仅在 ELIGIBLE 时存在所选版本；绝不回退到更旧版本。 */
   public record Selection(Outcome outcome, Version version) {}
 
   public static Selection select(AccessScope scope, List<Version> candidates, Instant at) {

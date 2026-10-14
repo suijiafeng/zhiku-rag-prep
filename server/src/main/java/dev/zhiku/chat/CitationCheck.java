@@ -2,7 +2,7 @@ package dev.zhiku.chat;
 
 import java.util.regex.Pattern;
 
-/** Metadata-level citation check: markers exist and map to provided sources. Not a semantic support check. */
+/** 元数据级引用检查：标记存在且对应到提供的来源。不是语义支撑检查。 */
 final class CitationCheck {
   enum Result { OK, NONE, OUT_OF_RANGE }
 

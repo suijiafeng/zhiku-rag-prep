@@ -3,11 +3,11 @@ package dev.zhiku.embedding;
 import java.util.List;
 import java.util.StringJoiner;
 
-/** Validates provider output before it is stored or compared. */
+/** 在存储或比较之前校验提供方的输出。 */
 public final class EmbeddingVectors {
   private EmbeddingVectors() {}
 
-  /** Returns the common dimension; rejects wrong counts, mixed dimensions, non-finite values and zero vectors. */
+  /** 返回共同维度；拒绝数量错误、维度不一致、非有限值和零向量。 */
   public static int validate(List<float[]> vectors, int expectedCount) {
     if (vectors == null || vectors.size() != expectedCount) throw new IllegalStateException("Embedding count mismatch");
     int dimension = -1;

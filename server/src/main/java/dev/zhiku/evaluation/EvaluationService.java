@@ -31,17 +31,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * PRD chapter 12, retrieval part: ground truth is a source span in a content version; each run maps spans onto the
- * current chunks. A span that maps to no chunk is a preparation failure, never a retrieval miss. No model is called.
+ * PRD 第 12 章检索部分：真值是内容版本中的来源片段；每次运行将片段映射到
+ * 当前 chunk。无法映射到任何 chunk 的片段属于准备失败，而非检索未命中。不调用模型。
  */
 @Service
 class EvaluationService {
   static final Set<String> LABELS = Set.of("answerable", "clarify", "handoff");
 
-  /** occurrence (1-based) picks one of several identical passages; required when the quote occurs more than once. */
+  /** occurrence（从 1 开始）从多个相同段落中选出一个；引文出现多次时必填。 */
   record EvidenceInput(@NotNull UUID versionId, @NotBlank @Size(max = 2000) String quote, @Positive Integer occurrence) {}
 
-  /** quote is null and available false once the source version is withdrawn or its document deleted; the span stays. */
+  /** 来源版本被撤回或其文档被删除后，quote 为 null 且 available 为 false；片段保留。 */
   record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote, boolean available) {}
 
   record CaseView(UUID id, String question, String label, String status, String source, Instant createdAt, List<EvidenceView> evidence,
@@ -52,7 +52,7 @@ class EvaluationService {
   record Summary(int cases, int evaluated, int prepFailed, int notApplicable, Ratio hit, Ratio recall, Double recallMacro, Long p95Ms,
       int sourceUnavailable) {}
 
-  /** sourceUnavailable: an evidence version is not eligible now; such cases are reported but left out of the scores. */
+  /** sourceUnavailable：某个证据版本当前无效；此类用例会被报告，但不计入分数。 */
   record ResultView(UUID caseId, String question, String label, boolean mappingFailed, boolean hit, int evidenceHit, int evidenceTotal, int latencyMs,
       boolean sourceUnavailable) {}
 
@@ -98,8 +98,8 @@ class EvaluationService {
     return id;
   }
 
-  /** Locates each quote in its version's normalized text and stores the character span. */
-  /** Element constraints are validated per entry (@Valid); a null entry is invalid input, checked before any write. */
+  /** 在其版本的规范化文本中定位每条引文，并存储字符片段。 */
+  /** 元素约束按条目校验（@Valid）；null 条目属于无效输入，在任何写入前检查。 */
   static void requireEntries(List<EvidenceInput> inputs) {
     if (inputs != null && inputs.stream().anyMatch(java.util.Objects::isNull)) throw ApiException.unprocessable("Evidence entries must not be empty");
   }
@@ -119,7 +119,7 @@ class EvaluationService {
     }
   }
 
-  /** Start of the chosen occurrence; identical passages elsewhere are different ground truth, so ambiguity is refused. */
+  /** 所选出现位置的起点；其他位置的相同段落是不同的真值，因此拒绝有歧义的情况。 */
   static int locate(String text, String quote, Integer occurrence) {
     if (quote.length() < 2) throw ApiException.unprocessable("Evidence quote was not found in the selected version");
     var starts = new ArrayList<Integer>();
@@ -134,12 +134,12 @@ class EvaluationService {
   }
 
 
-  /** Replaces the evidence of a candidate; approved cases are frozen so past runs stay comparable. */
+  /** 替换候选用例的证据；已批准用例被冻结，以保持历史运行可比较。 */
   @Transactional
   void setEvidence(UUID kbId, UUID caseId, List<EvidenceInput> evidence) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     requireEntries(evidence);
-    // Locks the case row: an approval in progress finishes first, and then the case is frozen (C22).
+    // 锁定用例行：进行中的批准先完成，然后用例被冻结（C22）。
     var status = jdbc.queryForList("SELECT status FROM eval_case WHERE id = ? AND kb_id = ? FOR UPDATE", String.class, caseId, kbId);
     if (status.isEmpty()) throw ApiException.notFound();
     if (!"candidate".equals(status.getFirst())) throw ApiException.conflict("Approved cases cannot change evidence");
@@ -157,7 +157,7 @@ class EvaluationService {
   @Transactional
   void approve(UUID kbId, UUID caseId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
-    // Same row lock as evidence edits, so the evidence checked here is the evidence that gets frozen.
+    // 与证据编辑使用相同的行锁，因此此处检查的证据就是被冻结的证据。
     jdbc.queryForList("SELECT 1 FROM eval_case WHERE id = ? AND kb_id = ? FOR UPDATE", Integer.class, caseId, kbId);
     var needsEvidence = jdbc.queryForList(
         "SELECT 1 FROM eval_case c WHERE c.id = ? AND c.kb_id = ? AND c.label = 'answerable' AND NOT EXISTS (SELECT 1 FROM eval_evidence e WHERE e.case_id = c.id)",
@@ -235,7 +235,7 @@ class EvaluationService {
       model = trace.embeddingModel();
       var retrieved = new HashSet<UUID>();
       trace.candidates().stream().map(Candidate::chunkId).forEach(retrieved::add);
-      // A span is retrieved only when the retrieved chunks together cover all of it, not when one character overlaps.
+      // 只有检索到的 chunk 合起来覆盖整个片段才算检索到，而不是只要有一个字符重叠。
       int covered = 0;
       for (int i = 0; i < spans.size(); i++) {
         var pieces = mapped.get(i).entrySet().stream().filter(en -> retrieved.contains(en.getKey())).map(Map.Entry::getValue).toList();
@@ -260,7 +260,7 @@ class EvaluationService {
     return new RunView(runId, k, model, Instant.now(), summary, results);
   }
 
-  /** Whether the intervals [from, to) together cover [start, end) without a gap. */
+  /** 区间 [from, to) 合起来是否无间隙地覆盖 [start, end)。 */
   static boolean covers(int start, int end, List<int[]> intervals) {
     var sorted = intervals.stream().sorted(java.util.Comparator.comparingInt(iv -> iv[0])).toList();
     int reached = start;

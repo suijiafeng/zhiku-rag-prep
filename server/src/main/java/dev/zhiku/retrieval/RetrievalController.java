@@ -21,7 +21,7 @@ class RetrievalController {
     this.service = service;
   }
 
-  /** Retrieval trace for operators with debug rights. Candidates are limited to the caller's authorized scope. */
+  /** 面向拥有调试权限的运营人员的检索 trace。候选限定在调用方的授权范围内。 */
   @PostMapping("/api/knowledge-bases/{kbId}/retrieval-debug")
   Retrieval.Result debug(@PathVariable UUID kbId, @Valid @RequestBody DebugRequest request) {
     return service.search(kbId, request.query().strip(), request.k(), request.at() == null ? Instant.now() : request.at(),

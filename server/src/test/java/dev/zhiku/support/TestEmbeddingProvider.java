@@ -5,13 +5,13 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * TEST ONLY. Deterministic character/bigram hashing so retrieval tests have real, reproducible vectors.
- * Never registered outside tests; production requires a real embedding model.
+ * 仅用于测试。确定性的字符/二元组哈希，使检索测试拥有真实、可复现的向量。
+ * 绝不在测试之外注册；生产环境需要真实的 embedding 模型。
  */
 public class TestEmbeddingProvider implements EmbeddingProvider {
   public static final int DIMENSION = 64;
   public final AtomicBoolean failing = new AtomicBoolean(false);
-  /** Runs before each embedding call, e.g. to commit a deletion while a query is being embedded. */
+  /** 在每次 embedding 调用前运行，例如在查询正在 embedding 时提交一次删除。 */
   public volatile Runnable beforeEmbed = () -> {};
 
   @Override

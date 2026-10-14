@@ -1,13 +1,13 @@
 package dev.zhiku.auth;
 
-/** Knowledge-base scoped operations from PRD v0.3 chapter 3. Each also requires the KB grant. */
+/** PRD v0.3 第 3 章中按知识库限定的操作。每项还需要该知识库的授权。 */
 public enum KnowledgeBaseAction {
-  /** Question answering, citations and original-file download. */
+  /** 问答、引用和原文件下载。 */
   ASK_AND_CITE,
-  /** Upload, publish, rebuild and delete documents. */
+  /** 上传、发布、重建和删除文档。 */
   MANAGE_DOCUMENTS,
-  /** Retrieval debugging and evaluation. */
+  /** 检索调试与评测。 */
   DEBUG_AND_EVALUATE,
-  /** Reading other users' question and answer bodies. */
+  /** 读取其他用户的问题和回答正文。 */
   READ_OTHERS_CONVERSATIONS
 }

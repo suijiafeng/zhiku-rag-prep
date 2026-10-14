@@ -44,7 +44,7 @@ class ChatController {
     this.settings = settings;
   }
 
-  /** Authorization, conversation ownership and model availability fail as plain JSON before the stream starts. */
+  /** 授权、会话归属和模型可用性的失败在流开始前以普通 JSON 返回。 */
   @PostMapping(path = "/api/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
   SseEmitter ask(@Valid @RequestBody ChatRequest request, HttpServletRequest http) {
     var scope = access.require(request.kbId(), ASK_AND_CITE);
@@ -85,7 +85,7 @@ class ChatController {
     return emitter;
   }
 
-  /** Looks up the caller's own request after a disconnect instead of posting the question again. */
+  /** 断开后查询调用方自己的请求，而不是再次提交问题。 */
   @GetMapping("/api/chat/requests/{clientRequestId}")
   ChatService.RequestView request(@PathVariable UUID clientRequestId) {
     return chat.request(knowledgeBases.requireScope(), clientRequestId);

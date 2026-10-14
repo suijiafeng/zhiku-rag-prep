@@ -8,8 +8,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Component;
 
 /**
- * Single server-side gate used by every knowledge base data entry point.
- * Unknown and unauthorized knowledge bases are both reported as 403.
+ * 每个知识库数据入口共用的唯一服务端闸门。
+ * 不存在和未授权的知识库都报告为 403。
  */
 @Component
 public class KnowledgeBaseAccess {
@@ -31,7 +31,7 @@ public class KnowledgeBaseAccess {
     return scope;
   }
 
-  /** Re-checks access without throwing, for revocation checks during long-running work. */
+  /** 不抛异常地重新检查访问权限，用于长时间运行任务中的撤权检查。 */
   public boolean stillPermitted(UUID kbId, KnowledgeBaseAction action) {
     return repository.find(kbId).map(ref -> authorization.decide(ref, action).permitted()).orElse(false);
   }

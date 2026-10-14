@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
-/** Polls the durable job table. Disabled in tests, which call the worker directly. Not @Async: the table is the queue. */
+/** 轮询持久化任务表。测试中禁用，测试直接调用 worker。不使用 @Async：任务表就是队列。 */
 @Configuration
 @EnableScheduling
 @ConditionalOnProperty(name = "zhiku.ingestion.worker-enabled", havingValue = "true")
@@ -19,7 +19,7 @@ class IngestionScheduling {
   @Scheduled(fixedDelayString = "${zhiku.ingestion.poll-interval}")
   void poll() {
     while (worker.processNext()) {
-      // drain available jobs, one claim at a time
+      // 逐个认领，处理完所有可用任务
     }
   }
 }

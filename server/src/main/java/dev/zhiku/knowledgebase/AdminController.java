@@ -4,7 +4,7 @@ import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** IT_ADMIN views across the caller's enterprise. Users themselves live in the identity provider. */
+/** IT_ADMIN 在调用方所属企业范围内的视图。用户本身由身份提供方管理。 */
 @RestController
 class AdminController {
   private final KnowledgeBaseService service;

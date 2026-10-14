@@ -17,9 +17,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 /**
- * Authorization and version eligibility are resolved before any vector comparison; only chunks of
- * eligible versions inside a granted knowledge base can become candidates. Exact search; no rewrite,
- * lexical, fusion or rerank stage yet, and the trace says so instead of inventing scores.
+ * 授权和版本效力在任何向量比较之前确定；只有已授权知识库中
+ * 有效版本的 chunk 才能成为候选。精确检索；尚无改写、
+ * 词法、融合或重排阶段，trace 会如实说明，而不是编造分数。
  */
 @Service
 public class RetrievalService {
@@ -60,8 +60,8 @@ public class RetrievalService {
     } catch (RuntimeException e) {
       throw ApiException.unavailable("Embedding service is unavailable");
     }
-    // Eligibility and grants are read after the (slow) embedding call, and the query re-checks deletion and withdrawal,
-    // so changes committed while a request is in flight are not disclosed. Later changes are checked by callers.
+    // 效力和授权在（较慢的）embedding 调用之后读取，且查询会重新检查删除和撤回，
+    // 因此请求进行中提交的变更不会被披露。之后的变更由调用方检查。
     var eligible = documents.eligibleVersionIds(scope, kbId, at);
     var candidates = grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()).contains(kbId)
         ? repository.nearest(eligible, provider.model(), query, limit) : List.<Retrieval.Candidate>of();

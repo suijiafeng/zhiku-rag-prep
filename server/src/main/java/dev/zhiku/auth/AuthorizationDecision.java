@@ -1,10 +1,10 @@
 package dev.zhiku.auth;
 
-/** Outcome of a server-side authorization check. Only PERMITTED allows data access. */
+/** 服务端授权检查的结果。只有 PERMITTED 允许访问数据。 */
 public enum AuthorizationDecision {
-  /** No trusted identity was established for the current request. */
+  /** 当前请求未建立可信身份。 */
   UNAUTHENTICATED,
-  /** Identity exists but the target is not granted; identical for foreign and unknown targets. */
+  /** 身份存在但目标未授权；对他人的目标和不存在的目标结果相同。 */
   DENIED,
   PERMITTED;
 

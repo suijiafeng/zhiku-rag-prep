@@ -18,8 +18,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The adapter against a fake Ollama on loopback: cancellation, idle and total deadlines must end a stream that is
- * blocked in a read or still waiting for headers, and error responses must not wait for their body.
+ * 在 loopback 上用假 Ollama 测试适配器：取消、空闲超时和总超时必须能结束阻塞在读取中
+ * 或仍在等待响应头的流，错误响应不得等待其正文。
  */
 class OllamaChatModelTest {
   interface Behaviour {
@@ -37,7 +37,7 @@ class OllamaChatModelTest {
       try {
         behaviour.handle(exchange);
       } catch (Exception e) {
-        // the client closed the connection; nothing to report
+        // 客户端已关闭连接；无需报告
       } finally {
         exchange.close();
       }

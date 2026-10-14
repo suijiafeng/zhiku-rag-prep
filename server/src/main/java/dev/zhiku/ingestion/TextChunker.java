@@ -6,8 +6,8 @@ import java.util.TreeMap;
 import java.util.regex.Pattern;
 
 /**
- * Fixed-size character chunking with overlap, preferring paragraph, line and sentence boundaries.
- * Offsets refer to {@link #normalize(String)} output so evaluation ground truth can map source spans to chunks.
+ * 带重叠的定长字符切块，优先在段落、行和句子边界处切分。
+ * 偏移量基于 {@link #normalize(String)} 的输出，以便评测标注能将来源片段映射到 chunk。
  */
 public final class TextChunker {
   public record Chunk(int seq, int start, int end, String heading, String text) {}

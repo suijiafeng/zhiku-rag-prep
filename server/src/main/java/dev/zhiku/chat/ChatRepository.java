@@ -65,7 +65,7 @@ class ChatRepository {
             rs.getTimestamp("created_at").toInstant(), rs.getString("status"), rs.getString("error_code")), conversationId);
   }
 
-  /** Stores a non-completed turn: question and outcome only, never draft text or sources. */
+  /** 保存未完成的轮次：只存问题和结果，绝不保存草稿正文或来源。 */
   UUID saveOutcome(UUID conversationId, String question, String status, String errorCode, String model) {
     var id = UUID.randomUUID();
     jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model, status, error_code) VALUES (?, ?, ?, NULL, ?, ?, ?)",
@@ -74,7 +74,7 @@ class ChatRepository {
     return id;
   }
 
-  /** Earlier turns each message of the conversation depends on (already a closure). */
+  /** 会话中每条消息所依赖的较早轮次（已是闭包）。 */
   java.util.Map<UUID, java.util.Set<UUID>> context(UUID conversationId) {
     var out = new java.util.HashMap<UUID, java.util.Set<UUID>>();
     jdbc.query("SELECT mc.message_id, mc.depends_on FROM message_context mc JOIN message m ON m.id = mc.message_id WHERE m.conversation_id = ?",
@@ -84,7 +84,7 @@ class ChatRepository {
     return out;
   }
 
-  /** Sources joined to their current state; missing joins (deleted document or re-indexed) come back with null ids. */
+  /** 关联到当前状态的来源；关联缺失（文档已删除或已重建索引）时 id 为 null。 */
   List<SourceRow> sources(UUID conversationId) {
     return jdbc.query("""
         SELECT s.message_id, s.ordinal, s.version_id, s.chunk_id, d.id AS document_id, d.title, d.kb_id,
@@ -101,7 +101,7 @@ class ChatRepository {
             rs.getObject("kb_id", UUID.class), rs.getBoolean("withdrawn"), rs.getString("chunk_text")), conversationId);
   }
 
-  /** Accepts a client request id once per user; false when it was already accepted. */
+  /** 每个用户的客户端请求 id 只接受一次；已被接受过时返回 false。 */
   boolean accept(UUID enterpriseId, UUID userId, UUID clientRequestId, UUID kbId, String digest) {
     return jdbc.update("INSERT INTO chat_request (enterprise_id, user_id, client_request_id, kb_id, digest) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
         enterpriseId, userId, clientRequestId, kbId, digest) == 1;

@@ -10,12 +10,12 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 
 /**
- * Builds the access scope from the verified token (enterprise, user, roles) and the grant store.
- * Request bodies and headers other than the verified bearer token are never consulted.
+ * 根据已验证的 token（企业、用户、角色）和授权存储构建访问范围。
+ * 除已验证的 bearer token 外，从不参考请求体和其他请求头。
  */
 @Component
 public class JwtAccessScopeResolver implements AccessScopeResolver {
-  /** Widget tokens: restricted to the listed knowledge bases and to the chat endpoint. */
+  /** Widget token：仅限所列知识库和 chat 端点。 */
   public static final String KB_SCOPE = "kb_scope";
   public static final String TOKEN_USE = "token_use";
   public static final String WIDGET = "widget";

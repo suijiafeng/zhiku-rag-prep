@@ -20,14 +20,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * PRD F01/F02: askers rate their own answers; operators triage feedback in granted knowledge bases.
- * Other people's question and comment text is shown only with READ_OTHERS_CONVERSATIONS, which no role has yet.
+ * PRD F01/F02：提问者对自己的回答评价；运营人员在已授权的知识库中处理反馈。
+ * 他人的问题和评论正文仅在拥有 READ_OTHERS_CONVERSATIONS 时显示，目前没有角色拥有该权限。
  */
 @Service
 class FeedbackService {
   static final Set<String> REASONS = Set.of("WRONG", "MISSING", "BAD_CITATION", "SHOULD_REFUSE", "OUTDATED");
   static final Set<String> STATUSES = Set.of("open", "in_progress", "to_verify", "resolved", "wont_fix");
-  /** PRD chapter 11 root-cause categories; "model problem" is deliberately not one of them. */
+  /** PRD 第 11 章的根因分类；刻意不包含“模型问题”。 */
   static final List<String> ROOT_CAUSES = List.of("文档未就绪或版本错误", "解析/切块遗漏", "授权范围不符合预期", "标注证据未召回",
       "融合或重排误排", "上下文预算挤出", "生成没有遵循证据", "引用映射失败");
 
@@ -70,7 +70,7 @@ class FeedbackService {
     var items = repository.records(kbId, filter).stream().map(r -> {
       boolean own = r.userId().equals(scope.userId());
       boolean visible = own || canReadOthers;
-      // A comment may quote the answer; once its sources are unavailable it is hidden like the answer itself.
+      // 评论可能引用回答；一旦其来源不可用，评论与回答一样被隐藏。
       boolean commentVisible = visible && !Boolean.FALSE.equals(r.sourceAvailable());
       return new RecordItem(r.messageId(), r.createdAt(), own, visible ? r.question() : null, r.citationCount(), r.rating(),
           r.reason(), commentVisible ? r.comment() : null, r.status(), r.rootCause(), r.resolution(), r.verificationCaseId(), r.outcome(),
@@ -88,8 +88,8 @@ class FeedbackService {
   }
 
   /**
-   * Every closure needs a basis (PRD F02): "resolved" needs a root cause, the fix, and an approved evaluation case made
-   * from this feedback that passed the latest run; "wont_fix" needs the reason. Each change is appended to the handling history.
+   * 每次关闭都需要依据（PRD F02）："resolved" 需要根因、修复措施，以及一个由此反馈生成、已批准且在最近一次运行中
+   * 通过的评测用例；"wont_fix" 需要说明原因。每次变更都追加到处理历史中。
    */
   @Transactional
   void updateStatus(UUID kbId, UUID messageId, String status, String rootCause, String resolution, UUID verificationCaseId) {

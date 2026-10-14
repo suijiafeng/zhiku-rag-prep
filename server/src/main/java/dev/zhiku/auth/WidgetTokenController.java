@@ -26,8 +26,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Exchanges a user token for a short-lived widget token: one knowledge base, ask-only role, chat endpoint only.
- * The host page obtains it per session and must never persist it.
+ * 用用户 token 换取短期 widget token：单个知识库、仅提问角色、仅限 chat 端点。
+ * 宿主页面按会话获取，且绝不能持久化。
  */
 @RestController
 class WidgetTokenController {

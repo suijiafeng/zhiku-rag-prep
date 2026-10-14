@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** Result types for authorized retrieval. Stage status follows PRD chapter 11: success, failed, skipped, cancelled. */
+/** 授权检索的结果类型。阶段状态遵循 PRD 第 11 章：success、failed、skipped、cancelled。 */
 public final class Retrieval {
   private Retrieval() {}
 

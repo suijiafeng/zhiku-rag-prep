@@ -3,13 +3,13 @@ package dev.zhiku.auth;
 import java.util.Optional;
 
 /**
- * Application port for the identity of the current request.
- * Infrastructure must build the scope from server-side authentication only; request DTOs,
- * headers chosen by the browser or widget parameters are never an acceptable source.
- * No production implementation exists until the identity source in ADR-002 is confirmed.
+ * 当前请求身份的应用层端口。
+ * 基础设施必须仅根据服务端认证构建范围；请求 DTO、
+ * 浏览器选择的请求头或 widget 参数都不是可接受的来源。
+ * 在 ADR-002 中的身份来源确认之前，不存在生产实现。
  */
 @FunctionalInterface
 public interface AccessScopeResolver {
-  /** Empty when no trusted identity exists. Callers must treat null as empty. */
+  /** 不存在可信身份时为空。调用方必须将 null 视为空。 */
   Optional<AccessScope> currentScope();
 }

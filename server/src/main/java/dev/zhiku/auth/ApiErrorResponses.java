@@ -12,8 +12,8 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 
 /**
- * Writes the contract error shape for security failures. Messages are fixed constants:
- * they never echo the path, the principal, the token or whether a resource exists.
+ * 为安全失败写出契约规定的错误结构。消息为固定常量：
+ * 绝不回显路径、主体、token 或资源是否存在。
  */
 final class ApiErrorResponses {
   private final ObjectMapper json;

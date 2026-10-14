@@ -10,8 +10,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Role half of "role permission AND knowledge base scope" (PRD v0.3 chapter 3, pending D02).
- * Explicit content-management and diagnostic grants are not modelled yet, so they fail closed.
+ * “角色权限 AND 知识库范围”中的角色部分（PRD v0.3 第 3 章，待决 D02）。
+ * 显式的内容管理和诊断授权尚未建模，因此默认拒绝。
  */
 public final class RolePolicy {
   public enum Rule { ALLOWED, REQUIRES_EXPLICIT_GRANT, NEVER }
@@ -26,7 +26,7 @@ public final class RolePolicy {
 
   private RolePolicy() {}
 
-  /** Order: ASK_AND_CITE, MANAGE_DOCUMENTS, DEBUG_AND_EVALUATE, READ_OTHERS_CONVERSATIONS. */
+  /** 顺序：ASK_AND_CITE、MANAGE_DOCUMENTS、DEBUG_AND_EVALUATE、READ_OTHERS_CONVERSATIONS。 */
   private static void put(Role role, Rule ask, Rule manage, Rule debug, Rule readOthers) {
     var rules = new EnumMap<KnowledgeBaseAction, Rule>(KnowledgeBaseAction.class);
     rules.put(KnowledgeBaseAction.ASK_AND_CITE, ask);
@@ -44,7 +44,7 @@ public final class RolePolicy {
     return rule;
   }
 
-  /** True only when some held role is plainly ALLOWED; explicit-grant rules are denied for now. */
+  /** 仅当持有的某个角色明确为 ALLOWED 时为 true；需显式授权的规则目前一律拒绝。 */
   public static boolean allows(Collection<Role> roles, KnowledgeBaseAction action) {
     if (roles == null || action == null) {
       return false;

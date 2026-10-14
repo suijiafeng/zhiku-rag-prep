@@ -10,7 +10,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Locale;
 
-/** First-version format policy: UTF-8 Markdown or plain text only. The client content type is ignored. */
+/** 首版格式策略：仅支持 UTF-8 Markdown 或纯文本。忽略客户端提供的 content type。 */
 final class UploadValidator {
   record Accepted(String mediaType, String fileName, String text, String sha256) {}
 

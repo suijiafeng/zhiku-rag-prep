@@ -5,7 +5,7 @@ import java.time.ZoneId;
 import java.time.Instant;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Business dates are entered in the configured zone and stored as UTC instants; intervals are [from, until). */
+/** 业务日期按配置时区录入，以 UTC 时刻存储；区间为 [from, until)。 */
 @ConfigurationProperties("zhiku.business")
 public record BusinessSettings(ZoneId timeZone) {
   public Instant startOf(LocalDate date) {

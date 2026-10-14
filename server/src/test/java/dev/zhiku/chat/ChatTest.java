@@ -103,7 +103,7 @@ class ChatTest extends IntegrationTest {
     return ask(token(employee, Role.EMPLOYEE), "{\"kbId\":\"" + kb + "\",\"question\":\"" + question + "\"}");
   }
 
-  /** Completed answers only; failed, refused and cancelled turns are stored as status records without text. */
+  /** 只保存已完成回答的正文；失败、拒答和取消的轮次只存为不含正文的状态记录。 */
   int messages() {
     return jdbc.queryForObject("SELECT count(*) FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ? AND m.status = 'complete'", Integer.class, kb);
   }
@@ -321,7 +321,7 @@ class ChatTest extends IntegrationTest {
     assertThat(jdbc.queryForObject("SELECT count(*) FROM message WHERE conversation_id = CAST(? AS uuid)", Integer.class, conversation)).isEqualTo(2);
   }
 
-  /** An earlier completed turn in a new conversation, answered from source A, which retrieval does not return now. */
+  /** 新会话中一个较早的已完成轮次，基于来源 A 回答，而当前检索不再返回 A。 */
   UUID[] earlierTurnFromOtherSource() {
     var doc = UUID.randomUUID();
     var a = UUID.randomUUID();

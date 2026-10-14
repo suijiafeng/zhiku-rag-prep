@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Processes durable ingestion jobs. Claiming uses FOR UPDATE SKIP LOCKED plus a lease; results are written
- * in one transaction only while the lease is still held, so a crashed or slow worker never duplicates output.
+ * 处理持久化的导入任务。认领使用 FOR UPDATE SKIP LOCKED 加 lease；结果仅在仍持有 lease 时
+ * 于同一事务中写入，因此崩溃或缓慢的 worker 绝不会产生重复输出。
  */
 @Component
 public class IngestionWorker {
@@ -38,7 +38,7 @@ public class IngestionWorker {
     this.chunker = new TextChunker(settings.chunkMaxChars(), settings.chunkOverlap(), settings.maxChunks());
   }
 
-  /** Processes at most one job; returns whether a job was claimed. */
+  /** 最多处理一个任务；返回是否认领到任务。 */
   public boolean processNext() {
     repository.failExhausted(settings.maxAttempts());
     var job = claim();
@@ -57,7 +57,7 @@ public class IngestionWorker {
       var blob = repository.blob(job.versionId());
       var chunks = chunker.chunk(new String(blob.content(), StandardCharsets.UTF_8).replaceFirst("^﻿", ""), "text/markdown".equals(blob.mediaType()));
       var provider = embeddings.getIfAvailable();
-      // Vectors are computed before the write transaction so no row lock is held during the model call.
+      // 向量在写事务之前计算，因此模型调用期间不持有行锁。
       var vectors = provider == null || chunks.isEmpty() ? null : provider.embed(chunks.stream().map(TextChunker.Chunk::text).toList());
       int dimension = vectors == null ? 0 : EmbeddingVectors.validate(vectors, chunks.size());
       boolean written = Boolean.TRUE.equals(tx.execute(status -> {

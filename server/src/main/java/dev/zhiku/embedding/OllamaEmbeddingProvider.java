@@ -10,7 +10,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-/** Local Ollama /api/embed. No data leaves the machine; inputs are never logged. */
+/** 本地 Ollama /api/embed。数据不离开本机；输入从不写入日志。 */
 @Component
 @ConditionalOnProperty(name = "zhiku.embedding.provider", havingValue = "ollama")
 public class OllamaEmbeddingProvider implements EmbeddingProvider {

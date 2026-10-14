@@ -15,7 +15,7 @@ class RetrievalRepository {
     this.jdbc = jdbc;
   }
 
-  /** Exact cosine search restricted to already-authorized eligible versions and one embedding space. */
+  /** 精确余弦检索，限定在已授权的有效版本和单一 embedding 空间内。 */
   List<Candidate> nearest(List<UUID> versionIds, String model, float[] query, int k) {
     if (versionIds.isEmpty()) return List.of();
     var literal = EmbeddingVectors.literal(query);

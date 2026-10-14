@@ -8,7 +8,7 @@ import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/** Append-only audit events. Detail must hold non-sensitive metadata only: never document text or questions. */
+/** 只追加的审计事件。detail 只能包含非敏感元数据：绝不包含文档正文或问题。 */
 @Component
 public class AuditLog {
   private final JdbcTemplate jdbc;

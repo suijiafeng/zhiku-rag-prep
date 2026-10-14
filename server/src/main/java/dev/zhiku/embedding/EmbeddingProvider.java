@@ -2,10 +2,10 @@ package dev.zhiku.embedding;
 
 import java.util.List;
 
-/** Port for an embedding model. Queries and chunks must use the same model to be comparable. */
+/** embedding 模型的端口。查询和 chunk 必须使用同一模型才可比较。 */
 public interface EmbeddingProvider {
   String model();
 
-  /** One vector per input, in order. Implementations must time out and must not log inputs. */
+  /** 每个输入对应一个向量，顺序一致。实现必须有超时，且不得记录输入。 */
   List<float[]> embed(List<String> texts);
 }

@@ -5,7 +5,7 @@ spring:
   application:
     name: zhiku-scaffold
   config:
-    # Local developer settings only; .env is git-ignored and never required in tests.
+    # 仅用于本地开发设置；.env 已被 git 忽略，测试中从不需要。
     import: optional:file:../.env[.properties]
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
@@ -21,10 +21,10 @@ spring:
       max-request-size: 21MB
 zhiku:
   business:
-    # Business dates (effective from/until) are interpreted in this zone; storage is UTC.
+    # 业务日期（生效 from/until）按此时区解释；存储使用 UTC。
     time-zone: Asia/Shanghai
   document:
-    # Background removal of content, chunks and vectors after a document is deleted (reads stop immediately).
+    # 文档删除后在后台移除内容、chunk 和向量（读取立即停止）。
     cleanup-enabled: true
     cleanup-poll-interval: PT10S
   ingestion:
@@ -37,37 +37,37 @@ zhiku:
     worker-enabled: true
     poll-interval: PT2S
   embedding:
-    # none | ollama. With none, ingestion stores chunks but marks versions failed: nothing becomes searchable without vectors.
+    # none | ollama。为 none 时，导入会保存 chunk 但将版本标记为失败：没有向量就无法被检索。
     provider: ${ZHIKU_EMBEDDING_PROVIDER:none}
     base-url: ${ZHIKU_OLLAMA_URL:http://127.0.0.1:11434}
     model: ${ZHIKU_EMBEDDING_MODEL:bge-m3}
     batch-size: 32
     timeout: PT60S
   chat:
-    # none | ollama. With none, POST /api/chat returns 503.
+    # none | ollama。为 none 时，POST /api/chat 返回 503。
     provider: ${ZHIKU_CHAT_PROVIDER:none}
     base-url: ${ZHIKU_OLLAMA_URL:http://127.0.0.1:11434}
     model: ${ZHIKU_CHAT_MODEL:qwen3.5:latest}
     context-chunks: 5
     max-chunk-chars: 1500
-    # Total time for one model call, from request to the last piece; the browser stream times out later.
+    # 单次模型调用从请求到最后一个片段的总时长；浏览器端流的超时更晚。
     timeout: PT120S
-    # A model stream with no new data for this long is abandoned.
+    # 模型流超过此时长没有新数据即放弃。
     idle-timeout: PT30S
-    # Longer answers are stopped and discarded (ANSWER_TOO_LONG), never truncated into a completed answer.
+    # 更长的回答会被停止并丢弃（ANSWER_TOO_LONG），绝不截断为已完成回答。
     max-answer-chars: 8000
     stream-timeout: PT150S
-    # Grants and source eligibility are re-read at most this often while drafts stream; a change is detected within it.
+    # 草稿流式输出期间，授权和来源效力最多按此频率重新读取；变更会在此间隔内被发现。
     recheck-interval: PT1S
   widget:
     token-ttl: PT10M
-    # Explicit host origins allowed to call /api/chat from the browser. Empty means no CORS at all.
+    # 允许从浏览器调用 /api/chat 的显式宿主 origin。为空表示完全不启用 CORS。
     allowed-origins: ${ZHIKU_WIDGET_ORIGINS:}
   retrieval:
     default-k: 8
     max-k: 30
   auth:
-    # HS256 key for locally issued tokens; at least 32 bytes. Empty means every token is rejected.
+    # 本地签发 token 的 HS256 密钥；至少 32 字节。为空表示拒绝所有 token。
     jwt-secret: ${ZHIKU_JWT_SECRET:}
     issuer: zhiku-local
     audience: zhiku-api

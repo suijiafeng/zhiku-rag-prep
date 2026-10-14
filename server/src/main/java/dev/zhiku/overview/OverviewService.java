@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Read model for the knowledge-base overview. Aggregates only; other people's question text stays hidden. */
+/** 知识库概览的读模型。只含聚合数据；他人的问题正文保持隐藏。 */
 @Service
 class OverviewService {
   record Day(LocalDate day, int count) {}

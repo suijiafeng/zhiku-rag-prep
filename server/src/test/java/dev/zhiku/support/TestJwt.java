@@ -14,7 +14,7 @@ import java.util.Date;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-/** Signs test tokens with a key generated per JVM run; nothing is stored in the repository. */
+/** 用每次 JVM 运行时生成的密钥签发测试 token；仓库中不保存任何内容。 */
 public final class TestJwt {
   public static final String SECRET = randomSecret();
   public static final String ISSUER = "zhiku-local";

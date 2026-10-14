@@ -10,7 +10,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Public, non-sensitive capability summary: no secrets, URLs, counts of business data or identities. */
+/** 公开、非敏感的能力摘要：不含密钥、URL、业务数据计数或身份。 */
 @RestController
 public class StatusController {
   private final ObjectProvider<ChatModel> chat;
