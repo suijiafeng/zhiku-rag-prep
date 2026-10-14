@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: zhiku-scaffold
+  task:
+    scheduling:
+      # 摄取轮询与删除清理各自有线程，摄取积压不会推迟清理。
+      pool:
+        size: 2
   config:
     # 仅用于本地开发设置；.env 已被 git 忽略，测试中从不需要。
     import: optional:file:../.env[.properties]

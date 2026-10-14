@@ -33,6 +33,35 @@ class IngestionLeaseTest extends IntegrationTest {
   }
 
   @Test
+  void aLostLeaseStopsTheEmbeddingAndWritesNothing() throws Exception {
+    jdbc.update("UPDATE ingestion_job SET status = 'succeeded' WHERE status IN ('queued', 'running')");
+    var kb = UUID.randomUUID();
+    var doc = UUID.randomUUID();
+    var version = UUID.randomUUID();
+    var user = UUID.randomUUID();
+    jdbc.update("INSERT INTO knowledge_base (id, enterprise_id, name) VALUES (?, ?, ?)", kb, UUID.randomUUID(), "失租-" + kb);
+    jdbc.update("INSERT INTO document (id, kb_id, title, created_by) VALUES (?, ?, '手册', ?)", doc, kb, user);
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, created_by) VALUES (?, ?, 'v1', now(), ?)", version, doc, user);
+    jdbc.update("INSERT INTO content_blob (version_id, media_type, file_name, byte_size, sha256, content, uploaded_by) VALUES (?, 'text/plain', 'a.txt', 6, repeat('a', 64), ?, ?)",
+        version, "年假五天".getBytes(StandardCharsets.UTF_8), user);
+    repository.enqueue(version);
+    var worker = new IngestionWorker(repository, settings, tx, providers);
+    var job = worker.claim().orElseThrow();
+    embeddings.beforeEmbed = () -> {
+      jdbc.update("UPDATE ingestion_job SET lease_owner = 'thief' WHERE id = ?", job.jobId());
+      try {
+        Thread.sleep(1200);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    };
+    worker.process(job);
+    assertThat(jdbc.queryForObject("SELECT lease_owner || ':' || status FROM ingestion_job WHERE id = ?", String.class, job.jobId())).isEqualTo("thief:running");
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM chunk WHERE version_id = ?", Integer.class, version)).isZero();
+    assertThat(embeddings.stoppedCalls.get()).isEqualTo(1);
+  }
+
+  @Test
   void aHealthyLongJobKeepsItsLeaseAndIsNotTakenOver() throws Exception {
     jdbc.update("UPDATE ingestion_job SET status = 'succeeded' WHERE status IN ('queued', 'running')");
     var kb = UUID.randomUUID();

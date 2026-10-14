@@ -35,8 +35,14 @@ public class OllamaEmbeddingProvider implements EmbeddingProvider {
 
   @Override
   public List<float[]> embed(List<String> texts) {
+    return embed(texts, () -> false);
+  }
+
+  @Override
+  public List<float[]> embed(List<String> texts, java.util.function.BooleanSupplier stop) {
     var out = new ArrayList<float[]>(texts.size());
     for (int from = 0; from < texts.size(); from += settings.batchSize()) {
+      if (stop.getAsBoolean()) throw new IllegalStateException("Embedding stopped before the next batch");
       var batch = texts.subList(from, Math.min(texts.size(), from + settings.batchSize()));
       var response = client.post().uri("/api/embed").contentType(MediaType.APPLICATION_JSON)
           .body(Map.of("model", settings.model(), "input", batch))

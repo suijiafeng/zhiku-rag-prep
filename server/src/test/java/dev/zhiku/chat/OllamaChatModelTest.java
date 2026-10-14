@@ -116,6 +116,20 @@ class OllamaChatModelTest {
   }
 
   @Test
+  void aLineArrivingByteByByteIsNotIdle() {
+    behaviour = exchange -> {
+      exchange.sendResponseHeaders(200, 0);
+      for (var ch : piece("年假按司龄计算[1]", true).toCharArray()) {
+        write(exchange, String.valueOf(ch));
+        Thread.sleep(60);
+      }
+    };
+    var pieces = new ArrayList<String>();
+    model(Duration.ofSeconds(30), Duration.ofMillis(400)).stream(prompt(), pieces::add, () -> false);
+    assertThat(pieces).containsExactly("年假按司龄计算[1]");
+  }
+
+  @Test
   void aSteadyStreamStillEndsAtTheTotalDeadline() {
     behaviour = exchange -> {
       exchange.sendResponseHeaders(200, 0);

@@ -3,6 +3,7 @@ package dev.zhiku.platform;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -40,6 +41,12 @@ public class ApiExceptionHandler {
   })
   ResponseEntity<ApiError> invalid(Exception e, HttpServletRequest req) {
     return body(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION", "Request validation failed", req);
+  }
+
+  /** 先查后插的并发重复由唯一约束拦下：按冲突报告，不泄露约束名。 */
+  @ExceptionHandler(DuplicateKeyException.class)
+  ResponseEntity<ApiError> duplicate(DuplicateKeyException e, HttpServletRequest req) {
+    return body(HttpStatus.CONFLICT, "ALREADY_EXISTS", "Already exists", req);
   }
 
   @ExceptionHandler(MaxUploadSizeExceededException.class)

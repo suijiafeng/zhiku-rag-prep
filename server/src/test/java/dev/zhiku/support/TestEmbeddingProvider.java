@@ -13,6 +13,8 @@ public class TestEmbeddingProvider implements EmbeddingProvider {
   public final AtomicBoolean failing = new AtomicBoolean(false);
   /** 在每次 embedding 调用前运行，例如在查询正在 embedding 时提交一次删除。 */
   public volatile Runnable beforeEmbed = () -> {};
+  /** 因停止信号而中止的调用次数。 */
+  public final java.util.concurrent.atomic.AtomicInteger stoppedCalls = new java.util.concurrent.atomic.AtomicInteger();
 
   @Override
   public String model() {
@@ -21,7 +23,16 @@ public class TestEmbeddingProvider implements EmbeddingProvider {
 
   @Override
   public List<float[]> embed(List<String> texts) {
+    return embed(texts, () -> false);
+  }
+
+  @Override
+  public List<float[]> embed(List<String> texts, java.util.function.BooleanSupplier stop) {
     beforeEmbed.run();
+    if (stop.getAsBoolean()) {
+      stoppedCalls.incrementAndGet();
+      throw new IllegalStateException("embedding stopped (test)");
+    }
     if (failing.get()) throw new IllegalStateException("embedding service unavailable (test)");
     return texts.stream().map(TestEmbeddingProvider::vector).toList();
   }

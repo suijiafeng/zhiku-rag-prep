@@ -63,14 +63,21 @@ public class IngestionWorker {
   public void process(ClaimedJob job) {
     // 处理期间按租约的三分之一周期续租，健康的长任务不会被其他 worker 接管。
     long period = Math.max(100, settings.leaseSeconds() * 1000L / 3);
-    var heartbeat = HEARTBEAT.scheduleAtFixedRate(() -> repository.renewLease(job.jobId(), owner, settings.leaseSeconds()),
-        period, period, TimeUnit.MILLISECONDS);
+    // 续租失败说明任务已被接管：停止剩余的向量化批次，不再浪费计算；提交时仍以所有权检查为准。
+    var lost = new java.util.concurrent.atomic.AtomicBoolean();
+    var heartbeat = HEARTBEAT.scheduleAtFixedRate(() -> {
+      try {
+        if (!repository.renewLease(job.jobId(), owner, settings.leaseSeconds())) lost.set(true);
+      } catch (RuntimeException e) {
+        lost.set(true);
+      }
+    }, period, period, TimeUnit.MILLISECONDS);
     try {
       var blob = repository.blob(job.versionId());
       var chunks = chunker.chunk(new String(blob.content(), StandardCharsets.UTF_8).replaceFirst("^﻿", ""), "text/markdown".equals(blob.mediaType()));
       var provider = embeddings.getIfAvailable();
       // 向量在写事务之前计算，因此模型调用期间不持有行锁。
-      var vectors = provider == null || chunks.isEmpty() ? null : provider.embed(chunks.stream().map(TextChunker.Chunk::text).toList());
+      var vectors = provider == null || chunks.isEmpty() ? null : provider.embed(chunks.stream().map(TextChunker.Chunk::text).toList(), lost::get);
       int dimension = vectors == null ? 0 : EmbeddingVectors.validate(vectors, chunks.size());
       boolean written = Boolean.TRUE.equals(tx.execute(status -> {
         if (!repository.holdsLease(job.jobId(), owner)) return false;

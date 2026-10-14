@@ -16,10 +16,13 @@ class IngestionScheduling {
     this.worker = worker;
   }
 
+  /** 一次轮询的任务上限：积压时让出调度线程，其他定时任务才有机会运行。 */
+  static final int MAX_JOBS_PER_POLL = 20;
+
   @Scheduled(fixedDelayString = "${zhiku.ingestion.poll-interval}")
   void poll() {
-    while (worker.processNext()) {
-      // 逐个认领，处理完所有可用任务
+    for (int n = 0; n < MAX_JOBS_PER_POLL && worker.processNext(); n++) {
+      // 逐个认领，最多处理 MAX_JOBS_PER_POLL 个
     }
   }
 }

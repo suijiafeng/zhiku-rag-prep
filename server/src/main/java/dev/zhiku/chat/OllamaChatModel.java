@@ -119,8 +119,8 @@ public class OllamaChatModel implements ChatModel {
     try {
       var reader = new InputStreamReader(in, StandardCharsets.UTF_8);
       String line;
-      while ((line = readLine(reader)) != null) {
-        lastData.set(System.nanoTime());
+      // 每收到一个字符就刷新活动时间：空闲指没有数据到达，而不是没有完整的一行。
+      while ((line = readLine(reader, () -> lastData.set(System.nanoTime()))) != null) {
         if (stop.get() != null || cancelled.getAsBoolean()) break;
         if (line.isBlank()) continue;
         var node = json.readTree(line);
@@ -140,10 +140,11 @@ public class OllamaChatModel implements ChatModel {
   }
 
   /** 读取一行 NDJSON，有长度上限，防止异常上游让单行无限增长；流结束时返回 null。 */
-  static String readLine(Reader reader) throws IOException {
+  static String readLine(Reader reader, Runnable onData) throws IOException {
     var sb = new StringBuilder();
     int c;
     while ((c = reader.read()) != -1) {
+      onData.run();
       if (c == '\n') return sb.toString();
       if (sb.length() >= MAX_LINE_CHARS) throw new IllegalStateException("Chat model line exceeds the limit");
       sb.append((char) c);
