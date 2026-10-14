@@ -39,3 +39,10 @@ Python yaml.safe_load 成功解析 compose.yaml、contracts/openapi.yaml、.gith
 - 端到端（本机 compose Postgres + spring-boot + Vite，浏览器操作）：Flyway 在空库执行 V1–V6；开发令牌连接后列出授权库；篡改签名 401；页面新建文档与版本、批准、发布；API 上传 .md 返回 202，.pdf 返回 422；真实 worker 切块后因未配置 embedding 将版本标记失败且不重试，页面显示原因；问答页经 SSE 收到 DEPENDENCY_UNAVAILABLE 与请求编号，未保存会话；刷新后令牌消失。
 - 联调中发现并修复：无内容版本被显示为"解析中"并无限轮询。
 - 未验证：真实 embedding 模型下的检索与问答（本机无可用 embedding 接口）；真实模型回答质量与引用语义；多实例并发 worker；CI 在 GitHub 运行；生产 IdP、性能与安全审计。
+
+## 设计稿其余页面 · 2026-10-14（本机）
+- server：`mvn -B clean verify` 110 项通过（新增管理员授权查询、/api/me、角色矩阵、反馈与问答记录、挂件令牌提交反馈）。Flyway V7 在已有数据的本地库上升级成功。
+- admin-web：`npm run check` 84 项通过；widget：31 项通过。
+- 浏览器联调：用户与权限页授权与撤销（成员数 2→3→2，审计记录 KB_GRANT/KB_REVOKE）；问答记录页显示本人正文、隐藏他人正文；本人可评价、评价他人 403；登录页无效令牌提示、有效令牌进入、断开回到登录；API 与集成页按所选知识库生成代码；挂件静态预览桌面 380×620、手机全屏无横向滚动；问答失败显示错误态与重试。
+- 联调用的两条问答记录是写入本机开发库的虚构数据，不在仓库中。
+- 未验证：挂件在真实宿主中的跨域调用与反馈提交；撤销确认弹框的浏览器点击；真实 embedding 与模型下的完整问答。
