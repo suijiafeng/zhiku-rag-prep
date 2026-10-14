@@ -71,6 +71,39 @@ export interface HistoryCitation {
   excerpt: string;
 }
 
+export type FeedbackReason = "WRONG" | "MISSING" | "BAD_CITATION" | "SHOULD_REFUSE" | "OUTDATED";
+export type FeedbackStatus = "open" | "in_progress" | "to_verify" | "resolved" | "wont_fix";
+
+export interface FeedbackInfo {
+  rating: "up" | "down";
+  reason: FeedbackReason | null;
+  comment: string | null;
+  version: number;
+  status: FeedbackStatus;
+  updatedAt: string;
+}
+
+export interface RecordItem {
+  messageId: string;
+  createdAt: string;
+  own: boolean;
+  question: string | null;
+  citationCount: number;
+  rating: "up" | "down" | null;
+  reason: FeedbackReason | null;
+  comment: string | null;
+  status: FeedbackStatus | null;
+  rootCause: string | null;
+}
+
+export interface RecordStats {
+  total: number;
+  up: number;
+  down: number;
+  unrated: number;
+  reasons: Partial<Record<FeedbackReason, number>>;
+}
+
 export interface HistoryMessage {
   id: string;
   question: string;
@@ -80,6 +113,7 @@ export interface HistoryMessage {
   stale: boolean;
   citations: HistoryCitation[];
   createdAt: string;
+  feedback: FeedbackInfo | null;
 }
 
 export type Role = "IT_ADMIN" | "KB_OPERATOR" | "EMPLOYEE";
@@ -184,6 +218,12 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     grants: (kbId: string) => request<Grant[]>(`${kb(kbId)}/grants`),
     grant: (kbId: string, userId: string) => request<void>(`${kb(kbId)}/grants/${e(userId)}`, { method: "PUT" }),
     revoke: (kbId: string, userId: string) => request<void>(`${kb(kbId)}/grants/${e(userId)}`, { method: "DELETE" }),
+    rate: (messageId: string, body: { rating: "up" | "down"; reason?: FeedbackReason; comment?: string }) =>
+      request<FeedbackInfo>(`/api/messages/${e(messageId)}/feedback`, { ...post(body), method: "PUT" }),
+    records: (kbId: string, filter: "all" | "up" | "down" | "none") =>
+      request<{ items: RecordItem[]; stats: RecordStats; canReadOthers: boolean }>(`${kb(kbId)}/records?filter=${filter}`),
+    updateFeedback: (kbId: string, messageId: string, body: { status: FeedbackStatus; rootCause?: string }) =>
+      request<void>(`${kb(kbId)}/feedback/${e(messageId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     conversations: () => request<Conversation[]>("/api/conversations"),
     messages: (id: string) => request<HistoryMessage[]>(`/api/conversations/${e(id)}/messages`),
   };

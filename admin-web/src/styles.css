@@ -161,3 +161,12 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .rule-allowed { color: #1f9d55; font-weight: 600; }
 .rule-requires_explicit_grant { color: #d97706; font-size: 12px; }
 .rule-never { color: #8b93a7; }
+
+.feedback-bar { margin-top: 4px; display: grid; gap: 6px; }
+.feedback-reason { width: 120px; }
+.feedback-form .ant-input { width: 240px; }
+.record-status { display: flex; gap: 6px; flex-wrap: wrap; }
+.record-cause { width: 170px; }
+.reasons-title { margin-top: 16px; }
+.reason-row { display: grid; grid-template-columns: 72px 1fr auto; gap: 8px; align-items: center; font-size: 13px; }
+.reason-row .ant-progress { margin: 0; }

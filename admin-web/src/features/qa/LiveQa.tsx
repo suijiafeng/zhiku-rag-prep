@@ -3,6 +3,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { type ApiClient, type Conversation, type HistoryMessage } from "../../api/client";
 import { streamAnswer } from "../../api/chatStream";
 import { AnswerText } from "./AnswerText";
+import { FeedbackBar } from "./FeedbackBar";
 import { chatReducer, initialChatState, type Citation } from "./chatState";
 
 const VALIDATED_NOTE = "来源信息检查通过，请核对内容";
@@ -129,6 +130,14 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                       <Tag color="blue">{VALIDATED_NOTE}</Tag>
                       {m.stale && <Tag color="orange">所依据版本已不是当前生效版本</Tag>}
                     </div>
+                    <FeedbackBar current={m.feedback} onSubmit={async (body) => {
+                      try {
+                        await client.rate(m.id, body);
+                      } catch {
+                        setError("反馈提交失败");
+                      }
+                      await loadHistory(conversationId);
+                    }} />
                   </>
                 )}
               </div>
