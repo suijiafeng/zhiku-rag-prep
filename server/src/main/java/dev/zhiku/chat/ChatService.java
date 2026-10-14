@@ -8,6 +8,7 @@ import dev.zhiku.chat.ChatModel.Message;
 import dev.zhiku.document.DocumentService;
 import dev.zhiku.platform.ApiException;
 import dev.zhiku.retrieval.Retrieval.Candidate;
+import dev.zhiku.retrieval.Retrieval.Stage;
 import dev.zhiku.retrieval.RetrievalService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -130,7 +131,7 @@ public class ChatService {
   private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId)
       throws IOException {
     var model = requireModel();
-    var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId);
+    var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId, UUID.randomUUID(), new Instant[1]);
     // 排队期间已取消的请求不再做向量化，也不调用模型。
     if (sink.cancelled()) {
       record(turn, "cancelled", null);
@@ -141,7 +142,7 @@ public class ChatService {
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
     List<Candidate> sources;
     try {
-      sources = retrieval.searchAuthorized(scope, kbId, searchQuery, settings.contextChunks(), Instant.now()).candidates();
+      sources = retrieval.searchAuthorized(scope, kbId, searchQuery, settings.contextChunks(), Instant.now(), "chat", turn.traceId()).candidates();
     } catch (ApiException e) {
       fail(turn, sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
       return;
@@ -163,6 +164,7 @@ public class ChatService {
     }
     var answer = new StringBuilder();
     var lastCheck = new long[] {System.nanoTime()};
+    turn.modelStarted()[0] = Instant.now();
     try {
       model.stream(prompt(question, sources, context), token -> {
         // 披露更多草稿前重新读取授权和效力（每个重新检查间隔内最多一次）。
@@ -231,7 +233,11 @@ public class ChatService {
     var citations = sources.stream().map(s -> Map.of("documentId", s.documentId().toString(), "versionId", s.versionId().toString(),
         "title", s.title(), "excerpt", excerpt(s.text()))).toList();
     sink.send("validated", Map.of("citations", citations, "validation", "metadata-only"));
-    sink.send("done", Map.of("status", "complete", "conversationId", stored[0].toString(), "messageId", stored[1].toString()));
+    retrieval.recordGeneration(turn.traceId(), Stage.timed("generation", "上下文与生成", "success", turn.modelStarted()[0],
+        "入模 " + sources.size() + " 块 · 模型 " + model.model() + " · 引用元数据检查通过"));
+    retrieval.linkMessage(turn.traceId(), stored[1]);
+    sink.send("done", Map.of("status", "complete", "conversationId", stored[0].toString(), "messageId", stored[1].toString(),
+        "traceId", turn.traceId().toString()));
   }
 
   /**
@@ -298,7 +304,7 @@ public class ChatService {
   /** 保存被拒答或失败的轮次（不含草稿正文），然后发送终止错误事件。 */
   private void fail(Turn turn, ChatSink sink, String code, String message, String requestId) throws IOException {
     record(turn, "NO_EVIDENCE".equals(code) ? "refused" : "failed", code);
-    error(sink, code, message, requestId);
+    error(sink, code, message, requestId, turn.traceId());
   }
 
   private void record(Turn turn, String status, String code) {
@@ -307,6 +313,16 @@ public class ChatService {
           : repository.createConversation(turn.scope().enterpriseId(), turn.scope().userId(), turn.kbId(), title(turn.question()));
       link(turn, repository.saveOutcome(id, turn.question(), status, code, turn.model()));
     });
+    var started = turn.modelStarted()[0];
+    Stage stage;
+    if ("cancelled".equals(status)) {
+      stage = started == null ? Stage.skipped("generation", "上下文与生成", "已取消，未调用模型")
+          : Stage.timed("generation", "上下文与生成", "cancelled", started, "生成中被取消");
+    } else {
+      stage = started == null ? Stage.skipped("generation", "上下文与生成", "未调用模型（" + code + "）")
+          : Stage.timed("generation", "上下文与生成", "failed", started, "失败：" + code);
+    }
+    retrieval.recordGeneration(turn.traceId(), stage);
   }
 
   private void link(Turn turn, UUID messageId) {
@@ -315,13 +331,15 @@ public class ChatService {
     }
   }
 
-  private record Turn(AccessScope scope, UUID kbId, UUID conversationId, String question, String model, UUID clientRequestId) {}
+  private record Turn(AccessScope scope, UUID kbId, UUID conversationId, String question, String model, UUID clientRequestId, UUID traceId,
+      Instant[] modelStarted) {}
 
-  private static void error(ChatSink sink, String code, String message, String requestId) throws IOException {
+  private static void error(ChatSink sink, String code, String message, String requestId, UUID traceId) throws IOException {
     var data = new LinkedHashMap<String, String>();
     data.put("code", code);
     data.put("message", message);
     data.put("requestId", requestId);
+    data.put("traceId", traceId.toString());
     sink.send("error", data);
   }
 

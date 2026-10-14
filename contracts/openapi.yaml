@@ -389,6 +389,44 @@ paths:
         '202': {description: Queued}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/traces/{traceId}:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: traceId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      operationId: retrievalTrace
+      description: >-
+        DEBUG_AND_EVALUATE. Stored trace of one retrieval from chat, debug or evaluation (same retrieval path). Metadata
+        only: no question, chunk text or vectors. Chat traces add a generation stage and link the stored messageId.
+        Candidates of deleted documents keep ids and scores without a title. 404 when the trace is not in this
+        knowledge base. Retention period is not decided yet (ADR-002).
+      responses:
+        '200':
+          description: Trace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  traceId: {type: string, format: uuid}
+                  origin: {type: string, enum: [chat, debug, evaluation]}
+                  at: {type: string, format: date-time}
+                  k: {type: integer}
+                  embeddingModel: {type: string}
+                  dimension: {type: integer}
+                  messageId: {type: string, format: uuid}
+                  createdAt: {type: string, format: date-time}
+                  stages: {type: array, items: {type: object}}
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        rank: {type: integer}
+                        chunkId: {type: string, format: uuid}
+                        versionId: {type: string, format: uuid}
+                        documentTitle: {type: string}
+                        score: {type: number}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/retrieval-debug:
     parameters: [{$ref: '#/components/parameters/kbId'}]
     post:
@@ -396,7 +434,8 @@ paths:
       description: >-
         DEBUG_AND_EVALUATE (KB_OPERATOR). Eligible versions are resolved from grants and effectivity before any vector
         comparison; exact cosine search within one embedding model and dimension. Stages that did not run are reported
-        as skipped. 503 when no embedding model is configured or it is unavailable.
+        as skipped. 503 when no embedding model is configured or it is unavailable. Every search, including failed
+        ones, keeps a trace under traceId (see /traces/{traceId}).
       requestBody:
         required: true
         content:
@@ -565,6 +604,8 @@ components:
               key: {type: string}
               name: {type: string}
               status: {type: string, enum: [success, failed, skipped, cancelled]}
+              startedAt: {type: string, format: date-time, description: null for skipped stages}
+              endedAt: {type: string, format: date-time}
               elapsedMs: {type: integer}
               summary: {type: string}
         candidates:
@@ -667,7 +708,7 @@ x-sse:
     - Draft is provisional. Metadata validation does not establish semantic correctness.
     - Disconnect, cancellation or error must not preserve a usable answer. Every turn is stored with status complete | refused (NO_EVIDENCE) | cancelled | failed; only complete turns keep answer text and sources, and only they enter follow-up context or accept feedback.
     - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1].
-    - done.data includes conversationId (to continue) and messageId (for feedback).
+    - done.data includes conversationId (to continue), messageId (for feedback) and traceId; error.data includes traceId once retrieval has started.
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
     - Follow-ups (conversationId) use at most the last three prior turns as non-evidence context; turns with unavailable sources are excluded entirely, answers based on non-current versions keep only the question. Retrieval uses the previous visible question plus the new one; facts still come only from freshly retrieved eligible sources.
   errorCodes: [NO_EVIDENCE, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE]

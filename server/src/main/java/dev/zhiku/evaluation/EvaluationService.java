@@ -232,7 +232,7 @@ class EvaluationService {
         continue;
       }
       long started = System.nanoTime();
-      var trace = retrieval.searchAuthorized(scope, kbId, c[1], k, Instant.now());
+      var trace = retrieval.searchAuthorized(scope, kbId, c[1], k, Instant.now(), "evaluation", UUID.randomUUID());
       int latency = (int) ((System.nanoTime() - started) / 1_000_000);
       model = trace.embeddingModel();
       var retrieved = new HashSet<UUID>();

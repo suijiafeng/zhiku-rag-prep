@@ -141,6 +141,31 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void anAnswerSharesItsRetrievalTraceAndAddsTheGenerationStage() throws Exception {
+    var done = last(ask("年假有几天?")).data();
+    var traceId = done.get("traceId").asText();
+    var messageId = done.get("messageId").asText();
+    mvc.perform(get("/api/knowledge-bases/{kb}/traces/{id}", kb, traceId).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.origin").value("chat"))
+        .andExpect(jsonPath("$.messageId").value(messageId))
+        .andExpect(jsonPath("$.stages.length()").value(6))
+        .andExpect(jsonPath("$.stages[5].key").value("generation"))
+        .andExpect(jsonPath("$.stages[5].status").value("success"))
+        .andExpect(jsonPath("$.stages[5].summary").value(org.hamcrest.Matchers.containsString("test-scripted")));
+  }
+
+  @Test
+  void aFailedAnswerRecordsWhichStageFailed() throws Exception {
+    model.failMidway = true;
+    var error = last(ask("年假有几天?")).data();
+    mvc.perform(get("/api/knowledge-bases/{kb}/traces/{id}", kb, error.get("traceId").asText())
+            .header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
+        .andExpect(jsonPath("$.stages[5].status").value("failed"))
+        .andExpect(jsonPath("$.stages[5].summary").value(org.hamcrest.Matchers.containsString("MODEL_UNAVAILABLE")));
+  }
+
+  @Test
   void sourcesAreDelimitedAsUntrustedDataInThePrompt() throws Exception {
     ask("年假有几天?");
     var system = model.lastPrompt.getFirst();

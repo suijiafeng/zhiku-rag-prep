@@ -2,6 +2,7 @@ package dev.zhiku.retrieval;
 
 import static dev.zhiku.support.TestJwt.bearer;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -115,6 +116,47 @@ class RetrievalTest extends IntegrationTest {
         .andExpect(jsonPath("$.embeddingModel").value(embeddings.model()))
         .andExpect(jsonPath("$.candidates[0].rank").value(1));
     assertThat(versionsOf(result).getFirst()).isEqualTo(leave.toString());
+  }
+
+  ResultActions trace(UUID kbId, String traceId, UUID user, Role role) throws Exception {
+    return mvc.perform(get("/api/knowledge-bases/{kb}/traces/{id}", kbId, traceId)
+        .header(HttpHeaders.AUTHORIZATION, bearer(TestJwt.token(enterprise, user, role))));
+  }
+
+  @Test
+  void everySearchKeepsATraceOfStagesAndCandidatesWithoutText() throws Exception {
+    ingest(kb, "员工手册", LEAVE, "2025-01-01T00:00:00Z", null, true);
+    var body = json.readTree(search(kb, "{\"query\":\"年假有几天\",\"k\":3}", operator, Role.KB_OPERATOR)
+        .andExpect(jsonPath("$.stages[1].startedAt").isString())
+        .andExpect(jsonPath("$.stages[1].endedAt").isString())
+        .andReturn().getResponse().getContentAsString());
+    var traceId = body.get("traceId").asText();
+    var stored = trace(kb, traceId, operator, Role.KB_OPERATOR).andExpect(status().isOk())
+        .andExpect(jsonPath("$.origin").value("debug"))
+        .andExpect(jsonPath("$.k").value(3))
+        .andExpect(jsonPath("$.embeddingModel").value(embeddings.model()))
+        .andExpect(jsonPath("$.stages.length()").value(5))
+        .andExpect(jsonPath("$.stages[1].key").value("vector"))
+        .andExpect(jsonPath("$.stages[1].status").value("success"))
+        .andExpect(jsonPath("$.stages[1].elapsedMs").isNumber())
+        .andExpect(jsonPath("$.candidates[0].rank").value(1))
+        .andExpect(jsonPath("$.candidates[0].chunkId").value(body.get("candidates").get(0).get("chunkId").asText()))
+        .andExpect(jsonPath("$.candidates[0].score").isNumber())
+        .andReturn().getResponse().getContentAsString();
+    assertThat(stored).doesNotContain("年假有几天").doesNotContain("司龄");
+
+    trace(kb, traceId, operator, Role.EMPLOYEE).andExpect(status().isForbidden());
+    trace(newKb(operator), traceId, operator, Role.KB_OPERATOR).andExpect(status().isNotFound());
+    trace(kb, UUID.randomUUID().toString(), operator, Role.KB_OPERATOR).andExpect(status().isNotFound());
+  }
+
+  @Test
+  void aFailedSearchStillLeavesItsTrace() throws Exception {
+    ingest(kb, "员工手册", LEAVE, "2025-01-01T00:00:00Z", null, true);
+    embeddings.failing.set(true);
+    search(kb, "{\"query\":\"年假\"}", operator, Role.KB_OPERATOR).andExpect(status().isServiceUnavailable());
+    assertThat(jdbc.queryForObject("SELECT s.status FROM retrieval_trace t JOIN retrieval_trace_stage s ON s.trace_id = t.id "
+        + "WHERE t.kb_id = ? AND s.key = 'vector'", String.class, kb)).isEqualTo("failed");
   }
 
   @Test
