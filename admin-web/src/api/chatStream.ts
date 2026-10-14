@@ -20,7 +20,9 @@ function toEvent(name: string, raw: string): ChatEvent | null {
     return protocol();
   }
   if (!isObj(data)) return protocol();
-  if (name === "draft" && isStr(data.text)) return { event: "draft", data: { text: data.text } };
+  if (name === "draft" && isStr(data.text)) {
+    return { event: "draft", data: typeof data.seq === "number" ? { text: data.text, seq: data.seq } : { text: data.text } };
+  }
   if (name === "validated" && data.validation === "metadata-only" && Array.isArray(data.citations) && data.citations.every(isCitation)) {
     return { event: "validated", data: { citations: data.citations, validation: "metadata-only" } };
   }
@@ -28,7 +30,11 @@ function toEvent(name: string, raw: string): ChatEvent | null {
     return { event: "done", data: isStr(data.conversationId) ? { status: "complete", conversationId: data.conversationId } : { status: "complete" } };
   }
   if (name === "error" && isStr(data.code) && isStr(data.message)) {
-    return { event: "error", data: { code: data.code, message: data.message, requestId: isStr(data.requestId) ? data.requestId : "" } };
+    return { event: "error", data: {
+      code: data.code, message: data.message, requestId: isStr(data.requestId) ? data.requestId : "",
+      ...(isStr(data.traceId) ? { traceId: data.traceId } : {}),
+      ...(typeof data.retryable === "boolean" ? { retryable: data.retryable } : {}),
+    } };
   }
   return protocol();
 }

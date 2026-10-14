@@ -11,10 +11,10 @@ export interface Citation {
 }
 
 export type ChatEvent =
-  | { event: "draft"; data: { text: string } }
+  | { event: "draft"; data: { text: string; seq?: number } }
   | { event: "validated"; data: { citations: Citation[]; validation: "metadata-only" } }
   | { event: "done"; data: { status: "complete"; conversationId?: string } }
-  | { event: "error"; data: { code: string; message: string; requestId: string } };
+  | { event: "error"; data: { code: string; message: string; requestId: string; traceId?: string; retryable?: boolean } };
 
 export type ChatStatus = "idle" | "streaming" | "validated" | "complete" | "failed" | "cancelled";
 
@@ -23,12 +23,14 @@ export interface ChatState {
   question: string;
   text: string;
   citations: Citation[];
-  error: { code: string; message: string; requestId?: string } | undefined;
+  error: { code: string; message: string; requestId?: string; traceId?: string; retryable?: boolean } | undefined;
+  /** 已应用的最大草稿序号，用于丢弃重复片段。 */
+  lastSeq: number;
 }
 
 export type ChatAction = { type: "start"; question: string } | { type: "event"; event: ChatEvent } | { type: "cancel" } | { type: "reset" };
 
-export const initialChatState: ChatState = { status: "idle", question: "", text: "", citations: [], error: undefined };
+export const initialChatState: ChatState = { status: "idle", question: "", text: "", citations: [], error: undefined, lastSeq: 0 };
 
 const terminal = (s: ChatStatus) => s === "complete" || s === "failed" || s === "cancelled";
 
@@ -50,9 +52,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   const { event } = action;
   switch (event.event) {
     case "draft":
-      return state.status === "streaming"
-        ? { ...state, text: state.text + event.data.text }
-        : discard(state, "failed", protocolError("validated 之后不应再有 draft"));
+      if (state.status !== "streaming") return discard(state, "failed", protocolError("validated 之后不应再有 draft"));
+      if (event.data.seq !== undefined && event.data.seq <= state.lastSeq) return state;
+      return { ...state, text: state.text + event.data.text, lastSeq: event.data.seq ?? state.lastSeq };
     case "validated":
       return state.status === "streaming"
         ? { ...state, status: "validated", citations: event.data.citations }

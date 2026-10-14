@@ -125,6 +125,12 @@ describe("streamAnswer", () => {
     expect(conversation).toBeUndefined();
   });
 
+  it("reads draft sequence numbers and the retry hint from the stream", async () => {
+    const { state } = await run(stream(sse("start", { requestId: "r", traceId: "t" }) + sse("draft", { text: "年", seq: 1 }) + sse("draft", { text: "年", seq: 1 })
+      + sse("error", { code: "MODEL_UNAVAILABLE", message: "x", requestId: "r", traceId: "t", retryable: true, discardDraft: true })));
+    expect(state).toMatchObject({ status: "failed", error: { code: "MODEL_UNAVAILABLE", retryable: true, traceId: "t" } });
+  });
+
   it("turns HTTP errors into a failed state", async () => {
     const { state } = await run(json({ code: "DEPENDENCY_UNAVAILABLE", message: "x", requestId: "r" }, 503));
     expect(state).toMatchObject({ status: "failed", error: { code: "DEPENDENCY_UNAVAILABLE" } });

@@ -96,3 +96,24 @@ describe("switching context", () => {
     expect(visibleCitations(false, [cite], undefined)).toEqual([]);
   });
 });
+
+describe("protocol fields", () => {
+  it("drops a draft whose sequence number was already applied", () => {
+    const state = run([
+      { type: "start", question: "年假?" },
+      { type: "event", event: { event: "draft", data: { text: "年假", seq: 1 } } },
+      { type: "event", event: { event: "draft", data: { text: "年假", seq: 1 } } },
+      { type: "event", event: { event: "draft", data: { text: "五天", seq: 2 } } },
+    ]);
+    expect(state.text).toBe("年假五天");
+  });
+
+  it("keeps whether a failure is worth retrying", () => {
+    const state = run([
+      { type: "start", question: "年假?" },
+      { type: "event", event: { event: "error", data: { code: "NO_EVIDENCE", message: "x", requestId: "r", retryable: false } } },
+    ]);
+    expect(state.error).toMatchObject({ code: "NO_EVIDENCE", retryable: false });
+  });
+});
+

@@ -176,7 +176,8 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                 {stream.status === "failed" && stream.error?.code === "ANSWER_SAVED" && <Alert type="info" showIcon title={stream.error.message} />}
                 {stream.status === "failed" && stream.error?.code !== "ANSWER_SAVED" && (
                   <ErrorState code={stream.error?.code ?? "UNKNOWN"} message={stream.error?.message ?? "生成失败"}
-                    requestId={stream.error?.requestId || undefined} onRetry={() => void send(stream.question)} />
+                    requestId={stream.error?.requestId || undefined}
+                    {...(stream.error?.retryable === false ? {} : { onRetry: () => void send(stream.question) })} />
                 )}
               </div>
             </>
