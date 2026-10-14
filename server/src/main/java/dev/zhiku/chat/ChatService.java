@@ -280,6 +280,7 @@ public class ChatService {
     if (!fresh.permits(scope.enterpriseId(), kbId, ASK_AND_CITE)) return "ACCESS_REVOKED";
     var eligible = new HashSet<>(documents.eligibleVersionIds(fresh, kbId, Instant.now()));
     if (!sources.stream().allMatch(s -> eligible.contains(s.versionId()))) return "SOURCE_UNAVAILABLE";
+    if (!retrieval.allChunksExist(sources.stream().map(Candidate::chunkId).toList())) return "SOURCE_UNAVAILABLE";
     if (context.isEmpty()) return null;
     var stillVisible = priorContext(fresh, conversationId).stream().map(MessageView::id).collect(Collectors.toSet());
     return context.stream().allMatch(m -> stillVisible.contains(m.id())) ? null : "SOURCE_UNAVAILABLE";

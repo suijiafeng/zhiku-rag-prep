@@ -35,4 +35,9 @@ class RetrievalRepository {
             rs.getInt("start_offset"), rs.getInt("end_offset"), rs.getString("text"), rs.getDouble("score"), ++rank[0]),
         literal, versionIds.toArray(UUID[]::new), model, query.length, literal, k);
   }
+
+  boolean allChunksExist(List<UUID> chunkIds) {
+    var found = jdbc.queryForObject("SELECT count(*) FROM chunk WHERE id = ANY(?)", Integer.class, (Object) chunkIds.toArray(UUID[]::new));
+    return found != null && found == chunkIds.stream().distinct().count();
+  }
 }

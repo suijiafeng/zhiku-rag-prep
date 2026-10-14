@@ -75,4 +75,9 @@ public class RetrievalService {
         new Stage("rerank", "重排", "skipped", null, "未接入"));
     return new Result(UUID.randomUUID(), question, at, provider.model(), query.length, stages, candidates);
   }
+
+  /** 重建索引会整体替换切块：引用的切块已不存在时，答案不能再按这些引用披露。 */
+  public boolean allChunksExist(List<UUID> chunkIds) {
+    return chunkIds.isEmpty() || repository.allChunksExist(chunkIds);
+  }
 }

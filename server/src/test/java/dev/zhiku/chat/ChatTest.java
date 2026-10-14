@@ -223,6 +223,18 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void aRebuildThatReplacesTheCitedChunksDuringGenerationStopsTheAnswer() throws Exception {
+    model.beforeFinish = () -> {
+      jdbc.update("DELETE FROM chunk WHERE version_id = ?", version);
+      jdbc.update("INSERT INTO chunk (id, version_id, seq, start_offset, end_offset, text) VALUES (gen_random_uuid(), ?, 0, 0, 10, '年假按司龄计算')", version);
+    };
+    var frames = ask("年假有几天?");
+    assertThat(names(frames)).doesNotContain("validated", "done");
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("SOURCE_UNAVAILABLE");
+    assertThat(messages()).isZero();
+  }
+
+  @Test
   void withdrawalDuringGenerationStopsDisclosure() throws Exception {
     model.beforeFinish = () -> jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
     var frames = ask("年假有几天?");
