@@ -161,6 +161,56 @@ export interface OverviewApi {
   recentQuestions: { messageId: string; own: boolean; question: string | null; citationCount: number; createdAt: string }[];
 }
 
+export interface EvalEvidence {
+  versionId: string;
+  documentTitle: string;
+  versionLabel: string;
+  startOffset: number;
+  endOffset: number;
+  quote: string;
+}
+
+export interface EvalCase {
+  id: string;
+  question: string;
+  label: "answerable" | "clarify" | "handoff";
+  status: "candidate" | "approved";
+  source: string;
+  createdAt: string;
+  evidence: EvalEvidence[];
+}
+
+export interface EvalSummary {
+  cases: number;
+  evaluated: number;
+  prepFailed: number;
+  notApplicable: number;
+  hit: { num: number; den: number };
+  recall: { num: number; den: number };
+  recallMacro: number | null;
+  p95Ms: number | null;
+}
+
+export interface EvalResult {
+  caseId: string;
+  question: string;
+  label: string;
+  mappingFailed: boolean;
+  hit: boolean;
+  evidenceHit: number;
+  evidenceTotal: number;
+  latencyMs: number;
+}
+
+export interface EvalRun {
+  id: string;
+  k: number;
+  model: string | null;
+  createdAt: string;
+  summary: EvalSummary;
+  results: EvalResult[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -228,6 +278,14 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     retrievalDebug: (kbId: string, query: string, k?: number) =>
       request<TraceResult>(`${kb(kbId)}/retrieval-debug`, post(k === undefined ? { query } : { query, k })),
     overview: (kbId: string) => request<OverviewApi>(`${kb(kbId)}/overview`),
+    evalCases: (kbId: string) => request<EvalCase[]>(`${kb(kbId)}/eval-cases`),
+    createEvalCase: (kbId: string, body: { question: string; label: EvalCase["label"]; source?: string; evidence?: { versionId: string; quote: string }[] }) =>
+      request<{ id: string }>(`${kb(kbId)}/eval-cases`, post(body)),
+    setEvalEvidence: (kbId: string, caseId: string, evidence: { versionId: string; quote: string }[]) =>
+      request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/evidence`, { ...post({ evidence }), method: "PUT" }),
+    approveEvalCase: (kbId: string, caseId: string) => request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/approve`, { method: "POST" }),
+    runEvaluation: (kbId: string, k: number) => request<EvalRun>(`${kb(kbId)}/eval-runs`, post({ k })),
+    latestRun: (kbId: string) => request<EvalRun | undefined>(`${kb(kbId)}/eval-runs/latest`),
     me: () => request<Me>("/api/me"),
     rolePolicy: () => request<RolePolicy>("/api/policy/roles"),
     adminKnowledgeBases: () => request<AdminKnowledgeBase[]>("/api/admin/knowledge-bases"),

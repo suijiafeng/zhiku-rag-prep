@@ -24,15 +24,15 @@ describe("records page", () => {
   });
 
   it("shows own text but hides other people's questions", () => {
-    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} />);
+    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} onCandidate={() => {}} />);
     expect(html).toContain("年假有几天?");
     expect(html.match(/无权查看他人问答正文/g)).toHaveLength(2);
     expect(html).toContain("答错了");
   });
 
-  it("does not offer an evaluation candidate action that does not exist", () => {
-    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} />);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*加入评测候选/s);
+  it("offers the candidate action only on disliked rows", () => {
+    const html = renderToStaticMarkup(<RecordsTable items={items} onStatus={() => {}} onCandidate={() => {}} />);
+    expect((html.match(/加入评测候选/g) ?? []).length).toBe(1);
   });
 
   it("asks to connect instead of showing invented records", () => {

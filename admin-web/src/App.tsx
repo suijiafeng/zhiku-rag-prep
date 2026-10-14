@@ -10,6 +10,7 @@ import { UsersPage } from "./features/users/UsersPage";
 import { RecordsPage } from "./features/records/RecordsPage";
 import { LoginPage } from "./features/login/LoginPage";
 import { LiveOverview } from "./features/overview/LiveOverview";
+import { LiveEvaluation } from "./features/evaluation/LiveEvaluation";
 import { IntegrationPage } from "./features/integration/IntegrationPage";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
@@ -56,7 +57,7 @@ export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   if (key === "documents") return live ? <LiveDocuments {...live} status={ctx.status} /> : <DocumentsPage data={documentsFixture} />;
   if (key === "qa") return live ? <LiveQa {...live} modelEnabled={ctx.status?.modelEnabled ?? false} /> : <QaWorkbench data={qaFixture} />;
   if (key === "debug") return live ? <LiveDebug {...live} kbName={ctx.kbName ?? ""} /> : <RetrievalDebugPage trace={debugFixture} />;
-  if (key === "evaluation") return <EvaluationPage data={evaluationFixture} />;
+  if (key === "evaluation") return live ? <LiveEvaluation {...live} /> : <EvaluationPage data={evaluationFixture} />;
   if (key === "users") return <UsersPage client={ctx.client} />;
   if (key === "records") return <RecordsPage client={ctx.client} kbId={ctx.kbId} />;
   if (key === "integration") return <IntegrationPage kbId={ctx.kbId} kbName={ctx.kbName} />;
@@ -134,7 +135,7 @@ function Shell({ onLogin }: { onLogin: () => void }) {
               className="scaffold-alert"
               title="开发环境，尚未接入生产服务"
               description={session.client
-                ? "已连接本地服务：总览、文档、问答、记录、检索调试为真实数据；评测中心仍为示例数据。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
+                ? "已连接本地服务：所有页面均为真实数据。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
                 : "未登录时页面为虚构示例数据。登录需开发令牌；生产 IdP 未接入。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"}
             />
             {pageFor(active, { client: session.client, kbId: session.kbId, kbName, status: session.status, statusError: session.statusError, navigate: setActive })}

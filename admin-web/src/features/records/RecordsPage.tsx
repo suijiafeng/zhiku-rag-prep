@@ -21,9 +21,10 @@ export function topReasons(reasons: RecordStats["reasons"]) {
     .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key, count]) => ({ key, count }));
 }
 
-export function RecordsTable({ items, onStatus }: {
+export function RecordsTable({ items, onStatus, onCandidate }: {
   items: RecordItem[];
   onStatus: (messageId: string, status: FeedbackStatus, rootCause: string | undefined) => void;
+  onCandidate: (item: RecordItem) => void;
 }) {
   return (
     <Table<RecordItem>
@@ -74,7 +75,8 @@ export function RecordsTable({ items, onStatus }: {
           key: "op",
           width: 130,
           render: (_, r) => r.rating === "down"
-            ? <Button size="small" disabled title="评测数据集尚未实现">加入评测候选</Button>
+            ? <Button size="small" disabled={!r.question} title={r.question ? "创建评测候选，到评测中心补齐证据后批准" : "无权查看他人问答正文"}
+                onClick={() => onCandidate(r)}>加入评测候选</Button>
             : null,
         },
       ]}
@@ -99,6 +101,17 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
   }, [client, kbId, filter]);
   useEffect(() => void load(), [load]);
 
+  const [notice, setNotice] = useState<string>();
+  const onCandidate = async (item: RecordItem) => {
+    if (!client || !kbId || !item.question) return;
+    try {
+      await client.createEvalCase(kbId, { question: item.question, label: "answerable", source: "feedback" });
+      setNotice("已加入评测候选，请到评测中心补齐证据后批准。");
+    } catch (e) {
+      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "加入失败");
+    }
+  };
+
   const onStatus = async (messageId: string, status: FeedbackStatus, rootCause: string | undefined) => {
     if (!client || !kbId) return;
     try {
@@ -119,6 +132,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
       </div>
       {(!client || !kbId) && <Alert type="info" showIcon className="scaffold-alert" title="连接本地服务并选择知识库后查看问答记录" description="需要知识库运营角色。本页不展示虚构的用户或问答。" />}
       {error && <Alert type="error" showIcon className="scaffold-alert" title={error} />}
+      {notice && <Alert type="success" showIcon closable className="scaffold-alert" title={notice} onClose={() => setNotice(undefined)} />}
       {client && kbId && (
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={17}>
@@ -127,7 +141,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
             <Card className="doc-table">
               {!data && !error && <div className="state-pad"><LoadingList /></div>}
               {data?.items.length === 0 && <EmptyState icon="chat" title="暂无问答记录" description="员工在问答工作台或挂件中提问后，记录会出现在这里。" />}
-              {data && data.items.length > 0 && <RecordsTable items={data.items} onStatus={(m, s, c) => void onStatus(m, s, c)} />}
+              {data && data.items.length > 0 && <RecordsTable items={data.items} onStatus={(m, s, c) => void onStatus(m, s, c)} onCandidate={(r) => void onCandidate(r)} />}
             </Card>
           </Col>
           <Col xs={24} xl={7}>
@@ -153,7 +167,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
               <ol className="proposal-list">
                 <li>员工在问答中点赞或点踩，点踩须选原因（已实现）。</li>
                 <li>运营在本页按状态和根因处理反馈（已实现）。</li>
-                <li>点踩记录人工补齐真值后转为评测用例（评测数据集未实现）。</li>
+                <li>点踩记录加入评测候选，在评测中心补齐原文证据后批准（已实现）。</li>
                 <li>修复经回归验证后关闭反馈。</li>
               </ol>
             </Card>

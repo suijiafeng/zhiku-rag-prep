@@ -196,3 +196,7 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .empty-title { font-weight: 600; font-size: 15px; }
 .empty-desc { color: #8b93a7; font-size: 13px; max-width: 360px; }
 .state-pad { padding: 16px; }
+
+.eval-case { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid #f0f2f5; font-size: 13px; }
+.eval-case:last-child { border-bottom: 0; }
+.eval-form { display: grid; gap: 8px; }
