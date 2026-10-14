@@ -2,11 +2,24 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { App } from "./App";
 
-describe("admin scaffold", () => {
-  it("renders its scope and safety boundary", () => {
-    const html = renderToStaticMarkup(<App />);
-    expect(html).toContain("知库 · 管理端骨架");
+describe("admin shell", () => {
+  const html = renderToStaticMarkup(<App />);
+
+  it("renders the navigation from the design", () => {
+    for (const label of ["知识库总览", "文档管理", "问答工作台", "检索调试", "评测中心", "系统设置"]) {
+      expect(html).toContain(label);
+    }
+  });
+
+  it("never labels the scaffold as production", () => {
+    expect(html).not.toContain("生产环境");
+    expect(html).toContain("示例数据");
     expect(html).toContain("尚未接入生产服务");
     expect(html).toContain("metadata-only");
+  });
+
+  it("keeps unimplemented entry points disabled", () => {
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*新建问答/s);
+    expect(html).toMatch(/<input[^>]*disabled/);
   });
 });

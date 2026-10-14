@@ -1,40 +1,75 @@
-import { Alert, Card, ConfigProvider, Space, Tag, Typography } from "antd";
+import { Alert, Avatar, Breadcrumb, ConfigProvider, Input, Layout, Menu, Result, Tag } from "antd";
+import { useState } from "react";
+import { OverviewPage } from "./features/overview/OverviewPage";
+import { overviewFixture } from "./features/overview/fixtures";
 
-/** Static smoke page. Deliberately does not fetch, mutate, or authenticate. */
+const NAV = [
+  { key: "overview", label: "知识库总览" },
+  { key: "documents", label: "文档管理" },
+  { key: "qa", label: "问答工作台" },
+  { key: "debug", label: "检索调试" },
+  { key: "evaluation", label: "评测中心" },
+  { key: "settings", label: "系统设置" },
+] as const;
+
+type NavKey = (typeof NAV)[number]["key"];
+
+/** Admin shell following the Figma "知识库总览" frame. No fetching, mutation or authentication. */
 export function App() {
+  const [active, setActive] = useState<NavKey>("overview");
+  const current = NAV.find((n) => n.key === active) ?? NAV[0];
+
   return (
-    <ConfigProvider theme={{ token: { colorPrimary: "#155e75", borderRadius: 10 } }}>
-      <main className="scaffold-page">
-        <Typography.Text type="secondary">ZHIKU / ENGINEERING SCAFFOLD</Typography.Text>
-        <Typography.Title level={1}>知库 · 管理端骨架</Typography.Title>
-        <Typography.Paragraph>
-          React + TypeScript + Ant Design + Vite。当前页面只验证工程可启动。
-        </Typography.Paragraph>
-        <Alert
-          type="warning"
-          showIcon
-          title="开发骨架，尚未接入生产服务"
-          description="未实现登录、权限、知识库管理、文档上传、检索或模型调用。请勿用于处理真实业务数据。"
-        />
-        <Space orientation="vertical" size="large" className="scaffold-cards">
-          <Card title="模块边界">
-            <Space wrap>
-              <Tag>KnowledgeBase：待实现</Tag>
-              <Tag>Document / Version：待实现</Tag>
-              <Tag>IngestionJob：待实现</Tag>
-              <Tag>Query / Citations：待实现</Tag>
-            </Space>
-          </Card>
-          <Card title="下一步接入约束">
-            <Typography.Paragraph>
-              以仓库 API 契约为准；接入业务前必须完成服务端鉴权。浏览器不得保存长期密钥。
-            </Typography.Paragraph>
-            <Typography.Paragraph>
-              SSE 中的 validated 当前仅表示临时约定的 metadata-only 状态，不能等同于回答真实性验证。
-            </Typography.Paragraph>
-          </Card>
-        </Space>
-      </main>
+    <ConfigProvider theme={{ token: { colorPrimary: "#2f5bd3", borderRadius: 8 } }}>
+      <Layout className="shell">
+        <Layout.Sider width={208} className="shell-sider" breakpoint="lg" collapsedWidth={0}>
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true">知</span>
+            <div>
+              <div className="brand-name">知库 RAG</div>
+              <div className="brand-sub">企业知识库问答</div>
+            </div>
+          </div>
+          <Menu
+            theme="dark"
+            mode="inline"
+            className="shell-menu"
+            selectedKeys={[active]}
+            onClick={({ key }) => setActive(key as NavKey)}
+            items={NAV.map((n) => ({ key: n.key, label: n.label, icon: <span className="nav-dot" /> }))}
+          />
+          <div className="shell-user">
+            <Avatar className="shell-avatar">访</Avatar>
+            <div>
+              <div className="brand-name">未登录</div>
+              <div className="brand-sub">身份接入待 T1</div>
+            </div>
+          </div>
+        </Layout.Sider>
+        <Layout>
+          <Layout.Header className="shell-header">
+            <Breadcrumb items={[{ title: "知识库" }, { title: current.label }]} />
+            <div className="shell-tools">
+              <Input className="shell-search" placeholder="搜索文档、问答…" disabled aria-label="搜索（未实现）" />
+              <Tag color="orange">本地骨架 · 示例数据</Tag>
+            </div>
+          </Layout.Header>
+          <Layout.Content className="shell-content">
+            <Alert
+              type="warning"
+              showIcon
+              className="scaffold-alert"
+              title="开发骨架，尚未接入生产服务"
+              description="页面数字均为虚构示例数据；未实现登录、权限、上传、检索或模型调用。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
+            />
+            {active === "overview" ? (
+              <OverviewPage data={overviewFixture} />
+            ) : (
+              <Result status="info" title={`${current.label}：待实现`} subTitle="该页面已在设计稿中，按任务顺序后续接入。" />
+            )}
+          </Layout.Content>
+        </Layout>
+      </Layout>
     </ConfigProvider>
   );
 }
