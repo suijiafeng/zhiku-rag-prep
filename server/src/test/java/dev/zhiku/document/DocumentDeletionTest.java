@@ -37,6 +37,7 @@ class DocumentDeletionTest extends IntegrationTest {
   @Autowired DocumentCleanupWorker cleanup;
   @Autowired TestChatModel model;
   @Autowired DocumentRepository documents;
+  @Autowired DocumentService service;
   @Autowired org.springframework.transaction.support.TransactionTemplate tx;
   @Autowired dev.zhiku.support.TestEmbeddingProvider embeddings;
 
@@ -294,5 +295,66 @@ class DocumentDeletionTest extends IntegrationTest {
     assertThat(cleanupStatus()).isEqualTo("done");
     assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE action = 'DOCUMENT_DELETE' AND target = ?", Integer.class, "document:" + doc))
         .isEqualTo(1);
+  }
+
+  /** C59：版本元数据写入与删除互斥。删除已提交后，新增版本与状态流转都必须拒绝；未提交的写入先完成，删除再接手。 */
+  @Test
+  void versionWritesCannotSlipPastACommittedDelete() throws Exception {
+    var second = UUID.randomUUID();
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, created_by) VALUES (?, ?, 'v2', now(), ?)", second, doc, operator);
+    deleteDocument().andExpect(status().isAccepted());
+    mvc.perform(post("/api/knowledge-bases/{kb}/documents/{doc}/versions", kb, doc).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR))
+        .contentType("application/json").content("{\"versionLabel\":\"v3\",\"effectiveFrom\":\"2026-01-01\"}")).andExpect(status().isForbidden());
+    mvc.perform(post("/api/knowledge-bases/{kb}/documents/{doc}/versions/{v}/approve", kb, doc, second).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
+        .andExpect(status().isForbidden());
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM content_version WHERE document_id = ?", Integer.class, doc)).isEqualTo(2);
+    assertThat(jdbc.queryForObject("SELECT approved_at FROM content_version WHERE id = ?", Timestamp.class, second)).isNull();
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE action IN ('VERSION_CREATE', 'VERSION_APPROVE') AND target = ?",
+        Integer.class, "version:" + second)).isZero();
+  }
+
+  /** 在服务线程里模拟已登录的运营：版本写入走真实的 DocumentService 事务。 */
+  static org.springframework.security.core.Authentication operatorAuth(UUID enterprise, UUID user) {
+    var jwt = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("test").header("alg", "HS256").subject(user.toString())
+        .claim("enterprise_id", enterprise.toString()).claim("roles", java.util.List.of("KB_OPERATOR")).build();
+    return new org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken(jwt, java.util.List.of());
+  }
+
+  @Test
+  void aDeleteWaitsForAnInFlightVersionWrite() throws Exception {
+    var held = new java.util.concurrent.CountDownLatch(1);
+    var proceed = new java.util.concurrent.CountDownLatch(1);
+    var created = new UUID[1];
+    var writing = java.util.concurrent.CompletableFuture.runAsync(() -> {
+      org.springframework.security.core.context.SecurityContextHolder.setContext(new org.springframework.security.core.context.SecurityContextImpl(operatorAuth(enterprise, operator)));
+      try {
+        tx.executeWithoutResult(status -> {
+          created[0] = service.createVersion(kb, doc, "v2", java.time.LocalDate.of(2026, 1, 1), null);
+          held.countDown();
+          try {
+            proceed.await(10, java.util.concurrent.TimeUnit.SECONDS);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+        });
+      } finally {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+      }
+    });
+    if (!held.await(5, java.util.concurrent.TimeUnit.SECONDS)) writing.get(1, java.util.concurrent.TimeUnit.SECONDS);
+    var deleting = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+      try {
+        return deleteDocument().andReturn().getResponse().getStatus();
+      } catch (Exception e) {
+        throw new IllegalStateException(e);
+      }
+    });
+    Thread.sleep(300);
+    assertThat(deleting.isDone()).as("删除应等待未提交的版本写入").isFalse();
+    proceed.countDown();
+    writing.get(10, java.util.concurrent.TimeUnit.SECONDS);
+    assertThat(deleting.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(202);
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM content_version WHERE id = ?", Integer.class, created[0])).isEqualTo(1);
+    assertThat(jdbc.queryForObject("SELECT deleted_at FROM document WHERE id = ?", Timestamp.class, doc)).isNotNull();
   }
 }

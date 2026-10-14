@@ -54,6 +54,8 @@ public class DocumentService {
   public UUID createVersion(UUID kbId, UUID documentId, String label, LocalDate from, LocalDate until) {
     var scope = access.require(kbId, MANAGE_DOCUMENTS);
     requireDocument(kbId, documentId);
+    // 与删除互斥：持有文档的共享锁直到提交，已提交的删除不会被随后的版本写入绕过。
+    if (!repository.lockLiveDocument(documentId)) throw ApiException.forbidden();
     var start = business.startOf(from);
     var end = until == null ? null : business.startOf(until);
     if (end != null && !end.isAfter(start)) throw ApiException.unprocessable("effectiveUntil must be after effectiveFrom");
@@ -130,6 +132,7 @@ public class DocumentService {
   private void transition(UUID kbId, UUID documentId, UUID versionId, String action, java.util.function.ToIntFunction<AccessScope> change) {
     var scope = access.require(kbId, MANAGE_DOCUMENTS);
     if (repository.findVersion(kbId, documentId, versionId).isEmpty()) throw ApiException.forbidden();
+    if (!repository.lockLiveDocument(documentId)) throw ApiException.forbidden();
     if (change.applyAsInt(scope) != 1) throw ApiException.conflict("Version state does not allow this transition");
     audit.record(scope, action, "version:" + versionId, "OK", Map.of());
   }
