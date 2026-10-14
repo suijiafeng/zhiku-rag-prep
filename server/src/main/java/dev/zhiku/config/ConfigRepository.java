@@ -78,8 +78,14 @@ class ConfigRepository {
         revision, runId, cases, id);
   }
 
+  /** 发布与回滚共用同一把事务级知识库锁，版本号在锁内计算，并发时后到者等待而不是撞号。 */
+  private void lockVersionSequence(UUID kbId) {
+    jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtext('kb_config'), hashtext(?))", Object.class, kbId.toString());
+  }
+
   /** 把候选发布为下一个版本，并把当前已发布版本标为被替代；在同一事务中锁定知识库的配置行。 */
   int publish(UUID kbId, UUID candidateId, UUID by) {
+    lockVersionSequence(kbId);
     jdbc.update("UPDATE kb_config SET status = 'superseded', updated_at = now() WHERE kb_id = ? AND status = 'published'", kbId);
     var next = jdbc.queryForObject("SELECT coalesce(max(version), 0) + 1 FROM kb_config WHERE kb_id = ?", Integer.class, kbId);
     jdbc.update("UPDATE kb_config SET status = 'published', version = ?, published_by = ?, published_at = now(), updated_at = now() WHERE id = ?",
@@ -88,6 +94,7 @@ class ConfigRepository {
   }
 
   int republish(UUID kbId, Row from, UUID by) {
+    lockVersionSequence(kbId);
     jdbc.update("UPDATE kb_config SET status = 'superseded', updated_at = now() WHERE kb_id = ? AND status = 'published'", kbId);
     var next = jdbc.queryForObject("SELECT coalesce(max(version), 0) + 1 FROM kb_config WHERE kb_id = ?", Integer.class, kbId);
     jdbc.update("""

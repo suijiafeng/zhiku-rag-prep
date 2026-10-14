@@ -39,6 +39,8 @@ class ConfigTest extends IntegrationTest {
   @Autowired IngestionWorker worker;
   @Autowired TestChatModel model;
   @Autowired TestEmbeddingProvider embeddings;
+  @Autowired ConfigRepository repository;
+  @Autowired org.springframework.transaction.support.TransactionTemplate tx;
 
   final UUID enterprise = UUID.randomUUID();
   final UUID operator = UUID.randomUUID();
@@ -236,5 +238,44 @@ class ConfigTest extends IntegrationTest {
     publish(10, 4, "", "");
     mvc.perform(get("/api/knowledge-bases/{kb}/config", otherKb).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
         .andExpect(jsonPath("$.published").doesNotExist());
+  }
+
+  /** 发布与回滚在同一把知识库锁下发号：并发时后到的等待先到的提交，版本号连续，不会撞成"已存在"。 */
+  @Test
+  void rollbackWaitsForAConcurrentPublishInsteadOfCollidingOnTheVersionNumber() throws Exception {
+    assertThat(publish(10, 4, "渠道一", "")).isEqualTo(1);
+    int rev = revision(save(candidate(12, 4, "渠道二", "", "联调", null)).andExpect(status().isOk()));
+    action("validate", rev).andExpect(status().isOk());
+    var candidateId = repository.candidate(kb, false).orElseThrow().id();
+    var locked = new java.util.concurrent.CountDownLatch(1);
+    var proceed = new java.util.concurrent.CountDownLatch(1);
+    var publishing = java.util.concurrent.CompletableFuture.runAsync(() -> tx.executeWithoutResult(status -> {
+      repository.publish(kb, candidateId, operator);
+      locked.countDown();
+      try {
+        proceed.await(10, java.util.concurrent.TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }));
+    assertThat(locked.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+    var rolling = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+      try {
+        return mvc.perform(post("/api/knowledge-bases/{kb}/config/versions/{v}/rollback", kb, 1).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
+            .andReturn().getResponse();
+      } catch (Exception e) {
+        throw new IllegalStateException(e);
+      }
+    });
+    Thread.sleep(300);
+    assertThat(rolling.isDone()).as("回滚应等待未提交的发布").isFalse();
+    proceed.countDown();
+    publishing.get(10, java.util.concurrent.TimeUnit.SECONDS);
+    var response = rolling.get(10, java.util.concurrent.TimeUnit.SECONDS);
+    assertThat(response.getStatus()).isEqualTo(200);
+    assertThat(json.readTree(response.getContentAsString()).get("version").asInt()).isEqualTo(3);
+    assertThat(jdbc.queryForList("SELECT version FROM kb_config WHERE kb_id = ? AND version IS NOT NULL ORDER BY version", Integer.class, kb))
+        .containsExactly(1, 2, 3);
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM kb_config WHERE kb_id = ? AND status = 'published'", Integer.class, kb)).isEqualTo(1);
   }
 }
