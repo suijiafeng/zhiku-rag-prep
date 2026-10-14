@@ -147,7 +147,7 @@ public class ChatService {
     }
 
     // Access or sources may change while retrieval ran: check again before anything reaches the model.
-    var changed = recheck(scope, kbId, sources);
+    var changed = recheck(scope, kbId, sources, conversationId, context);
     if (changed != null) {
       fail(turn, sink, changed, STOP_MESSAGE.get(changed), requestId);
       return;
@@ -159,7 +159,7 @@ public class ChatService {
         // Re-read grants and eligibility before disclosing more drafts (at most once per recheck interval).
         if (System.nanoTime() - lastCheck[0] >= settings.recheckInterval().toNanos()) {
           lastCheck[0] = System.nanoTime();
-          var code = recheck(scope, kbId, sources);
+          var code = recheck(scope, kbId, sources, conversationId, context);
           if (code != null) throw new Stopped(code);
         }
         if (answer.length() + token.length() > settings.maxAnswerChars()) throw new Stopped("ANSWER_TOO_LONG");
@@ -201,11 +201,7 @@ public class ChatService {
 
     // Revocation and withdrawal can happen while the model runs: re-read grants and eligibility before disclosure,
     // and confirm every earlier turn that went into the prompt is still available.
-    var stopped = recheck(scope, kbId, sources);
-    if (stopped == null && !context.isEmpty()) {
-      var stillVisible = priorContext(scope, conversationId).stream().map(MessageView::id).collect(Collectors.toSet());
-      if (!context.stream().allMatch(m -> stillVisible.contains(m.id()))) stopped = "SOURCE_UNAVAILABLE";
-    }
+    var stopped = recheck(scope, kbId, sources, conversationId, context);
     if (stopped != null) {
       fail(turn, sink, stopped, STOP_MESSAGE.get(stopped), requestId);
       return;
@@ -275,12 +271,18 @@ public class ChatService {
       "ACCESS_REVOKED", "访问权限已变更，回答已停止", "SOURCE_UNAVAILABLE", "引用的来源已变更，回答已停止",
       "ANSWER_TOO_LONG", "回答超出长度上限，已停止并丢弃");
 
-  /** Re-reads grants and current eligibility; returns the stop code, or null when the sources may still be disclosed. */
-  private String recheck(AccessScope scope, UUID kbId, List<Candidate> sources) {
+  /**
+   * Re-reads grants and current eligibility of this turn's sources, and confirms every earlier turn put into the prompt
+   * is still available; returns the stop code, or null when the answer may still be disclosed.
+   */
+  private String recheck(AccessScope scope, UUID kbId, List<Candidate> sources, UUID conversationId, List<MessageView> context) {
     var fresh = new AccessScope(scope.enterpriseId(), scope.userId(), grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()), scope.roles());
     if (!fresh.permits(scope.enterpriseId(), kbId, ASK_AND_CITE)) return "ACCESS_REVOKED";
     var eligible = new HashSet<>(documents.eligibleVersionIds(fresh, kbId, Instant.now()));
-    return sources.stream().allMatch(s -> eligible.contains(s.versionId())) ? null : "SOURCE_UNAVAILABLE";
+    if (!sources.stream().allMatch(s -> eligible.contains(s.versionId()))) return "SOURCE_UNAVAILABLE";
+    if (context.isEmpty()) return null;
+    var stillVisible = priorContext(fresh, conversationId).stream().map(MessageView::id).collect(Collectors.toSet());
+    return context.stream().allMatch(m -> stillVisible.contains(m.id())) ? null : "SOURCE_UNAVAILABLE";
   }
 
   /** Persists a refused or failed turn (no draft text) and then sends the terminal error event. */

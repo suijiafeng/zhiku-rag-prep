@@ -356,6 +356,17 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void withdrawingAContextSourceAfterTheFirstDraftStopsFurtherDrafts() throws Exception {
+    var earlier = earlierTurnFromOtherSource();
+    model.afterPiece = n -> {
+      if (n == 0) jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", earlier[1]);
+    };
+    var frames = ask(token(employee, Role.EMPLOYEE), continueBody(earlier[0].toString(), "那年假呢?"));
+    assertThat(frames.stream().filter(f -> f.event().equals("draft")).count()).isEqualTo(1);
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("SOURCE_UNAVAILABLE");
+  }
+
+  @Test
   void turnsWithUnavailableSourcesAreExcludedFromContext() throws Exception {
     var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();
     jdbc.update("UPDATE message_source SET chunk_id = ? WHERE message_id IN (SELECT id FROM message WHERE conversation_id = CAST(? AS uuid))",
