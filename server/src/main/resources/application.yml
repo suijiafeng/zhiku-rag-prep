@@ -15,10 +15,23 @@ spring:
     password: ${POSTGRES_PASSWORD:}
   flyway:
     clean-disabled: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
 zhiku:
   business:
     # Business dates (effective from/until) are interpreted in this zone; storage is UTC.
     time-zone: Asia/Shanghai
+  ingestion:
+    max-bytes: 20971520
+    chunk-max-chars: 800
+    chunk-overlap: 100
+    max-chunks: 20000
+    lease-seconds: 300
+    max-attempts: 3
+    worker-enabled: true
+    poll-interval: PT2S
   auth:
     # HS256 key for locally issued tokens; at least 32 bytes. Empty means every token is rejected.
     jwt-secret: ${ZHIKU_JWT_SECRET:}

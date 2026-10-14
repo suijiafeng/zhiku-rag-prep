@@ -127,6 +127,40 @@ paths:
         '204': {description: Done}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/documents/{documentId}/versions/{versionId}/content:
+    parameters:
+      - {$ref: '#/components/parameters/kbId'}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: versionId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: uploadContent
+      description: >-
+        MANAGE_DOCUMENTS. UTF-8 .md/.markdown/.txt only (client content type ignored), non-empty, no binary control
+        characters, at most 20 MB. Content is immutable per version. The file and a queued job are stored in one
+        transaction; parsing and chunking run later in the durable worker. Audited with size and SHA-256 only.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {type: object, required: [file], properties: {file: {type: string, format: binary}}}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {type: object, required: [jobId], properties: {jobId: {type: string, format: uuid}}}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/documents/{documentId}/versions/{versionId}/reindex:
+    parameters:
+      - {$ref: '#/components/parameters/kbId'}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: versionId, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      operationId: reindexVersion
+      description: Re-queues a succeeded or failed job; 409 while queued or running. Chunks are replaced, never duplicated.
+      responses:
+        '202': {description: Queued}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/eligibility:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: at, in: query, schema: {type: string, format: date-time}}]
     get:

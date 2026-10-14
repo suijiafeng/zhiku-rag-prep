@@ -14,5 +14,7 @@ public abstract class IntegrationTest {
   @DynamicPropertySource
   static void jwt(DynamicPropertyRegistry registry) {
     registry.add("zhiku.auth.jwt-secret", () -> TestJwt.SECRET);
+    // Tests drive the ingestion worker explicitly instead of the scheduler.
+    registry.add("zhiku.ingestion.worker-enabled", () -> "false");
   }
 }
