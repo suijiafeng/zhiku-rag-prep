@@ -12,6 +12,7 @@ import dev.zhiku.knowledgebase.KnowledgeBaseAccess;
 import dev.zhiku.platform.ApiException;
 import dev.zhiku.retrieval.Retrieval.Candidate;
 import dev.zhiku.retrieval.RetrievalService;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -39,8 +40,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class EvaluationService {
   static final Set<String> LABELS = Set.of("answerable", "clarify", "handoff");
 
-  /** occurrence（从 1 开始）从多个相同段落中选出一个；引文出现多次时必填。 */
-  record EvidenceInput(@NotNull UUID versionId, @NotBlank @Size(max = 2000) String quote, @Positive Integer occurrence) {}
+  /** occurrence（从 1 开始）从多个相同段落中选出一个；重复引文需 occurrence 或经过原文核验的 startOffset。 */
+  record EvidenceInput(@NotNull UUID versionId, @NotBlank @Size(max = 2000) String quote, @Positive Integer occurrence, @Min(0) Integer startOffset) {}
 
   /** 来源版本被撤回或其文档被删除后，quote 为 null 且 available 为 false；片段保留。 */
   record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote, boolean available) {}
@@ -143,7 +144,12 @@ public class EvaluationService {
           .orElseThrow(() -> ApiException.unprocessable("Evidence version is not in this knowledge base"));
       var text = normalizedContent(version.id());
       var quote = TextChunker.normalize(e.quote() == null ? "" : e.quote()).strip();
-      var at = locate(text, quote, e.occurrence());
+      int at;
+      if (e.startOffset() != null) {
+        at = e.startOffset();
+        if (e.occurrence() != null || at < 0 || at > text.length() - quote.length() || quote.length() < 2
+            || !text.startsWith(quote, at)) throw ApiException.unprocessable("Evidence position does not match the source quote");
+      } else at = locate(text, quote, e.occurrence());
       if (!seen.add(new Span(version.id(), at, at + quote.length()))) throw ApiException.unprocessable("The same evidence span is listed twice");
       jdbc.update("INSERT INTO eval_evidence (case_id, ordinal, version_id, start_offset, end_offset, quote) VALUES (?, ?, ?, ?, ?, ?)",
           caseId, i + 1, version.id(), at, at + quote.length(), quote);
@@ -208,6 +214,17 @@ public class EvaluationService {
           AND (NOT EXISTS (SELECT 1 FROM eval_evidence e WHERE e.case_id = c.id) OR c.expected_answer IS NULL OR cardinality(c.required_facts) = 0)
         """, Integer.class, caseId, kbId);
     if (!incomplete.isEmpty()) throw ApiException.unprocessable("Answerable cases need evidence, a reference answer and required facts before approval");
+    // 与文档删除/版本撤回互斥；只核验可访问来源，不把历史或未来效力当作错误。
+    var available = jdbc.query("""
+        SELECT d.kb_id, d.deleted_at, v.withdrawn_at
+        FROM eval_evidence e JOIN content_version v ON v.id = e.version_id JOIN document d ON d.id = v.document_id
+        WHERE e.case_id = ? ORDER BY d.id, v.id FOR SHARE OF d, v
+        """, (rs, i) -> kbId.equals(rs.getObject("kb_id", UUID.class))
+            && rs.getTimestamp("deleted_at") == null && rs.getTimestamp("withdrawn_at") == null, caseId);
+    int evidenceCount = jdbc.queryForObject("SELECT count(*) FROM eval_evidence WHERE case_id = ?", Integer.class, caseId);
+    if (available.size() != evidenceCount || available.stream().anyMatch(ok -> !ok)) {
+      throw ApiException.unprocessable("Evidence source is unavailable; update the candidate before approval");
+    }
     if (jdbc.update("UPDATE eval_case SET status = 'approved', approved_by = ? WHERE id = ? AND kb_id = ? AND status = 'candidate'",
         scope.userId(), caseId, kbId) != 1) {
       throw ApiException.conflict("Case is not a candidate in this knowledge base");

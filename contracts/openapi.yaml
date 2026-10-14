@@ -574,7 +574,7 @@ paths:
                 evidence:
                   type: array
                   maxItems: 10
-                  items: {type: object, required: [versionId, quote], properties: {versionId: {type: string, format: uuid}, quote: {type: string, maxLength: 2000}, occurrence: {type: integer, minimum: 1, description: 'Which match to use (1-based); required when the quote occurs more than once (422 otherwise)'}}}
+                  items: {$ref: '#/components/schemas/EvaluationEvidenceInput'}
                 originMessageId: {type: string, format: uuid, description: Feedback message the case was made from; must be in this knowledge base (422)}
                 expectedAnswer: {type: string, maxLength: 2000}
                 requiredFacts: {type: array, maxItems: 10, items: {type: string, minLength: 1, maxLength: 200}}
@@ -611,15 +611,28 @@ paths:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
     post:
       operationId: approveEvalCase
-      description: Candidate -> approved; answerable cases need evidence, a reference answer and at least one required fact first (422). Only approved cases are evaluated. Audited.
+      description: Candidate -> approved; answerable cases need evidence, a reference answer and at least one required fact first (422). Every evidence source must still exist in this knowledge base and be neither deleted nor withdrawn; checked under source locks (422). Past and future effectivity alone do not block approval. Only approved cases are evaluated. Audited.
       responses:
         '204': {description: Approved}
         '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/eval-cases/{caseId}/evidence:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
     put:
       operationId: setEvalEvidence
       description: Replaces a candidate's evidence (same quote rules as create). Approved cases are frozen (409); an approval in progress finishes first. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [evidence]
+              properties:
+                evidence:
+                  type: array
+                  maxItems: 10
+                  items: {$ref: '#/components/schemas/EvaluationEvidenceInput'}
       responses:
         '204': {description: Updated}
         '404': {$ref: '#/components/responses/Error'}
@@ -697,6 +710,20 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
           example: {code: FORBIDDEN, message: Access denied, requestId: 00000000-0000-0000-0000-000000000000}
   schemas:
+    EvaluationEvidenceInput:
+      type: object
+      required: [versionId, quote]
+      properties:
+        versionId: {type: string, format: uuid}
+        quote: {type: string, minLength: 2, maxLength: 2000}
+        occurrence:
+          type: integer
+          minimum: 1
+          description: Which match to use (1-based); required for repeated quotes unless startOffset is supplied.
+        startOffset:
+          type: integer
+          minimum: 0
+          description: Exact UTF-16 position in normalized source text, verified against quote. Cannot combine with occurrence.
     RetrievalTrace:
       type: object
       required: [traceId, question, stages, candidates]

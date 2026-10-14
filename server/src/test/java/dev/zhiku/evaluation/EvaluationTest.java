@@ -303,6 +303,76 @@ class EvaluationTest extends IntegrationTest {
   }
 
   @Test
+  void approvalRejectsWithdrawnAndDeletedSourcesWithoutFreezingTheCandidate() throws Exception {
+    for (boolean deleted : List.of(false, true)) {
+      var version = deleted ? travel : leave;
+      var quote = deleted ? "超标部分需事前审批" : "10 年以上 15 天";
+      var caseId = id(createCase(caseJson("虚构来源审核问题", version, quote)));
+      if (deleted) jdbc.update("UPDATE document SET deleted_at = now(), cleanup_status = 'pending' WHERE id = (SELECT document_id FROM content_version WHERE id = ?)", version);
+      else jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
+      mvc.perform(as(post("/api/knowledge-bases/{kb}/eval-cases/{id}/approve", kb, caseId), operator, Role.KB_OPERATOR))
+          .andExpect(status().isUnprocessableEntity());
+      assertThat(jdbc.queryForObject("SELECT status FROM eval_case WHERE id = ?", String.class, caseId)).isEqualTo("candidate");
+      assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE action = 'EVAL_CASE_APPROVE' AND target = ?", Integer.class,
+          "eval-case:" + caseId)).isZero();
+      details(caseId, "{" + DETAILS + "}").andExpect(status().isNoContent());
+    }
+  }
+
+  @Test
+  void approvalWaitsForAnInFlightWithdrawalAndThenRejectsTheSource() throws Exception {
+    var caseId = id(createCase(caseJson("虚构并发审核问题", leave, "10 年以上 15 天")));
+    var changed = new java.util.concurrent.CountDownLatch(1);
+    var release = new java.util.concurrent.CountDownLatch(1);
+    var withdrawal = java.util.concurrent.CompletableFuture.runAsync(() -> tx.executeWithoutResult(status -> {
+      jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", leave);
+      changed.countDown();
+      try {
+        if (!release.await(5, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("Probe timed out");
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new IllegalStateException(e);
+      }
+    }));
+    java.util.concurrent.CompletableFuture<Integer> approval = null;
+    try {
+      assertThat(changed.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+      approval = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+        try {
+          return mvc.perform(as(post("/api/knowledge-bases/{kb}/eval-cases/{id}/approve", kb, caseId), operator, Role.KB_OPERATOR))
+              .andReturn().getResponse().getStatus();
+        } catch (Exception e) { throw new IllegalStateException(e); }
+      });
+      try {
+        approval.get(200, java.util.concurrent.TimeUnit.MILLISECONDS);
+        throw new AssertionError("Approval must wait for the source transaction");
+      } catch (java.util.concurrent.TimeoutException expected) { /* The source row is still locked. */ }
+    } finally {
+      release.countDown();
+      withdrawal.get(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+    assertThat(approval.get(5, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(422);
+    assertThat(jdbc.queryForObject("SELECT status FROM eval_case WHERE id = ?", String.class, caseId)).isEqualTo("candidate");
+  }
+
+  @Test
+  void retainedEvidenceUsesVerifiedOffsetsEvenWhenTheQuoteOccursTwice() throws Exception {
+    var text = dev.zhiku.ingestion.TextChunker.normalize(LEAVE);
+    int offset = text.lastIndexOf("年假");
+    var body = "{\"question\":\"虚构重复摘录问题\",\"label\":\"answerable\"," + DETAILS
+        + ",\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"年假\",\"startOffset\":" + offset + "}]}";
+    var caseId = id(createCase(body).andExpect(status().isCreated()));
+    assertThat(jdbc.queryForObject("SELECT start_offset FROM eval_evidence WHERE case_id = ?", Integer.class, caseId)).isEqualTo(offset);
+    mvc.perform(as(put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content("{\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"年假\",\"startOffset\":" + offset + "}]}"))
+        .andExpect(status().isNoContent());
+    mvc.perform(as(put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content("{\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"年假\",\"startOffset\":1}]}"))
+        .andExpect(status().isUnprocessableEntity());
+    assertThat(jdbc.queryForObject("SELECT start_offset FROM eval_evidence WHERE case_id = ?", Integer.class, caseId)).isEqualTo(offset);
+  }
+
+  @Test
   void feedbackCandidatesGetEvidenceBeforeApproval() throws Exception {
     var caseId = id(createCase("{\"question\":\"年假有几天?\",\"label\":\"answerable\",\"source\":\"feedback\"}").andExpect(status().isCreated()));
     mvc.perform(as(post("/api/knowledge-bases/{kb}/eval-cases/{id}/approve", kb, caseId), operator, Role.KB_OPERATOR))
