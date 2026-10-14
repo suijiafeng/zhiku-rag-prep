@@ -109,7 +109,9 @@ class EvaluationTest extends IntegrationTest {
     mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.KB_OPERATOR))
         .andExpect(jsonPath("$[0].status").value("candidate"))
         .andExpect(jsonPath("$[0].evidence[0].quote").value("10 年以上 15 天"))
-        .andExpect(jsonPath("$[0].evidence[0].available").value(true));
+        .andExpect(jsonPath("$[0].evidence[0].available").value(true))
+        .andExpect(jsonPath("$[0].sourceAvailable").value(true))
+        .andExpect(jsonPath("$[0].expectedAnswer").value("按原文作答"));
   }
 
   @Test
@@ -123,8 +125,12 @@ class EvaluationTest extends IntegrationTest {
         .andExpect(jsonPath("$[0].evidence[0].available").value(false))
         .andExpect(jsonPath("$[1].evidence[0].available").value(false))
         .andExpect(jsonPath("$[0].evidence[0].startOffset").isNumber())
+        .andExpect(jsonPath("$[0].sourceAvailable").value(false))
+        .andExpect(jsonPath("$[0].label").value("answerable"))
+        .andExpect(jsonPath("$[0].requiredFacts.length()").value(0))
         .andReturn().getResponse().getContentAsString();
-    assertThat(body).doesNotContain("10 年以上 15 天").doesNotContain("超标部分需事前审批");
+    // 参考答案与必要事实可能摘抄原文，同样随来源隐藏。
+    assertThat(body).doesNotContain("10 年以上 15 天").doesNotContain("超标部分需事前审批").doesNotContain("按原文作答").doesNotContain("原文中的关键事实");
   }
 
   UUID messageIn(UUID knowledgeBase) {

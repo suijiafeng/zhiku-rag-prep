@@ -29,6 +29,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * PRD 第 12 章检索部分：真值是内容版本中的来源片段；每次运行将片段映射到
@@ -44,8 +45,9 @@ public class EvaluationService {
   /** 来源版本被撤回或其文档被删除后，quote 为 null 且 available 为 false；片段保留。 */
   record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote, boolean available) {}
 
+  /** 任一证据来源撤回或删除后 sourceAvailable 为 false，参考答案与必要事实随之隐藏（它们可能摘抄原文）。 */
   record CaseView(UUID id, String question, String label, String status, String source, Instant createdAt, List<EvidenceView> evidence,
-      UUID originMessageId, String expectedAnswer, List<String> requiredFacts, String appliesTo, Instant queryAt) {}
+      UUID originMessageId, String expectedAnswer, List<String> requiredFacts, String appliesTo, Instant queryAt, boolean sourceAvailable) {}
 
   /** PRD E01 的样本字段；queryAt 为空表示按评测运行时刻判断效力。 */
   record Details(String expectedAnswer, List<String> requiredFacts, String appliesTo, Instant queryAt) {
@@ -84,13 +86,15 @@ public class EvaluationService {
   private final KnowledgeBaseAccess access;
   private final DocumentRepository documents;
   private final DocumentService eligibility;
+  private final TransactionTemplate tx;
   private final RetrievalService retrieval;
   private final JdbcTemplate jdbc;
   private final ObjectMapper json;
   private final AuditLog audit;
 
   EvaluationService(KnowledgeBaseAccess access, DocumentRepository documents, DocumentService eligibility, RetrievalService retrieval,
-      JdbcTemplate jdbc, ObjectMapper json, AuditLog audit) {
+      JdbcTemplate jdbc, ObjectMapper json, AuditLog audit, TransactionTemplate tx) {
+    this.tx = tx;
     this.eligibility = eligibility;
     this.access = access;
     this.documents = documents;
@@ -231,14 +235,17 @@ public class EvaluationService {
         """,
         (rs, i) -> {
           var id = rs.getObject("id", UUID.class);
+          var spans = evidence.getOrDefault(id, List.of());
+          boolean available = spans.stream().allMatch(EvidenceView::available);
           return new CaseView(id, rs.getString("question"), rs.getString("label"), rs.getString("status"), rs.getString("source"),
-              rs.getTimestamp("created_at").toInstant(), evidence.getOrDefault(id, List.of()), rs.getObject("origin_message_id", UUID.class),
-              rs.getString("expected_answer"), List.of((String[]) rs.getArray("required_facts").getArray()), rs.getString("applies_to"),
-              rs.getTimestamp("query_at") == null ? null : rs.getTimestamp("query_at").toInstant());
+              rs.getTimestamp("created_at").toInstant(), spans, rs.getObject("origin_message_id", UUID.class),
+              available ? rs.getString("expected_answer") : null,
+              available ? List.of((String[]) rs.getArray("required_facts").getArray()) : List.of(), rs.getString("applies_to"),
+              rs.getTimestamp("query_at") == null ? null : rs.getTimestamp("query_at").toInstant(), available);
         }, kbId);
   }
 
-  @Transactional
+  /** 逐条检索可能等待外部服务，不放在事务里；结果在最后一个短事务中写入。 */
   public RunView run(UUID kbId, Integer requestedK) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     int k = requestedK == null ? 5 : requestedK;
@@ -296,18 +303,21 @@ public class EvaluationService {
     }
     var summary = summarize(cases.size(), notApplicable, results);
     var runId = UUID.randomUUID();
-    try {
-      jdbc.update("INSERT INTO eval_run (id, kb_id, k, model, created_by, summary) VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb))",
-          runId, kbId, k, model, scope.userId(), json.writeValueAsString(summary));
-    } catch (JsonProcessingException e) {
-      throw new IllegalStateException(e);
-    }
-    for (var r : results) {
-      jdbc.update("INSERT INTO eval_result (run_id, case_id, mapping_failed, hit, evidence_hit, evidence_total, latency_ms, source_unavailable) "
-          + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", runId, r.caseId(), r.mappingFailed(), r.hit(), r.evidenceHit(), r.evidenceTotal(), r.latencyMs(),
-          r.sourceUnavailable());
-    }
-    audit.record(scope, "EVAL_RUN", "eval-run:" + runId, "OK", Map.of("k", k, "cases", cases.size()));
+    final var modelUsed = model;
+    tx.executeWithoutResult(status -> {
+      try {
+        jdbc.update("INSERT INTO eval_run (id, kb_id, k, model, created_by, summary) VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb))",
+            runId, kbId, k, modelUsed, scope.userId(), json.writeValueAsString(summary));
+      } catch (JsonProcessingException e) {
+        throw new IllegalStateException(e);
+      }
+      for (var r : results) {
+        jdbc.update("INSERT INTO eval_result (run_id, case_id, mapping_failed, hit, evidence_hit, evidence_total, latency_ms, source_unavailable) "
+            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", runId, r.caseId(), r.mappingFailed(), r.hit(), r.evidenceHit(), r.evidenceTotal(), r.latencyMs(),
+            r.sourceUnavailable());
+      }
+      audit.record(scope, "EVAL_RUN", "eval-run:" + runId, "OK", Map.of("k", k, "cases", cases.size()));
+    });
     return new RunView(runId, k, model, Instant.now(), summary, results);
   }
 

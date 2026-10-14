@@ -540,7 +540,7 @@ paths:
     parameters: [{$ref: '#/components/parameters/kbId'}]
     get:
       operationId: listEvalCases
-      description: DEBUG_AND_EVALUATE. Cases with their evidence spans (version, character offsets, quote). Once the source version is withdrawn or its document deleted, quote is null and available is false; the span metadata stays.
+      description: DEBUG_AND_EVALUATE. Cases with their evidence spans (version, character offsets, quote). Once any evidence source is withdrawn or its document deleted, the case reports sourceAvailable false and its quotes, expectedAnswer and requiredFacts are withheld; span metadata stays.
       responses:
         '200': {description: Cases}
         '403': {$ref: '#/components/responses/Forbidden'}
