@@ -330,6 +330,17 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/overview:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: knowledgeBaseOverview
+      description: >-
+        ASK_AND_CITE. Counts of documents, versions, ready versions, chunks and vectors; questions today/yesterday and a
+        7-day daily series by business day (zhiku.business.time-zone); 7-day feedback; embedding spaces (model, dimension,
+        vectors); last successful index time; 5 recent documents and questions. Other people's question text is null.
+      responses:
+        '200': {description: Overview}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/knowledge-bases/{kbId}/eligibility:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: at, in: query, schema: {type: string, format: date-time}}]
     get:
