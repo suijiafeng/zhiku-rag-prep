@@ -74,6 +74,10 @@ class ChatRepository {
     return id;
   }
 
+  int turnCount(UUID conversationId) {
+    return jdbc.queryForObject("SELECT count(*) FROM message WHERE conversation_id = ?", Integer.class, conversationId);
+  }
+
   /** 会话中每条消息所依赖的较早轮次（已是闭包）。 */
   java.util.Map<UUID, java.util.Set<UUID>> context(UUID conversationId) {
     var out = new java.util.HashMap<UUID, java.util.Set<UUID>>();

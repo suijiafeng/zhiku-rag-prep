@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -161,6 +160,11 @@ public class ChatService {
       return;
     }
     long startedAt = System.nanoTime();
+    // 续问依赖随轮次累积，会话过长时要求新建会话，而不是无限增长。
+    if (conversationId != null && repository.turnCount(conversationId) >= settings.maxTurns()) {
+      fail(turn, sink, "CONVERSATION_TOO_LONG", "本会话轮次已达上限，请新建会话继续提问", requestId);
+      return;
+    }
     var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
     // 追问与上一个可见问题一起检索，使“那试用期呢”这类指代能够解析。
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
@@ -337,13 +341,16 @@ public class ChatService {
     if (!sources.stream().allMatch(s -> eligible.contains(s.versionId()))) return "SOURCE_UNAVAILABLE";
     if (!retrieval.allChunksExist(sources.stream().map(Candidate::chunkId).toList())) return "SOURCE_UNAVAILABLE";
     if (context.isEmpty()) return null;
-    var stillVisible = priorContext(fresh, conversationId).stream().map(MessageView::id).collect(Collectors.toSet());
-    return context.stream().allMatch(m -> stillVisible.contains(m.id())) ? null : "SOURCE_UNAVAILABLE";
+    var now = new HashMap<UUID, MessageView>();
+    priorContext(fresh, conversationId).forEach(m -> now.put(m.id(), m));
+    // 放进 prompt 的前序答案一旦过期，也不能再作为本轮的依据。
+    boolean intact = context.stream().allMatch(m -> now.containsKey(m.id()) && (m.stale() || !now.get(m.id()).stale()));
+    return intact ? null : "SOURCE_UNAVAILABLE";
   }
 
   /** 保存被拒答或失败的轮次（不含草稿正文），然后发送终止错误事件。 */
   private void fail(Turn turn, ChatSink sink, String code, String message, String requestId) throws IOException {
-    record(turn, "NO_EVIDENCE".equals(code) || "SENSITIVE_INPUT".equals(code) ? "refused" : "failed", code);
+    record(turn, REFUSALS.contains(code) ? "refused" : "failed", code);
     error(sink, code, message, requestId, turn.traceId());
   }
 
@@ -379,6 +386,8 @@ public class ChatService {
       Instant[] modelStarted) {}
 
   /** 依赖暂时不可用时可由用户重试；其余失败重试也不会改变结果。 */
+  private static final java.util.Set<String> REFUSALS = java.util.Set.of("NO_EVIDENCE", "SENSITIVE_INPUT", "CONVERSATION_TOO_LONG");
+
   private static final java.util.Set<String> RETRYABLE = java.util.Set.of("MODEL_UNAVAILABLE", "DEPENDENCY_UNAVAILABLE");
 
   private static void error(ChatSink sink, String code, String message, String requestId, UUID traceId) throws IOException {
@@ -437,6 +446,7 @@ public class ChatService {
     var sourcesByMessage = new LinkedHashMap<UUID, List<ChatRepository.SourceRow>>();
     repository.sources(conversationId).forEach(s -> sourcesByMessage.computeIfAbsent(s.messageId(), k -> new ArrayList<>()).add(s));
     var context = repository.context(conversationId);
+    var staleById = new HashMap<UUID, Boolean>();
     var ownSourcesOk = new HashMap<UUID, Boolean>();
     sourcesByMessage.forEach((id, sources) -> ownSourcesOk.put(id, sources.stream().allMatch(s -> s.documentId() != null && !s.withdrawn()
         && s.chunkText() != null && conversation.kbId().equals(s.kbId()))));
@@ -455,7 +465,10 @@ public class ChatService {
             rating.status(), rating.updatedAt());
         return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), safe, m.status(), null);
       }
-      boolean stale = sources.stream().anyMatch(s -> !eligibleNow.contains(s.versionId()));
+      // 自己的来源或所依赖前序轮次的来源不再当前有效，答案都只能作历史核对，不能再复用。
+      boolean stale = sources.stream().anyMatch(s -> !eligibleNow.contains(s.versionId()))
+          || context.getOrDefault(m.id(), Set.of()).stream().anyMatch(d -> staleById.getOrDefault(d, false));
+      staleById.put(m.id(), stale);
       var citations = sources.stream().map(s -> new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()))).toList();
       return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt(), ratings.get(m.id()), m.status(), null);
     }).toList();

@@ -61,6 +61,8 @@ zhiku:
     heartbeat-interval: PT15S
     # 拒答与敏感输入提示中指向的人工渠道，由业务负责人确认后填写；为空时提示"尚未配置"。
     handoff-channel: ${ZHIKU_HANDOFF_CHANNEL:}
+    # 单个会话的轮次上限：续问依赖随轮次累积，超过后要求新建会话。
+    max-turns: 100
     # 草稿流式输出期间，授权和来源效力最多按此频率重新读取；变更会在此间隔内被发现。
     recheck-interval: PT1S
   widget:

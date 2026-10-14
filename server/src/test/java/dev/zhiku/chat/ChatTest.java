@@ -468,6 +468,67 @@ class ChatTest extends IntegrationTest {
     return new UUID[] {conversation, a};
   }
 
+  /** 一个仍然合格的前序轮次：来源 A 已批准、已发布、索引就绪、当前有效。 */
+  UUID[] earlierEligibleTurn() {
+    var doc = UUID.randomUUID();
+    var a = UUID.randomUUID();
+    var chunk = UUID.randomUUID();
+    jdbc.update("INSERT INTO document (id, kb_id, title, created_by) VALUES (?, ?, '调休制度', ?)", doc, kb, operator);
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, effective_until, created_by, approved_at, published_at, index_status) "
+        + "VALUES (?, ?, 'v1', now() - interval '1 day', now() + interval '30 day', ?, now(), now(), 'ready')", a, doc, operator);
+    jdbc.update("INSERT INTO chunk (id, version_id, seq, start_offset, end_offset, text) VALUES (?, ?, 0, 0, 8, '调休按小时折算')", chunk, a);
+    var conversation = UUID.randomUUID();
+    var turn = UUID.randomUUID();
+    jdbc.update("INSERT INTO conversation (id, enterprise_id, user_id, kb_id, title) VALUES (?, ?, ?, ?, '调休')", conversation, enterprise, employee, kb);
+    jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model, created_at) VALUES (?, ?, '调休怎么算?', '调休按小时折算[1]', 'test', now() - interval '1 minute')",
+        turn, conversation);
+    jdbc.update("INSERT INTO message_source (message_id, ordinal, version_id, chunk_id) VALUES (?, 1, ?, ?)", turn, a, chunk);
+    return new UUID[] {conversation, a};
+  }
+
+  @Test
+  void aFollowUpBecomesStaleWhenASourceOfItsContextExpires() throws Exception {
+    var earlier = earlierEligibleTurn();
+    var conversation = earlier[0].toString();
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "那年假呢?"));
+    assertThat(model.lastPrompt.getLast().content()).contains("答：调休按小时折算");
+    mvc.perform(get("/api/conversations/{id}/messages", conversation).header(HttpHeaders.AUTHORIZATION, token(employee, Role.EMPLOYEE)))
+        .andExpect(jsonPath("$[1].stale").value(false));
+
+    jdbc.update("UPDATE content_version SET effective_until = now() - interval '1 second' WHERE id = ?", earlier[1]);
+    mvc.perform(get("/api/conversations/{id}/messages", conversation).header(HttpHeaders.AUTHORIZATION, token(employee, Role.EMPLOYEE)))
+        .andExpect(jsonPath("$[0].stale").value(true))
+        .andExpect(jsonPath("$[0].hidden").value(false))
+        .andExpect(jsonPath("$[1].stale").value(true))
+        .andExpect(jsonPath("$[1].hidden").value(false));
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "再问一次"));
+    assertThat(model.lastPrompt.getLast().content()).doesNotContain("答：");
+  }
+
+  @Test
+  void aContextAnswerExpiringDuringGenerationStopsTheFollowUp() throws Exception {
+    var earlier = earlierEligibleTurn();
+    model.afterPiece = n -> {
+      if (n == 0) jdbc.update("UPDATE content_version SET effective_until = now() - interval '1 second' WHERE id = ?", earlier[1]);
+    };
+    var frames = ask(token(employee, Role.EMPLOYEE), continueBody(earlier[0].toString(), "那年假呢?"));
+    assertThat(frames.stream().filter(f -> f.event().equals("draft")).count()).isEqualTo(1);
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("SOURCE_UNAVAILABLE");
+  }
+
+  @Test
+  void aConversationAtTheTurnLimitRefusesNewQuestions() throws Exception {
+    var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();
+    for (int i = 0; i < 99; i++) {
+      jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model, status) VALUES (gen_random_uuid(), CAST(? AS uuid), '填充', NULL, 'test', 'refused')", conversation);
+    }
+    var frames = ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "还能问吗?"));
+    assertThat(names(frames)).containsExactly("start", "error");
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("CONVERSATION_TOO_LONG");
+    assertThat(last(frames).data().get("retryable").asBoolean()).isFalse();
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM message WHERE conversation_id = CAST(? AS uuid)", Integer.class, conversation)).isEqualTo(101);
+  }
+
   @Test
   void followUpsAreHiddenWhenASourceOfTheirContextIsWithdrawn() throws Exception {
     var earlier = earlierTurnFromOtherSource();

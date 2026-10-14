@@ -839,8 +839,9 @@ x-sse:
     - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1].
     - done.data includes conversationId (to continue), messageId (for feedback) and traceId; error.data includes traceId once retrieval has started.
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
+    - A conversation accepts at most zhiku.chat.max-turns turns (default 100); beyond that CONVERSATION_TOO_LONG asks for a new conversation. An answer is stale when its own sources or those of any earlier turn it was generated from are no longer current; a context answer expiring during generation stops the turn.
     - Follow-ups (conversationId) use at most the last three prior turns as non-evidence context; turns with unavailable sources are excluded entirely, answers based on non-current versions keep only the question. Retrieval uses the previous visible question plus the new one; facts still come only from freshly retrieved eligible sources.
-  errorCodes: [NO_EVIDENCE, SENSITIVE_INPUT, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, ANSWER_TOO_LONG]
+  errorCodes: [NO_EVIDENCE, SENSITIVE_INPUT, CONVERSATION_TOO_LONG, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, ANSWER_TOO_LONG]
 x-auth:
   status: implemented (local HS256 issuer; OIDC provider replaceable)
   claims:
