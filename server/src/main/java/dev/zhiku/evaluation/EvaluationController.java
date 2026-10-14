@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -24,6 +25,8 @@ class EvaluationController {
       @Size(max = 10) List<EvaluationService.EvidenceInput> evidence, @Size(max = 100) String source) {}
 
   record RunRequest(Integer k) {}
+
+  record EvidenceRequest(@Size(max = 10) List<EvaluationService.EvidenceInput> evidence) {}
 
   private final EvaluationService service;
 
@@ -46,6 +49,12 @@ class EvaluationController {
   @ResponseStatus(HttpStatus.NO_CONTENT)
   void approve(@PathVariable UUID kbId, @PathVariable UUID caseId) {
     service.approve(kbId, caseId);
+  }
+
+  @PutMapping("/eval-cases/{caseId}/evidence")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void evidence(@PathVariable UUID kbId, @PathVariable UUID caseId, @Valid @RequestBody EvidenceRequest request) {
+    service.setEvidence(kbId, caseId, request.evidence());
   }
 
   @PostMapping("/eval-runs")

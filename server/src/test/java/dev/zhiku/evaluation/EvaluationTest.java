@@ -137,6 +137,20 @@ class EvaluationTest extends IntegrationTest {
   }
 
   @Test
+  void feedbackCandidatesGetEvidenceBeforeApproval() throws Exception {
+    var caseId = id(createCase("{\"question\":\"年假有几天?\",\"label\":\"answerable\",\"source\":\"feedback\"}").andExpect(status().isCreated()));
+    mvc.perform(as(post("/api/knowledge-bases/{kb}/eval-cases/{id}/approve", kb, caseId), operator, Role.KB_OPERATOR))
+        .andExpect(status().isUnprocessableEntity());
+    mvc.perform(as(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content("{\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"10 年以上 15 天\"}]}"))
+        .andExpect(status().isNoContent());
+    approve(caseId);
+    mvc.perform(as(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content("{\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"年假\"}]}"))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
   void requiresEvaluateRoleAndGrant() throws Exception {
     mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.EMPLOYEE)).andExpect(status().isForbidden());
     mvc.perform(as(post("/api/knowledge-bases/{kb}/eval-runs", kb), UUID.randomUUID(), Role.KB_OPERATOR)

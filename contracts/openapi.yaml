@@ -352,7 +352,7 @@ paths:
     post:
       operationId: createEvalCase
       description: >-
-        DEBUG_AND_EVALUATE. label answerable | clarify | handoff; answerable needs evidence. Each evidence quote must be
+        DEBUG_AND_EVALUATE. label answerable | clarify | handoff. Candidates may start without evidence (e.g. from feedback). Each evidence quote must be
         found in the normalized text of a version in this knowledge base; it is stored as a character span, not a chunk id.
         New cases are candidates until approved. Audited.
       requestBody:
@@ -378,10 +378,20 @@ paths:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
     post:
       operationId: approveEvalCase
-      description: Candidate -> approved; only approved cases are evaluated. Audited.
+      description: Candidate -> approved; answerable cases need evidence first (422). Only approved cases are evaluated. Audited.
       responses:
         '204': {description: Approved}
         '409': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-cases/{caseId}/evidence:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
+    put:
+      operationId: setEvalEvidence
+      description: Replaces a candidate's evidence (same quote rules as create). Approved cases are frozen (409). Audited.
+      responses:
+        '204': {description: Updated}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/eval-runs:
     parameters: [{$ref: '#/components/parameters/kbId'}]
     post:

@@ -71,10 +71,16 @@ class EvaluationService {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     if (!LABELS.contains(label)) throw ApiException.unprocessable("Unknown label");
     var inputs = evidence == null ? List.<EvidenceInput>of() : evidence;
-    if ("answerable".equals(label) && inputs.isEmpty()) throw ApiException.unprocessable("Answerable cases need evidence");
     var id = UUID.randomUUID();
     jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, source, created_by) VALUES (?, ?, ?, ?, ?, ?)",
         id, kbId, question, label, source == null ? "manual" : source, scope.userId());
+    insertEvidence(kbId, id, inputs);
+    audit.record(scope, "EVAL_CASE_CREATE", "eval-case:" + id, "OK", Map.of("label", label, "evidence", inputs.size()));
+    return id;
+  }
+
+  /** Locates each quote in its version's normalized text and stores the character span. */
+  private void insertEvidence(UUID kbId, UUID caseId, List<EvidenceInput> inputs) {
     for (int i = 0; i < inputs.size(); i++) {
       var e = inputs.get(i);
       var version = documents.findVersion(e.versionId()).filter(v -> v.kbId().equals(kbId))
@@ -84,10 +90,20 @@ class EvaluationService {
       int at = quote.length() < 2 ? -1 : text.indexOf(quote);
       if (at < 0) throw ApiException.unprocessable("Evidence quote was not found in the selected version");
       jdbc.update("INSERT INTO eval_evidence (case_id, ordinal, version_id, start_offset, end_offset, quote) VALUES (?, ?, ?, ?, ?, ?)",
-          id, i + 1, version.id(), at, at + quote.length(), quote);
+          caseId, i + 1, version.id(), at, at + quote.length(), quote);
     }
-    audit.record(scope, "EVAL_CASE_CREATE", "eval-case:" + id, "OK", Map.of("label", label, "evidence", inputs.size()));
-    return id;
+  }
+
+  /** Replaces the evidence of a candidate; approved cases are frozen so past runs stay comparable. */
+  @Transactional
+  void setEvidence(UUID kbId, UUID caseId, List<EvidenceInput> evidence) {
+    var scope = access.require(kbId, DEBUG_AND_EVALUATE);
+    var status = jdbc.queryForList("SELECT status FROM eval_case WHERE id = ? AND kb_id = ?", String.class, caseId, kbId);
+    if (status.isEmpty()) throw ApiException.notFound();
+    if (!"candidate".equals(status.getFirst())) throw ApiException.conflict("Approved cases cannot change evidence");
+    jdbc.update("DELETE FROM eval_evidence WHERE case_id = ?", caseId);
+    insertEvidence(kbId, caseId, evidence == null ? List.of() : evidence);
+    audit.record(scope, "EVAL_CASE_EVIDENCE", "eval-case:" + caseId, "OK", Map.of("evidence", evidence == null ? 0 : evidence.size()));
   }
 
   private String normalizedContent(UUID versionId) {
@@ -99,6 +115,10 @@ class EvaluationService {
   @Transactional
   void approve(UUID kbId, UUID caseId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
+    var needsEvidence = jdbc.queryForList(
+        "SELECT 1 FROM eval_case c WHERE c.id = ? AND c.kb_id = ? AND c.label = 'answerable' AND NOT EXISTS (SELECT 1 FROM eval_evidence e WHERE e.case_id = c.id)",
+        Integer.class, caseId, kbId);
+    if (!needsEvidence.isEmpty()) throw ApiException.unprocessable("Answerable cases need evidence before approval");
     if (jdbc.update("UPDATE eval_case SET status = 'approved', approved_by = ? WHERE id = ? AND kb_id = ? AND status = 'candidate'",
         scope.userId(), caseId, kbId) != 1) {
       throw ApiException.conflict("Case is not a candidate in this knowledge base");
