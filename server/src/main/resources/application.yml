@@ -23,6 +23,10 @@ zhiku:
   business:
     # Business dates (effective from/until) are interpreted in this zone; storage is UTC.
     time-zone: Asia/Shanghai
+  document:
+    # Background removal of content, chunks and vectors after a document is deleted (reads stop immediately).
+    cleanup-enabled: true
+    cleanup-poll-interval: PT10S
   ingestion:
     max-bytes: 20971520
     chunk-max-chars: 800

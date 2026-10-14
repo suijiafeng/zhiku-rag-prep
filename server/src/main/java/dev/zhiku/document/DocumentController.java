@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -67,6 +68,12 @@ class DocumentController {
   @ResponseStatus(HttpStatus.NO_CONTENT)
   void withdraw(@PathVariable UUID kbId, @PathVariable UUID documentId, @PathVariable UUID versionId) {
     service.withdraw(kbId, documentId, versionId);
+  }
+
+  @DeleteMapping("/documents/{documentId}")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  void delete(@PathVariable UUID kbId, @PathVariable UUID documentId) {
+    service.delete(kbId, documentId);
   }
 
   @GetMapping("/eligibility")

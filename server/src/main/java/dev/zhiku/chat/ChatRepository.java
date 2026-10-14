@@ -68,7 +68,7 @@ class ChatRepository {
     return id;
   }
 
-  /** Sources joined to their current state; missing joins (deleted or re-indexed) come back with null ids. */
+  /** Sources joined to their current state; missing joins (deleted document or re-indexed) come back with null ids. */
   List<SourceRow> sources(UUID conversationId) {
     return jdbc.query("""
         SELECT s.message_id, s.ordinal, s.version_id, s.chunk_id, d.id AS document_id, d.title, d.kb_id,
@@ -76,7 +76,7 @@ class ChatRepository {
         FROM message_source s
         JOIN message m ON m.id = s.message_id
         LEFT JOIN content_version v ON v.id = s.version_id
-        LEFT JOIN document d ON d.id = v.document_id
+        LEFT JOIN document d ON d.id = v.document_id AND d.deleted_at IS NULL
         LEFT JOIN chunk c ON c.id = s.chunk_id AND c.version_id = s.version_id
         WHERE m.conversation_id = ?
         ORDER BY s.message_id, s.ordinal

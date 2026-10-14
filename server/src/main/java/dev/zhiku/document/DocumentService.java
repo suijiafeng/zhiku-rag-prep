@@ -79,6 +79,26 @@ public class DocumentService {
     transition(kbId, documentId, versionId, "VERSION_WITHDRAW", (scope) -> repository.withdraw(versionId));
   }
 
+  /**
+   * Deletion stops every read at once (versions of deleted documents are never selected); content, chunks and vectors
+   * are removed later by {@link DocumentCleanupWorker}. Deleting again re-queues a cleanup that failed permanently.
+   */
+  @Transactional
+  public void delete(UUID kbId, UUID documentId) {
+    var scope = access.require(kbId, MANAGE_DOCUMENTS);
+    if (repository.documentInKnowledgeBase(documentId, kbId)) {
+      if (repository.markDeleted(documentId, scope.userId()) == 1) {
+        audit.record(scope, "DOCUMENT_DELETE", "document:" + documentId, "OK", Map.of("kb", kbId.toString()));
+      }
+    } else if (repository.deletedDocumentInKnowledgeBase(documentId, kbId)) {
+      if (repository.retryCleanup(documentId, kbId) == 1) {
+        audit.record(scope, "DOCUMENT_CLEANUP_RETRY", "document:" + documentId, "OK", Map.of("kb", kbId.toString()));
+      }
+    } else {
+      throw ApiException.forbidden();
+    }
+  }
+
   /** Per-document outcome at a point in time; the caller's grants are re-checked inside the policy. */
   @Transactional(readOnly = true)
   public List<EligibilityView> eligibility(UUID kbId, Instant at) {

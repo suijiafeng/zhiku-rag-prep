@@ -61,6 +61,8 @@ public class IngestionRepository {
                attempts = j.attempts + 1, updated_at = now()
         WHERE j.id = (SELECT id FROM ingestion_job
                       WHERE (status = 'queued' OR (status = 'running' AND lease_until < now())) AND attempts < ?
+                        AND NOT EXISTS (SELECT 1 FROM content_version v JOIN document d ON d.id = v.document_id
+                                        WHERE v.id = ingestion_job.version_id AND d.deleted_at IS NOT NULL)
                       ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
         RETURNING j.id, j.version_id, j.attempts
         """, (rs, i) -> new ClaimedJob(rs.getObject("id", UUID.class), rs.getObject("version_id", UUID.class), rs.getInt("attempts")),

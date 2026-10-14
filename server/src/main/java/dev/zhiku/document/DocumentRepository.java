@@ -1,5 +1,6 @@
 package dev.zhiku.document;
 
+import dev.zhiku.document.DocumentViews.DeletionView;
 import dev.zhiku.document.DocumentViews.DocumentView;
 import dev.zhiku.document.DocumentViews.VersionView;
 import java.sql.ResultSet;
@@ -31,7 +32,7 @@ public class DocumentRepository {
       SELECT v.id, v.document_id, d.title, d.kb_id, kb.enterprise_id, v.version_label, v.effective_from, v.effective_until,
              v.approved_at IS NOT NULL AS approved, v.published_at IS NOT NULL AS published, v.withdrawn_at IS NOT NULL AS withdrawn,
              v.superseded, v.index_status, v.index_error, d.created_at AS document_created_at
-      FROM content_version v JOIN document d ON d.id = v.document_id JOIN knowledge_base kb ON kb.id = d.kb_id
+      FROM content_version v JOIN document d ON d.id = v.document_id AND d.deleted_at IS NULL JOIN knowledge_base kb ON kb.id = d.kb_id
       """;
 
   private final JdbcTemplate jdbc;
@@ -58,7 +59,7 @@ public class DocumentRepository {
   }
 
   public boolean documentInKnowledgeBase(UUID documentId, UUID kbId) {
-    return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM document WHERE id = ? AND kb_id = ?)", Boolean.class, documentId, kbId));
+    return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM document WHERE id = ? AND kb_id = ? AND deleted_at IS NULL)", Boolean.class, documentId, kbId));
   }
 
   public boolean labelTaken(UUID documentId, String label) {
@@ -96,11 +97,64 @@ public class DocumentRepository {
     return jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ? AND withdrawn_at IS NULL", versionId);
   }
 
+  /** Marks the document deleted and queues cleanup; returns 0 when it is already deleted. */
+  public int markDeleted(UUID documentId, UUID by) {
+    return jdbc.update("UPDATE document SET deleted_at = now(), deleted_by = ?, cleanup_status = 'pending' WHERE id = ? AND deleted_at IS NULL",
+        by, documentId);
+  }
+
+  /** Re-queues a cleanup that failed permanently; returns 0 when it is pending, running or done. */
+  public int retryCleanup(UUID documentId, UUID kbId) {
+    return jdbc.update("UPDATE document SET cleanup_status = 'pending', cleanup_attempts = 0, cleanup_error = NULL, cleanup_lease_until = NULL "
+        + "WHERE id = ? AND kb_id = ? AND cleanup_status = 'failed'", documentId, kbId);
+  }
+
+  public boolean deletedDocumentInKnowledgeBase(UUID documentId, UUID kbId) {
+    return Boolean.TRUE.equals(jdbc.queryForObject(
+        "SELECT EXISTS (SELECT 1 FROM document WHERE id = ? AND kb_id = ? AND deleted_at IS NOT NULL)", Boolean.class, documentId, kbId));
+  }
+
+  public void failExhaustedCleanups(int maxAttempts) {
+    jdbc.update("UPDATE document SET cleanup_status = 'failed', cleanup_error = '多次清理失败或超时，已停止重试', cleanup_lease_until = NULL "
+        + "WHERE cleanup_status = 'running' AND cleanup_lease_until < now() AND cleanup_attempts >= ?", maxAttempts);
+  }
+
+  public Optional<UUID> claimCleanup(int leaseSeconds, int maxAttempts) {
+    return jdbc.query("""
+        UPDATE document d SET cleanup_status = 'running', cleanup_lease_until = now() + make_interval(secs => ?),
+               cleanup_attempts = d.cleanup_attempts + 1
+        WHERE d.id = (SELECT id FROM document
+                      WHERE (cleanup_status = 'pending' OR (cleanup_status = 'running' AND cleanup_lease_until < now())) AND cleanup_attempts < ?
+                      ORDER BY deleted_at FOR UPDATE SKIP LOCKED LIMIT 1)
+        RETURNING d.id
+        """, (rs, i) -> rs.getObject("id", UUID.class), leaseSeconds, maxAttempts).stream().findFirst();
+  }
+
+  /** Removes jobs first: deleting a job row waits for a worker that still holds it, so its chunks are removed afterwards. */
+  public void purgeContent(UUID documentId) {
+    var versions = "(SELECT id FROM content_version WHERE document_id = ?)";
+    jdbc.update("DELETE FROM ingestion_job WHERE version_id IN " + versions, documentId);
+    jdbc.update("DELETE FROM chunk WHERE version_id IN " + versions, documentId);
+    jdbc.update("DELETE FROM content_blob WHERE version_id IN " + versions, documentId);
+    jdbc.update("UPDATE document SET cleanup_status = 'done', cleanup_error = NULL, cleanup_lease_until = NULL WHERE id = ?", documentId);
+  }
+
+  public int cleanupAttempts(UUID documentId) {
+    return jdbc.queryForObject("SELECT cleanup_attempts FROM document WHERE id = ?", Integer.class, documentId);
+  }
+
+  public void releaseCleanupAfterFailure(UUID documentId, boolean exhausted, String reason) {
+    jdbc.update("UPDATE document SET cleanup_status = ?, cleanup_error = ?, cleanup_lease_until = NULL WHERE id = ? AND cleanup_status = 'running'",
+        exhausted ? "failed" : "pending", reason, documentId);
+  }
+
   public List<DocumentView> documentsIn(UUID kbId) {
     var docs = new LinkedHashMap<UUID, DocumentView>();
-    jdbc.query("SELECT id, title, created_at FROM document WHERE kb_id = ? ORDER BY created_at DESC, id", rs -> {
+    jdbc.query("SELECT id, title, created_at, deleted_at, cleanup_status, cleanup_error FROM document WHERE kb_id = ? ORDER BY created_at DESC, id", rs -> {
       var id = rs.getObject("id", UUID.class);
-      docs.put(id, new DocumentView(id, rs.getString("title"), instant(rs, "created_at"), new ArrayList<>()));
+      var deletion = rs.getString("cleanup_status") == null ? null
+          : new DeletionView(rs.getString("cleanup_status"), instant(rs, "deleted_at"), rs.getString("cleanup_error"));
+      docs.put(id, new DocumentView(id, rs.getString("title"), instant(rs, "created_at"), new ArrayList<>(), deletion));
     }, kbId);
     for (var row : versionsIn(kbId)) {
       var doc = docs.get(row.documentId());

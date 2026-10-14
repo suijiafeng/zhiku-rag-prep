@@ -19,5 +19,6 @@ public abstract class IntegrationTest {
     registry.add("zhiku.auth.jwt-secret", () -> TestJwt.SECRET);
     // Tests drive the ingestion worker explicitly instead of the scheduler.
     registry.add("zhiku.ingestion.worker-enabled", () -> "false");
+    registry.add("zhiku.document.cleanup-enabled", () -> "false");
   }
 }

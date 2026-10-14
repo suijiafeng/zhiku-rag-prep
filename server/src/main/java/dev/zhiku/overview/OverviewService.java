@@ -72,17 +72,17 @@ class OverviewService {
     var spaces = jdbc.query("""
         SELECT e.model, e.dimension, count(*) AS n FROM chunk_embedding e JOIN chunk c ON c.id = e.chunk_id
         JOIN content_version v ON v.id = c.version_id JOIN document d ON d.id = v.document_id
-        WHERE d.kb_id = ? GROUP BY e.model, e.dimension ORDER BY n DESC
+        WHERE d.kb_id = ? AND d.deleted_at IS NULL GROUP BY e.model, e.dimension ORDER BY n DESC
         """, (rs, i) -> new EmbeddingSpace(rs.getString("model"), rs.getInt("dimension"), rs.getInt("n")), kbId);
     var lastIndexed = jdbc.queryForObject("""
         SELECT max(j.updated_at) FROM ingestion_job j JOIN content_version v ON v.id = j.version_id JOIN document d ON d.id = v.document_id
-        WHERE d.kb_id = ? AND j.status = 'succeeded'
+        WHERE d.kb_id = ? AND d.deleted_at IS NULL AND j.status = 'succeeded'
         """, Timestamp.class, kbId);
 
     var recentDocuments = jdbc.query("""
         SELECT DISTINCT ON (d.id) d.id, d.title, v.version_label, v.index_status, v.created_at,
                (SELECT count(*) FROM chunk c WHERE c.version_id = v.id) AS chunks
-        FROM document d JOIN content_version v ON v.document_id = d.id WHERE d.kb_id = ?
+        FROM document d JOIN content_version v ON v.document_id = d.id WHERE d.kb_id = ? AND d.deleted_at IS NULL
         ORDER BY d.id, v.created_at DESC
         """, (rs, i) -> new RecentDocument(rs.getObject("id", UUID.class), rs.getString("title"), rs.getString("version_label"),
             rs.getString("index_status"), rs.getInt("chunks"), rs.getTimestamp("created_at").toInstant()), kbId)
@@ -98,10 +98,10 @@ class OverviewService {
         }, kbId);
 
     return new Overview(
-        count("SELECT count(*) FROM document WHERE kb_id = ?", kbId),
-        count("SELECT count(*) FROM content_version v JOIN document d ON d.id = v.document_id WHERE d.kb_id = ?", kbId),
-        count("SELECT count(*) FROM content_version v JOIN document d ON d.id = v.document_id WHERE d.kb_id = ? AND v.index_status = 'ready'", kbId),
-        count("SELECT count(*) FROM chunk c JOIN content_version v ON v.id = c.version_id JOIN document d ON d.id = v.document_id WHERE d.kb_id = ?", kbId),
+        count("SELECT count(*) FROM document WHERE kb_id = ? AND deleted_at IS NULL", kbId),
+        count("SELECT count(*) FROM content_version v JOIN document d ON d.id = v.document_id WHERE d.kb_id = ? AND d.deleted_at IS NULL", kbId),
+        count("SELECT count(*) FROM content_version v JOIN document d ON d.id = v.document_id WHERE d.kb_id = ? AND d.deleted_at IS NULL AND v.index_status = 'ready'", kbId),
+        count("SELECT count(*) FROM chunk c JOIN content_version v ON v.id = c.version_id JOIN document d ON d.id = v.document_id WHERE d.kb_id = ? AND d.deleted_at IS NULL", kbId),
         spaces.stream().mapToInt(EmbeddingSpace::vectors).sum(),
         daily.get(6).count(),
         daily.get(5).count(),

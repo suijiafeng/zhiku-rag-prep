@@ -10,7 +10,10 @@ public final class DocumentViews {
   public record VersionView(UUID id, String versionLabel, Instant effectiveFrom, Instant effectiveUntil, boolean approved,
       boolean published, boolean withdrawn, boolean superseded, String indexStatus, String indexError) {}
 
-  public record DocumentView(UUID id, String title, Instant createdAt, List<VersionView> versions) {}
+  /** Present only for deleted documents: access stopped at deletedAt; status is the content cleanup state. */
+  public record DeletionView(String status, Instant deletedAt, String error) {}
+
+  public record DocumentView(UUID id, String title, Instant createdAt, List<VersionView> versions, DeletionView deletion) {}
 
   public record EligibilityView(UUID documentId, String title, VersionEligibility.Outcome outcome, UUID versionId) {}
 

@@ -239,6 +239,20 @@ paths:
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Created'}}}}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/documents/{documentId}:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}]
+    delete:
+      operationId: deleteDocument
+      description: >-
+        MANAGE_DOCUMENTS. Audited. Access stops immediately: the document's versions leave eligibility, retrieval,
+        citations, evaluation evidence and overview counts, and history answers that depend on them are hidden.
+        Content, chunks, vectors and ingestion jobs are removed later by a background cleanup whose state is shown
+        in Document.deletion. Deleting again re-queues a cleanup that failed; otherwise it changes nothing.
+        Backups are outside this cleanup.
+      responses:
+        '202': {description: Access stopped; cleanup queued}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/knowledge-bases/{kbId}/documents/{documentId}/versions:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}]
     post:
@@ -526,6 +540,14 @@ components:
               superseded: {type: boolean}
               indexStatus: {type: string, enum: [pending, processing, ready, failed]}
               indexError: {type: string}
+        deletion:
+          description: Present only for deleted documents (they have no versions). status is the content cleanup state.
+          type: object
+          required: [status, deletedAt]
+          properties:
+            status: {type: string, enum: [pending, running, done, failed]}
+            deletedAt: {type: string, format: date-time}
+            error: {type: string}
     KnowledgeBase:
       type: object
       required: [id, name]
