@@ -466,9 +466,12 @@ public class ChatService {
   public record ConversationView(UUID id, UUID kbId, String title, Instant updatedAt) {}
 
   List<ConversationView> conversations(AccessScope scope) {
-    return repository.conversations(scope.enterpriseId(), scope.userId()).stream()
+    var conversations = repository.conversations(scope.enterpriseId(), scope.userId()).stream()
         .filter(c -> scope.permits(scope.enterpriseId(), c.kbId(), ASK_AND_CITE))
-        .map(c -> new ConversationView(c.id(), c.kbId(), c.title(), c.updatedAt())).toList();
+        .toList();
+    var unavailable = feedback.unavailableConversations(conversations.stream().map(ChatRepository.ConversationRow::id).toList());
+    return conversations.stream().map(c -> new ConversationView(c.id(), c.kbId(),
+        unavailable.contains(c.id()) ? "来源不可用的会话" : c.title(), c.updatedAt())).toList();
   }
 
   List<MessageView> messages(AccessScope scope, UUID conversationId) {
@@ -496,7 +499,7 @@ public class ChatService {
         var rating = ratings.get(m.id());
         var safe = rating == null ? null : new FeedbackRepository.FeedbackView(rating.rating(), rating.reason(), null, rating.version(),
             rating.status(), rating.updatedAt());
-        return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), safe, m.status(), null);
+        return new MessageView(m.id(), "[来源不可用，问题已隐藏]", null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), safe, m.status(), null);
       }
       // 自己的来源或所依赖前序轮次的来源不再当前有效，答案都只能作历史核对，不能再复用。
       boolean stale = sources.stream().anyMatch(s -> !eligibleNow.contains(s.versionId()))

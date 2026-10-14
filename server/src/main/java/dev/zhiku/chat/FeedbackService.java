@@ -71,11 +71,11 @@ class FeedbackService {
     var items = repository.records(kbId, filter).stream().map(r -> {
       boolean own = r.userId().equals(scope.userId());
       boolean visible = own || canReadOthers;
-      // 评论可能引用回答；一旦其来源不可用，评论与回答一样被隐藏。
+      // 问题与评论都可能复制来源；一旦其来源不可用，相关自由文本都被隐藏。
       boolean commentVisible = visible && !Boolean.FALSE.equals(r.sourceAvailable());
       // 处理说明也可能摘抄答案或原文：来源失效后同样隐藏，只保留状态等结构化字段。
       boolean sourceGone = Boolean.FALSE.equals(r.sourceAvailable());
-      return new RecordItem(r.messageId(), r.createdAt(), own, visible ? r.question() : null, r.citationCount(), r.rating(),
+      return new RecordItem(r.messageId(), r.createdAt(), own, commentVisible ? r.question() : null, r.citationCount(), r.rating(),
           r.reason(), commentVisible ? r.comment() : null, r.status(), r.rootCause(), sourceGone ? null : r.resolution(), r.verificationCaseId(),
           r.outcome(), r.sourceAvailable(), r.traceId(), r.feedbackVersion(), r.handlingRevision());
     }).toList();

@@ -90,7 +90,9 @@ paths:
   /api/conversations:
     get:
       operationId: listConversations
-      description: Caller's own conversations in knowledge bases still granted.
+      description: >-
+        Caller's own conversations in knowledge bases still granted. If any completed turn has unavailable source
+        dependencies, title is replaced with a fixed notice rather than exposing text copied from a question.
       responses:
         '200': {description: Conversations}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -100,8 +102,9 @@ paths:
       operationId: listMessages
       description: >-
         Own conversation only; knowledge base must still be granted. Each stored answer is re-checked against its source
-        dependencies: if any source version is withdrawn, deleted or re-indexed, the answer and citations are hidden
-        (hidden=true, reason=SOURCE_UNAVAILABLE). stale=true means a source is no longer the currently effective version.
+        dependencies: if any source version is withdrawn, deleted, re-indexed or cannot be verified, the answer and citations
+        are hidden and question is replaced with a fixed notice (hidden=true, reason=SOURCE_UNAVAILABLE).
+        stale=true means a source is no longer the currently effective version; historical text remains available.
         Non-complete turns carry status and errorCode with answer null.
       responses:
         '200': {description: Messages}
@@ -136,6 +139,7 @@ paths:
       description: >-
         DEBUG_AND_EVALUATE (KB_OPERATOR). Latest 200 answers with feedback and handling status, plus 7-day stats.
         question and comment are null for other people's records unless READ_OTHERS_CONVERSATIONS is granted (no role has it yet).
+        If sourceAvailable is false, question, comment and resolution are null even for the caller's own records.
       responses:
         '200': {description: Records}
         '403': {$ref: '#/components/responses/Forbidden'}

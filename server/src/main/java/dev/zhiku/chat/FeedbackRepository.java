@@ -3,11 +3,13 @@ package dev.zhiku.chat;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -95,6 +97,17 @@ class FeedbackRepository {
           out.put(rs.getObject("message_id", UUID.class), view(rs, 0));
         }, conversationId);
     return out;
+  }
+
+  /** 仅检查已授权的列表页会话，复用记录页的来源规则，避免逐会话读取正文。 */
+  Set<UUID> unavailableConversations(List<UUID> conversationIds) {
+    if (conversationIds.isEmpty()) return Set.of();
+    var placeholders = String.join(",", Collections.nCopies(conversationIds.size(), "?"));
+    var sql = """
+        SELECT DISTINCT c.id FROM conversation c JOIN message m ON m.conversation_id = c.id
+        WHERE c.id IN (%s) AND (%s) = false
+        """.formatted(placeholders, SOURCE_AVAILABLE);
+    return Set.copyOf(jdbc.query(sql, (rs, i) -> rs.getObject("id", UUID.class), conversationIds.toArray()));
   }
 
   List<RecordRow> records(UUID kbId, String filter) {
