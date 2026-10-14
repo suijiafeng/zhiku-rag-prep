@@ -27,6 +27,7 @@ describe("admin shell", () => {
     const { pageFor } = await import("./App");
     expect(renderToStaticMarkup(pageFor("documents"))).toContain("文档管理");
     expect(renderToStaticMarkup(pageFor("documents"))).not.toContain("待实现");
-    expect(renderToStaticMarkup(pageFor("qa"))).toContain("待实现");
+    expect(renderToStaticMarkup(pageFor("qa"))).toContain("问答工作台");
+    expect(renderToStaticMarkup(pageFor("debug"))).toContain("待实现");
   });
 });

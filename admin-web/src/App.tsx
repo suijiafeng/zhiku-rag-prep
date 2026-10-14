@@ -2,6 +2,8 @@ import { Alert, Avatar, Breadcrumb, ConfigProvider, Input, Layout, Menu, Result,
 import { useState, type ReactNode } from "react";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
+import { QaWorkbench } from "./features/qa/QaWorkbench";
+import { qaFixture } from "./features/qa/fixtures";
 import { OverviewPage } from "./features/overview/OverviewPage";
 import { overviewFixture } from "./features/overview/fixtures";
 
@@ -19,6 +21,7 @@ type NavKey = (typeof NAV)[number]["key"];
 export function pageFor(key: NavKey): ReactNode {
   if (key === "overview") return <OverviewPage data={overviewFixture} />;
   if (key === "documents") return <DocumentsPage data={documentsFixture} />;
+  if (key === "qa") return <QaWorkbench data={qaFixture} />;
   const label = NAV.find((n) => n.key === key)?.label ?? key;
   return <Result status="info" title={`${label}：待实现`} subTitle="该页面已在设计稿中，按任务顺序后续接入。" />;
 }
@@ -29,7 +32,7 @@ export function App() {
   const current = NAV.find((n) => n.key === active) ?? NAV[0];
 
   return (
-    <ConfigProvider theme={{ token: { colorPrimary: "#2f5bd3", borderRadius: 8 } }}>
+    <ConfigProvider button={{ autoInsertSpace: false }} theme={{ token: { colorPrimary: "#2f5bd3", borderRadius: 8 } }}>
       <Layout className="shell">
         <Layout.Sider width={208} className="shell-sider" breakpoint="lg" collapsedWidth={0}>
           <div className="brand">
