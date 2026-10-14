@@ -35,7 +35,8 @@ class EvaluationService {
 
   record EvidenceInput(UUID versionId, String quote) {}
 
-  record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote) {}
+  /** quote is null and available false once the source version is withdrawn or its document deleted; the span stays. */
+  record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote, boolean available) {}
 
   record CaseView(UUID id, String question, String label, String status, String source, Instant createdAt, List<EvidenceView> evidence) {}
 
@@ -131,13 +132,15 @@ class EvaluationService {
     access.require(kbId, DEBUG_AND_EVALUATE);
     var evidence = new LinkedHashMap<UUID, List<EvidenceView>>();
     jdbc.query("""
-        SELECT e.case_id, e.version_id, d.title, v.version_label, e.start_offset, e.end_offset, e.quote
+        SELECT e.case_id, e.version_id, d.title, v.version_label, e.start_offset, e.end_offset, e.quote,
+               d.deleted_at IS NULL AND v.withdrawn_at IS NULL AS available
         FROM eval_evidence e JOIN eval_case c ON c.id = e.case_id JOIN content_version v ON v.id = e.version_id JOIN document d ON d.id = v.document_id
         WHERE c.kb_id = ? ORDER BY e.case_id, e.ordinal
         """, rs -> {
           evidence.computeIfAbsent(rs.getObject("case_id", UUID.class), k -> new ArrayList<>()).add(new EvidenceView(
               rs.getObject("version_id", UUID.class), rs.getString("title"), rs.getString("version_label"),
-              rs.getInt("start_offset"), rs.getInt("end_offset"), rs.getString("quote")));
+              rs.getInt("start_offset"), rs.getInt("end_offset"), rs.getBoolean("available") ? rs.getString("quote") : null,
+              rs.getBoolean("available")));
         }, kbId);
     return jdbc.query("SELECT id, question, label, status, source, created_at FROM eval_case WHERE kb_id = ? ORDER BY created_at DESC, id",
         (rs, i) -> {

@@ -98,7 +98,23 @@ class EvaluationTest extends IntegrationTest {
     assertThat(jdbc.queryForObject("SELECT end_offset FROM eval_evidence WHERE case_id = ?", Integer.class, caseId)).isEqualTo(start + "10 年以上 15 天".length());
     mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.KB_OPERATOR))
         .andExpect(jsonPath("$[0].status").value("candidate"))
-        .andExpect(jsonPath("$[0].evidence[0].quote").value("10 年以上 15 天"));
+        .andExpect(jsonPath("$[0].evidence[0].quote").value("10 年以上 15 天"))
+        .andExpect(jsonPath("$[0].evidence[0].available").value(true));
+  }
+
+  @Test
+  void evidenceQuotesAreHiddenOnceTheSourceIsWithdrawnOrDeleted() throws Exception {
+    id(createCase(caseJson("年假有几天?", leave, "10 年以上 15 天")).andExpect(status().isCreated()));
+    id(createCase(caseJson("住宿标准?", travel, "超标部分需事前审批")).andExpect(status().isCreated()));
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", leave);
+    jdbc.update("UPDATE document SET deleted_at = now(), cleanup_status = 'pending' WHERE id = (SELECT document_id FROM content_version WHERE id = ?)", travel);
+    var body = mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.KB_OPERATOR))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].evidence[0].available").value(false))
+        .andExpect(jsonPath("$[1].evidence[0].available").value(false))
+        .andExpect(jsonPath("$[0].evidence[0].startOffset").isNumber())
+        .andReturn().getResponse().getContentAsString();
+    assertThat(body).doesNotContain("10 年以上 15 天").doesNotContain("超标部分需事前审批");
   }
 
   @Test
