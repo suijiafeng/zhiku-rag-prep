@@ -435,7 +435,7 @@ paths:
     post:
       operationId: createEvalCase
       description: >-
-        DEBUG_AND_EVALUATE. label answerable | clarify | handoff. Candidates may start without evidence (e.g. from feedback). Each evidence quote must be
+        DEBUG_AND_EVALUATE. label answerable | clarify | handoff. Candidates may start without evidence (e.g. from feedback). Null entries and the same span twice are rejected (422). Each evidence quote must be
         found in the normalized text of a version in this knowledge base; it is stored as a character span, not a chunk id.
         New cases are candidates until approved. Audited.
       requestBody:
@@ -452,7 +452,7 @@ paths:
                 evidence:
                   type: array
                   maxItems: 10
-                  items: {type: object, required: [versionId, quote], properties: {versionId: {type: string, format: uuid}, quote: {type: string}}}
+                  items: {type: object, required: [versionId, quote], properties: {versionId: {type: string, format: uuid}, quote: {type: string, maxLength: 2000}, occurrence: {type: integer, minimum: 1, description: 'Which match to use (1-based); required when the quote occurs more than once (422 otherwise)'}}}
                 originMessageId: {type: string, format: uuid, description: Feedback message the case was made from; must be in this knowledge base (422)}
       responses:
         '201': {description: Created}
@@ -470,7 +470,7 @@ paths:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
     put:
       operationId: setEvalEvidence
-      description: Replaces a candidate's evidence (same quote rules as create). Approved cases are frozen (409). Audited.
+      description: Replaces a candidate's evidence (same quote rules as create). Approved cases are frozen (409); an approval in progress finishes first. Audited.
       responses:
         '204': {description: Updated}
         '404': {$ref: '#/components/responses/Error'}

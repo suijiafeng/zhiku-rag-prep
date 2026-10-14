@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,6 +31,7 @@ class EvaluationTest extends IntegrationTest {
   @Autowired JdbcTemplate jdbc;
   @Autowired ObjectMapper json;
   @Autowired IngestionWorker worker;
+  @Autowired org.springframework.transaction.support.TransactionTemplate tx;
 
   final UUID enterprise = UUID.randomUUID();
   final UUID operator = UUID.randomUUID();
@@ -139,6 +141,68 @@ class EvaluationTest extends IntegrationTest {
         .andExpect(status().isUnprocessableEntity());
     createCase("{\"question\":\"x\",\"label\":\"answerable\",\"originMessageId\":\"" + UUID.randomUUID() + "\"}")
         .andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  void nullEvidenceElementsAreRejectedAsInvalidInput() throws Exception {
+    createCase("{\"question\":\"x\",\"label\":\"answerable\",\"evidence\":[null]}").andExpect(status().isUnprocessableEntity());
+    createCase("{\"question\":\"x\",\"label\":\"answerable\",\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"年假\"},null]}")
+        .andExpect(status().isUnprocessableEntity());
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM eval_case WHERE kb_id = ?", Integer.class, kb)).isZero();
+    var caseId = id(createCase(caseJson("年假有几天?", leave, "10 年以上 15 天")));
+    mvc.perform(as(put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content("{\"evidence\":[null]}")).andExpect(status().isUnprocessableEntity());
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM eval_evidence WHERE case_id = ?", Integer.class, caseId)).isEqualTo(1);
+  }
+
+  @Test
+  void aQuoteFoundMoreThanOnceNeedsItsOccurrence() throws Exception {
+    var twice = ingest("请假时限", "甲部门：五个工作日。\n\n乙部门：五个工作日。");
+    String ev = "{\"question\":\"乙部门几天?\",\"label\":\"answerable\",\"evidence\":[{\"versionId\":\"" + twice + "\",\"quote\":\"五个工作日\"%s}]}";
+    createCase(ev.formatted("")).andExpect(status().isUnprocessableEntity());
+    createCase(ev.formatted(",\"occurrence\":3")).andExpect(status().isUnprocessableEntity());
+    var caseId = id(createCase(ev.formatted(",\"occurrence\":2")).andExpect(status().isCreated()));
+    var second = "甲部门：五个工作日。\n\n乙部门：五个工作日。".lastIndexOf("五个工作日");
+    assertThat(jdbc.queryForObject("SELECT start_offset FROM eval_evidence WHERE case_id = ?", Integer.class, caseId)).isEqualTo(second);
+  }
+
+  @Test
+  void theSameSpanCannotBeCountedTwice() throws Exception {
+    createCase("{\"question\":\"年假?\",\"label\":\"answerable\",\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"10 年以上 15 天\"},"
+        + "{\"versionId\":\"" + leave + "\",\"quote\":\"10 年以上 15 天\"}]}").andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  void anEvidenceEditWaitsForAnApprovalInProgressAndThenFindsTheCaseFrozen() throws Exception {
+    var caseId = id(createCase(caseJson("年假有几天?", leave, "10 年以上 15 天")));
+    var locked = new java.util.concurrent.CountDownLatch(1);
+    var release = new java.util.concurrent.CountDownLatch(1);
+    var approval = java.util.concurrent.CompletableFuture.runAsync(() -> tx.executeWithoutResult(status -> {
+      jdbc.queryForList("SELECT 1 FROM eval_case WHERE id = ? FOR UPDATE", Integer.class, caseId);
+      jdbc.update("UPDATE eval_case SET status = 'approved', approved_by = ? WHERE id = ?", operator, caseId);
+      locked.countDown();
+      try {
+        release.await();
+      } catch (InterruptedException e) {
+        throw new IllegalStateException(e);
+      }
+    }));
+    locked.await();
+    java.util.concurrent.CompletableFuture<Integer> edit = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+      try {
+        return mvc.perform(as(put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
+            .contentType("application/json").content("{\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"1-3 年 5 天\"}]}"))
+            .andReturn().getResponse().getStatus();
+      } catch (Exception e) {
+        throw new IllegalStateException(e);
+      }
+    });
+    Thread.sleep(300);
+    assertThat(edit.isDone()).isFalse();
+    release.countDown();
+    approval.get(5, java.util.concurrent.TimeUnit.SECONDS);
+    assertThat(edit.get(5, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(409);
+    assertThat(jdbc.queryForObject("SELECT quote FROM eval_evidence WHERE case_id = ?", String.class, caseId)).isEqualTo("10 年以上 15 天");
   }
 
   @Test

@@ -11,6 +11,10 @@ import dev.zhiku.knowledgebase.KnowledgeBaseAccess;
 import dev.zhiku.platform.ApiException;
 import dev.zhiku.retrieval.Retrieval.Candidate;
 import dev.zhiku.retrieval.RetrievalService;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,7 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
 class EvaluationService {
   static final Set<String> LABELS = Set.of("answerable", "clarify", "handoff");
 
-  record EvidenceInput(UUID versionId, String quote) {}
+  /** occurrence (1-based) picks one of several identical passages; required when the quote occurs more than once. */
+  record EvidenceInput(@NotNull UUID versionId, @NotBlank @Size(max = 2000) String quote, @Positive Integer occurrence) {}
 
   /** quote is null and available false once the source version is withdrawn or its document deleted; the span stays. */
   record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote, boolean available) {}
@@ -72,6 +77,7 @@ class EvaluationService {
   UUID createCase(UUID kbId, String question, String label, List<EvidenceInput> evidence, String source, UUID originMessageId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     if (!LABELS.contains(label)) throw ApiException.unprocessable("Unknown label");
+    requireEntries(evidence);
     if (originMessageId != null && !Boolean.TRUE.equals(jdbc.queryForObject(
         "SELECT EXISTS (SELECT 1 FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE m.id = ? AND c.kb_id = ?)",
         Boolean.class, originMessageId, kbId))) {
@@ -87,25 +93,48 @@ class EvaluationService {
   }
 
   /** Locates each quote in its version's normalized text and stores the character span. */
+  /** Element constraints are validated per entry (@Valid); a null entry is invalid input, checked before any write. */
+  static void requireEntries(List<EvidenceInput> inputs) {
+    if (inputs != null && inputs.stream().anyMatch(java.util.Objects::isNull)) throw ApiException.unprocessable("Evidence entries must not be empty");
+  }
+
   private void insertEvidence(UUID kbId, UUID caseId, List<EvidenceInput> inputs) {
+    var seen = new HashSet<Span>();
     for (int i = 0; i < inputs.size(); i++) {
       var e = inputs.get(i);
       var version = documents.findVersion(e.versionId()).filter(v -> v.kbId().equals(kbId))
           .orElseThrow(() -> ApiException.unprocessable("Evidence version is not in this knowledge base"));
       var text = normalizedContent(version.id());
       var quote = TextChunker.normalize(e.quote() == null ? "" : e.quote()).strip();
-      int at = quote.length() < 2 ? -1 : text.indexOf(quote);
-      if (at < 0) throw ApiException.unprocessable("Evidence quote was not found in the selected version");
+      var at = locate(text, quote, e.occurrence());
+      if (!seen.add(new Span(version.id(), at, at + quote.length()))) throw ApiException.unprocessable("The same evidence span is listed twice");
       jdbc.update("INSERT INTO eval_evidence (case_id, ordinal, version_id, start_offset, end_offset, quote) VALUES (?, ?, ?, ?, ?, ?)",
           caseId, i + 1, version.id(), at, at + quote.length(), quote);
     }
   }
 
+  /** Start of the chosen occurrence; identical passages elsewhere are different ground truth, so ambiguity is refused. */
+  static int locate(String text, String quote, Integer occurrence) {
+    if (quote.length() < 2) throw ApiException.unprocessable("Evidence quote was not found in the selected version");
+    var starts = new ArrayList<Integer>();
+    for (int at = text.indexOf(quote); at >= 0; at = text.indexOf(quote, at + 1)) starts.add(at);
+    if (starts.isEmpty()) throw ApiException.unprocessable("Evidence quote was not found in the selected version");
+    if (occurrence == null) {
+      if (starts.size() > 1) throw ApiException.unprocessable("Evidence quote occurs " + starts.size() + " times; choose which occurrence");
+      return starts.getFirst();
+    }
+    if (occurrence > starts.size()) throw ApiException.unprocessable("Evidence quote occurs only " + starts.size() + " times");
+    return starts.get(occurrence - 1);
+  }
+
+
   /** Replaces the evidence of a candidate; approved cases are frozen so past runs stay comparable. */
   @Transactional
   void setEvidence(UUID kbId, UUID caseId, List<EvidenceInput> evidence) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
-    var status = jdbc.queryForList("SELECT status FROM eval_case WHERE id = ? AND kb_id = ?", String.class, caseId, kbId);
+    requireEntries(evidence);
+    // Locks the case row: an approval in progress finishes first, and then the case is frozen (C22).
+    var status = jdbc.queryForList("SELECT status FROM eval_case WHERE id = ? AND kb_id = ? FOR UPDATE", String.class, caseId, kbId);
     if (status.isEmpty()) throw ApiException.notFound();
     if (!"candidate".equals(status.getFirst())) throw ApiException.conflict("Approved cases cannot change evidence");
     jdbc.update("DELETE FROM eval_evidence WHERE case_id = ?", caseId);
@@ -122,6 +151,8 @@ class EvaluationService {
   @Transactional
   void approve(UUID kbId, UUID caseId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
+    // Same row lock as evidence edits, so the evidence checked here is the evidence that gets frozen.
+    jdbc.queryForList("SELECT 1 FROM eval_case WHERE id = ? AND kb_id = ? FOR UPDATE", Integer.class, caseId, kbId);
     var needsEvidence = jdbc.queryForList(
         "SELECT 1 FROM eval_case c WHERE c.id = ? AND c.kb_id = ? AND c.label = 'answerable' AND NOT EXISTS (SELECT 1 FROM eval_evidence e WHERE e.case_id = c.id)",
         Integer.class, caseId, kbId);

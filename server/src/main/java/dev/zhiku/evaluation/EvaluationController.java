@@ -22,11 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/knowledge-bases/{kbId}")
 class EvaluationController {
   record CreateCaseRequest(@NotBlank @Size(max = 2000) String question, @NotNull String label,
-      @Size(max = 10) List<EvaluationService.EvidenceInput> evidence, @Size(max = 100) String source, UUID originMessageId) {}
+      @Size(max = 10) @Valid List<EvaluationService.EvidenceInput> evidence, @Size(max = 100) String source, UUID originMessageId) {}
 
   record RunRequest(Integer k) {}
 
-  record EvidenceRequest(@Size(max = 10) List<EvaluationService.EvidenceInput> evidence) {}
+  record EvidenceRequest(@Size(max = 10) @Valid List<EvaluationService.EvidenceInput> evidence) {}
 
   private final EvaluationService service;
 
