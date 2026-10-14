@@ -13,14 +13,17 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -196,8 +199,13 @@ public class ChatService {
       case OK -> { }
     }
 
-    // Revocation and withdrawal can happen while the model runs: re-read grants and eligibility before disclosure.
+    // Revocation and withdrawal can happen while the model runs: re-read grants and eligibility before disclosure,
+    // and confirm every earlier turn that went into the prompt is still available.
     var stopped = recheck(scope, kbId, sources);
+    if (stopped == null && !context.isEmpty()) {
+      var stillVisible = priorContext(scope, conversationId).stream().map(MessageView::id).collect(Collectors.toSet());
+      if (!context.stream().allMatch(m -> stillVisible.contains(m.id()))) stopped = "SOURCE_UNAVAILABLE";
+    }
     if (stopped != null) {
       fail(turn, sink, stopped, STOP_MESSAGE.get(stopped), requestId);
       return;
@@ -210,7 +218,7 @@ public class ChatService {
     UUID[] stored = tx.execute(status -> {
       var id = conversationId != null ? conversationId
           : repository.createConversation(scope.enterpriseId(), scope.userId(), kbId, title(question));
-      var messageId = repository.saveMessage(id, question, text, model.model(), sources);
+      var messageId = repository.saveMessage(id, question, text, model.model(), sources, dependencies(conversationId, context));
       link(turn, messageId);
       return new UUID[] {id, messageId};
     });
@@ -228,6 +236,18 @@ public class ChatService {
   private List<MessageView> priorContext(AccessScope scope, UUID conversationId) {
     var visible = messages(scope, conversationId).stream().filter(m -> !m.hidden() && "complete".equals(m.status())).toList();
     return visible.subList(Math.max(0, visible.size() - 3), visible.size());
+  }
+
+  /** The earlier turns used as context plus everything they depended on, so later checks need only one level. */
+  private Set<UUID> dependencies(UUID conversationId, List<MessageView> context) {
+    if (context.isEmpty()) return Set.of();
+    var known = repository.context(conversationId);
+    var out = new HashSet<UUID>();
+    for (var m : context) {
+      out.add(m.id());
+      out.addAll(known.getOrDefault(m.id(), Set.of()));
+    }
+    return out;
   }
 
   private List<Message> prompt(String question, List<Candidate> sources, List<MessageView> context) {
@@ -337,13 +357,18 @@ public class ChatService {
     var ratings = feedback.forConversation(conversationId);
     var sourcesByMessage = new LinkedHashMap<UUID, List<ChatRepository.SourceRow>>();
     repository.sources(conversationId).forEach(s -> sourcesByMessage.computeIfAbsent(s.messageId(), k -> new ArrayList<>()).add(s));
+    var context = repository.context(conversationId);
+    var ownSourcesOk = new HashMap<UUID, Boolean>();
+    sourcesByMessage.forEach((id, sources) -> ownSourcesOk.put(id, sources.stream().allMatch(s -> s.documentId() != null && !s.withdrawn()
+        && s.chunkText() != null && conversation.kbId().equals(s.kbId()))));
     return repository.messages(conversationId).stream().map(m -> {
       if (!"complete".equals(m.status())) {
         return new MessageView(m.id(), m.question(), null, false, null, false, List.of(), m.createdAt(), null, m.status(), m.errorCode());
       }
       var sources = sourcesByMessage.getOrDefault(m.id(), List.of());
-      boolean available = !sources.isEmpty() && sources.stream().allMatch(s -> s.documentId() != null && !s.withdrawn()
-          && s.chunkText() != null && conversation.kbId().equals(s.kbId()));
+      // An answer is available only while its own sources and those of every earlier turn it was generated from are.
+      boolean available = ownSourcesOk.getOrDefault(m.id(), false)
+          && context.getOrDefault(m.id(), Set.of()).stream().allMatch(d -> ownSourcesOk.getOrDefault(d, false));
       if (!available) {
         // The comment is free text that may quote the hidden answer: only structured feedback stays visible.
         var rating = ratings.get(m.id());

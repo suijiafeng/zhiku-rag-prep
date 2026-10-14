@@ -260,6 +260,18 @@ class FeedbackTest extends IntegrationTest {
   }
 
   @Test
+  void recordsTreatAnswersBuiltOnAnUnavailableEarlierTurnAsUnavailable() throws Exception {
+    var earlier = answeredFromRealSource(operator);
+    var later = answeredFromRealSource(operator);
+    jdbc.update("INSERT INTO message_context (message_id, depends_on) VALUES (?, ?)", later[0], earlier[0]);
+    rate(later[0], operator, "{\"rating\":\"down\",\"reason\":\"WRONG\",\"comment\":\"沿用了上一轮的说法\"}").andExpect(status().isOk());
+    records("down").andExpect(jsonPath("$.items[0].sourceAvailable").value(true));
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", earlier[2]);
+    var body = records("down").andExpect(jsonPath("$.items[0].sourceAvailable").value(false)).andReturn().getResponse().getContentAsString();
+    assertThat(body).doesNotContain("沿用了上一轮的说法");
+  }
+
+  @Test
   void historyShowsTheAskersOwnFeedback() throws Exception {
     rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"MISSING\"}").andExpect(status().isOk());
     var conversation = jdbc.queryForObject("SELECT conversation_id FROM message WHERE id = ?", UUID.class, askerMessage);

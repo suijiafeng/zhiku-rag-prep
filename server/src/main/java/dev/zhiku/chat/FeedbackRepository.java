@@ -24,19 +24,20 @@ class FeedbackRepository {
   record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt) {}
 
   /**
-   * Same rule as the history view: a completed answer is available only while every source document exists and is not
-   * deleted, its version is not withdrawn, the chunk still exists, and it belongs to the conversation's knowledge base.
-   * Null for turns that are not completed answers.
+   * Same rule as the history view: a completed answer is available only while, for it and every earlier turn it was
+   * generated from, each source document exists and is not deleted, its version is not withdrawn, the chunk still
+   * exists, and it belongs to the conversation's knowledge base. Null for turns that are not completed answers.
    */
   private static final String SOURCE_AVAILABLE = """
-      CASE WHEN m.status <> 'complete' THEN NULL ELSE
-        EXISTS (SELECT 1 FROM message_source s WHERE s.message_id = m.id)
-        AND NOT EXISTS (
-          SELECT 1 FROM message_source s
-          LEFT JOIN content_version v ON v.id = s.version_id
-          LEFT JOIN document d ON d.id = v.document_id AND d.deleted_at IS NULL
-          LEFT JOIN chunk ch ON ch.id = s.chunk_id AND ch.version_id = s.version_id
-          WHERE s.message_id = m.id AND (d.id IS NULL OR v.withdrawn_at IS NOT NULL OR ch.id IS NULL OR d.kb_id <> c.kb_id))
+      CASE WHEN m.status <> 'complete' THEN NULL ELSE NOT EXISTS (
+        SELECT 1 FROM (SELECT m.id AS mid UNION ALL SELECT mc.depends_on FROM message_context mc WHERE mc.message_id = m.id) dep
+        WHERE NOT EXISTS (SELECT 1 FROM message_source s WHERE s.message_id = dep.mid)
+           OR EXISTS (
+             SELECT 1 FROM message_source s
+             LEFT JOIN content_version v ON v.id = s.version_id
+             LEFT JOIN document d ON d.id = v.document_id AND d.deleted_at IS NULL
+             LEFT JOIN chunk ch ON ch.id = s.chunk_id AND ch.version_id = s.version_id
+             WHERE s.message_id = dep.mid AND (d.id IS NULL OR v.withdrawn_at IS NOT NULL OR ch.id IS NULL OR d.kb_id <> c.kb_id)))
       END""";
 
   private final JdbcTemplate jdbc;

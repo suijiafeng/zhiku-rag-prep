@@ -309,6 +309,52 @@ class ChatTest extends IntegrationTest {
     assertThat(jdbc.queryForObject("SELECT count(*) FROM message WHERE conversation_id = CAST(? AS uuid)", Integer.class, conversation)).isEqualTo(2);
   }
 
+  /** An earlier completed turn in a new conversation, answered from source A, which retrieval does not return now. */
+  UUID[] earlierTurnFromOtherSource() {
+    var doc = UUID.randomUUID();
+    var a = UUID.randomUUID();
+    var chunk = UUID.randomUUID();
+    jdbc.update("INSERT INTO document (id, kb_id, title, created_by) VALUES (?, ?, '旧制度', ?)", doc, kb, operator);
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, created_by) VALUES (?, ?, 'v1', now(), ?)", a, doc, operator);
+    jdbc.update("INSERT INTO chunk (id, version_id, seq, start_offset, end_offset, text) VALUES (?, ?, 0, 0, 8, '调休按小时折算')", chunk, a);
+    var conversation = UUID.randomUUID();
+    var turn = UUID.randomUUID();
+    jdbc.update("INSERT INTO conversation (id, enterprise_id, user_id, kb_id, title) VALUES (?, ?, ?, ?, '调休')", conversation, enterprise, employee, kb);
+    jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model, created_at) VALUES (?, ?, '调休怎么算?', '调休按小时折算[1]', 'test', now() - interval '1 minute')",
+        turn, conversation);
+    jdbc.update("INSERT INTO message_source (message_id, ordinal, version_id, chunk_id) VALUES (?, 1, ?, ?)", turn, a, chunk);
+    return new UUID[] {conversation, a};
+  }
+
+  @Test
+  void followUpsAreHiddenWhenASourceOfTheirContextIsWithdrawn() throws Exception {
+    var earlier = earlierTurnFromOtherSource();
+    var conversation = earlier[0].toString();
+    var done = ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "那年假呢?"));
+    assertThat(names(done)).contains("done");
+    assertThat(model.lastPrompt.getLast().content()).contains("调休怎么算?");
+    mvc.perform(get("/api/conversations/{id}/messages", conversation).header(HttpHeaders.AUTHORIZATION, token(employee, Role.EMPLOYEE)))
+        .andExpect(jsonPath("$[1].hidden").value(false))
+        .andExpect(jsonPath("$[1].citations[0].versionId").value(version.toString()));
+
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", earlier[1]);
+    mvc.perform(get("/api/conversations/{id}/messages", conversation).header(HttpHeaders.AUTHORIZATION, token(employee, Role.EMPLOYEE)))
+        .andExpect(jsonPath("$[0].hidden").value(true))
+        .andExpect(jsonPath("$[1].hidden").value(true))
+        .andExpect(jsonPath("$[1].answer").doesNotExist());
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "再问一次"));
+    assertThat(model.lastPrompt.getLast().content()).doesNotContain("此前对话").doesNotContain("那年假呢?");
+  }
+
+  @Test
+  void withdrawingAContextSourceDuringGenerationStopsTheFollowUp() throws Exception {
+    var earlier = earlierTurnFromOtherSource();
+    model.beforeFinish = () -> jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", earlier[1]);
+    var frames = ask(token(employee, Role.EMPLOYEE), continueBody(earlier[0].toString(), "那年假呢?"));
+    assertThat(names(frames)).doesNotContain("validated", "done");
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("SOURCE_UNAVAILABLE");
+  }
+
   @Test
   void turnsWithUnavailableSourcesAreExcludedFromContext() throws Exception {
     var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();

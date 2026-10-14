@@ -44,9 +44,13 @@ class ChatRepository {
     return id;
   }
 
-  UUID saveMessage(UUID conversationId, String question, String answer, String model, List<Candidate> sources) {
+  UUID saveMessage(UUID conversationId, String question, String answer, String model, List<Candidate> sources,
+      java.util.Collection<UUID> dependsOn) {
     var id = UUID.randomUUID();
     jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model) VALUES (?, ?, ?, ?, ?)", id, conversationId, question, answer, model);
+    for (var earlier : dependsOn) {
+      jdbc.update("INSERT INTO message_context (message_id, depends_on) VALUES (?, ?)", id, earlier);
+    }
     for (int i = 0; i < sources.size(); i++) {
       jdbc.update("INSERT INTO message_source (message_id, ordinal, version_id, chunk_id) VALUES (?, ?, ?, ?)",
           id, i + 1, sources.get(i).versionId(), sources.get(i).chunkId());
@@ -68,6 +72,16 @@ class ChatRepository {
         id, conversationId, question, model, status, errorCode);
     jdbc.update("UPDATE conversation SET updated_at = now() WHERE id = ?", conversationId);
     return id;
+  }
+
+  /** Earlier turns each message of the conversation depends on (already a closure). */
+  java.util.Map<UUID, java.util.Set<UUID>> context(UUID conversationId) {
+    var out = new java.util.HashMap<UUID, java.util.Set<UUID>>();
+    jdbc.query("SELECT mc.message_id, mc.depends_on FROM message_context mc JOIN message m ON m.id = mc.message_id WHERE m.conversation_id = ?",
+        rs -> {
+          out.computeIfAbsent(rs.getObject("message_id", UUID.class), k -> new java.util.HashSet<>()).add(rs.getObject("depends_on", UUID.class));
+        }, conversationId);
+    return out;
   }
 
   /** Sources joined to their current state; missing joins (deleted document or re-indexed) come back with null ids. */
