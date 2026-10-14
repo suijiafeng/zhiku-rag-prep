@@ -341,6 +341,67 @@ paths:
       responses:
         '200': {description: Overview}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /api/knowledge-bases/{kbId}/eval-cases:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: listEvalCases
+      description: DEBUG_AND_EVALUATE. Cases with their evidence spans (version, character offsets, quote).
+      responses:
+        '200': {description: Cases}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createEvalCase
+      description: >-
+        DEBUG_AND_EVALUATE. label answerable | clarify | handoff; answerable needs evidence. Each evidence quote must be
+        found in the normalized text of a version in this knowledge base; it is stored as a character span, not a chunk id.
+        New cases are candidates until approved. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, label]
+              properties:
+                question: {type: string, maxLength: 2000}
+                label: {type: string, enum: [answerable, clarify, handoff]}
+                source: {type: string}
+                evidence:
+                  type: array
+                  maxItems: 10
+                  items: {type: object, required: [versionId, quote], properties: {versionId: {type: string, format: uuid}, quote: {type: string}}}
+      responses:
+        '201': {description: Created}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-cases/{caseId}/approve:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      operationId: approveEvalCase
+      description: Candidate -> approved; only approved cases are evaluated. Audited.
+      responses:
+        '204': {description: Approved}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-runs:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    post:
+      operationId: runEvaluation
+      description: >-
+        Retrieval evaluation of approved answerable cases with the caller's authorized scope; no model call.
+        Spans are mapped onto current chunks; unmappable cases are preparation failures excluded from denominators.
+        Reports Hit@K, evidence recall (spans and macro), P95 retrieval latency. Answer correctness is not measured here.
+      requestBody: {content: {application/json: {schema: {type: object, properties: {k: {type: integer, minimum: 1, maximum: 30, default: 5}}}}}}
+      responses:
+        '200': {description: Run with results}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-runs/latest:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: latestEvaluationRun
+      responses:
+        '200': {description: Latest run}
+        '204': {description: No run yet}
   /api/knowledge-bases/{kbId}/eligibility:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: at, in: query, schema: {type: string, format: date-time}}]
     get:
