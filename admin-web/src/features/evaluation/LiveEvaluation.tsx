@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalRun, type EvalSummary, type EvidenceInput } from "../../api/client";
+import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalRun, type EvalSummary, type EvidenceInput, type CaseDetails } from "../../api/client";
 import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews";
 
 const LABEL: Record<EvalCase["label"], string> = { answerable: "可回答", clarify: "应澄清", handoff: "应转人工" };
@@ -33,20 +33,59 @@ export function evidenceEntry(versionId: string, quote: string, occurrence: numb
   return occurrence ? { versionId, quote: quote.trim(), occurrence } : { versionId, quote: quote.trim() };
 }
 
+/** 可回答用例批准前还缺的项（服务端同样校验）。 */
+export function missingForApproval(c: EvalCase): string[] {
+  if (c.label !== "answerable") return [];
+  return [
+    ...(c.evidence.length === 0 ? ["证据"] : []),
+    ...(c.expectedAnswer ? [] : ["参考答案"]),
+    ...(c.requiredFacts.length === 0 ? ["必要事实"] : []),
+  ];
+}
+
+export function parseFacts(text: string) {
+  return text.split("\n").map((f) => f.trim()).filter(Boolean);
+}
+
+export interface DetailsInput {
+  expectedAnswer: string;
+  facts: string;
+  appliesTo: string;
+  /** datetime-local 输入值，按浏览器本地时间解释。 */
+  queryAt: string;
+}
+
+export function detailsBody(v: DetailsInput): CaseDetails {
+  return {
+    ...(v.expectedAnswer.trim() ? { expectedAnswer: v.expectedAnswer.trim() } : {}),
+    requiredFacts: parseFacts(v.facts),
+    ...(v.appliesTo.trim() ? { appliesTo: v.appliesTo.trim() } : {}),
+    ...(v.queryAt ? { queryAt: new Date(v.queryAt).toISOString() } : {}),
+  };
+}
+
 export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onApprove: (c: EvalCase) => void; onEdit: (c: EvalCase) => void }) {
   if (cases.length === 0) return <EmptyState icon="chart" title="暂无评测用例" description="新建用例，或在问答记录中把点踩加入评测候选。" />;
   return (
     <ul className="session-list">
       {cases.map((c) => {
-        const needsEvidence = c.label === "answerable" && c.evidence.length === 0;
+        const missing = missingForApproval(c);
         return (
           <li key={c.id} className="eval-case">
             <div>
               <Tag color={c.status === "approved" ? "green" : "orange"}>{c.status === "approved" ? "已批准" : "候选"}</Tag>
               <Tag>{LABEL[c.label]}</Tag>
-              {needsEvidence && <Tag color="red">待补证据</Tag>}
+              {missing.length > 0 && <Tag color="red">待补齐：{missing.join("、")}</Tag>}
               <span>{c.question}</span>
             </div>
+            {c.expectedAnswer && <div className="card-unit">参考答案：{c.expectedAnswer}</div>}
+            {c.requiredFacts.length > 0 && <div className="card-unit">必要事实：{c.requiredFacts.join("；")}</div>}
+            {(c.appliesTo || c.queryAt) && (
+              <div className="card-unit">
+                {c.appliesTo && `适用：${c.appliesTo}`}{c.appliesTo && c.queryAt && " · "}
+                {c.queryAt && `查询时点：${new Date(c.queryAt).toLocaleString("zh-CN")}`}
+              </div>
+            )}
             {c.evidence.map((e, i) => (
               <div key={i} className="card-unit">
                 证据：{e.documentTitle} {e.versionLabel} · {e.available ? `「${e.quote ?? ""}」` : "来源已撤回或删除，摘录不再显示"} [{e.startOffset}, {e.endOffset})
@@ -54,8 +93,8 @@ export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onAp
             ))}
             {c.status === "candidate" && (
               <Space size={4}>
-                <Button size="small" onClick={() => onEdit(c)}>补证据</Button>
-                <Button size="small" type="primary" disabled={needsEvidence} onClick={() => onApprove(c)}>批准</Button>
+                <Button size="small" onClick={() => onEdit(c)}>补齐</Button>
+                <Button size="small" type="primary" disabled={missing.length > 0} onClick={() => onApprove(c)}>批准</Button>
               </Space>
             )}
           </li>
@@ -65,13 +104,20 @@ export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onAp
   );
 }
 
-function EvidenceForm({ docs, initialQuestion, onSubmit, onCancel, submitLabel }: {
+function EvidenceForm({ docs, initial, onSubmit, onCancel, submitLabel }: {
   docs: DocumentInfo[];
-  initialQuestion?: string;
+  initial?: EvalCase;
   submitLabel: string;
-  onSubmit: (v: { question: string; label: EvalCase["label"]; evidence: EvidenceInput[] }) => Promise<void>;
+  onSubmit: (v: { question: string; label: EvalCase["label"]; evidence: EvidenceInput[]; details: CaseDetails }) => Promise<void>;
   onCancel?: () => void;
 }) {
+  const initialQuestion = initial?.question;
+  const [details, setDetails] = useState<DetailsInput>({
+    expectedAnswer: initial?.expectedAnswer ?? "",
+    facts: (initial?.requiredFacts ?? []).join("\n"),
+    appliesTo: initial?.appliesTo ?? "",
+    queryAt: "",
+  });
   const [question, setQuestion] = useState(initialQuestion ?? "");
   const [label, setLabel] = useState<EvalCase["label"]>("answerable");
   const [versionId, setVersionId] = useState<string>();
@@ -91,9 +137,18 @@ function EvidenceForm({ docs, initialQuestion, onSubmit, onCancel, submitLabel }
       <Input.TextArea rows={2} placeholder="粘贴原文摘录（服务端在该版本原文中定位字符区间）" value={quote} onChange={(e) => setQuote(e.target.value)} aria-label="原文摘录" />
       <InputNumber min={1} precision={0} placeholder="第几处（摘录在原文重复出现时填写）" value={occurrence ?? null}
         onChange={(v) => setOccurrence(v ?? undefined)} aria-label="第几处" className="eval-occurrence" />
+      <Input.TextArea rows={2} maxLength={2000} placeholder="参考答案" value={details.expectedAnswer} aria-label="参考答案"
+        onChange={(e) => setDetails({ ...details, expectedAnswer: e.target.value })} />
+      <Input.TextArea rows={2} placeholder="必要事实，每行一条（最多 10 条）" value={details.facts} aria-label="必要事实"
+        onChange={(e) => setDetails({ ...details, facts: e.target.value })} />
+      <Input placeholder="适用对象（可空），如：正式员工" maxLength={200} value={details.appliesTo} aria-label="适用对象"
+        onChange={(e) => setDetails({ ...details, appliesTo: e.target.value })} />
+      <Input type="datetime-local" value={details.queryAt} aria-label="查询时点（可空，默认运行时刻）"
+        onChange={(e) => setDetails({ ...details, queryAt: e.target.value })} />
       <Space>
-        <Button type="primary" size="small" disabled={!question.trim() || (label === "answerable" && (!versionId || quote.trim().length < 2))}
-          onClick={() => void onSubmit({ question: question.trim(), label, evidence: versionId && quote.trim() ? [evidenceEntry(versionId, quote, occurrence)] : [] })}>
+        <Button type="primary" size="small" disabled={!question.trim() || (!initial && label === "answerable" && (!versionId || quote.trim().length < 2))}
+          onClick={() => void onSubmit({ question: question.trim(), label, evidence: versionId && quote.trim() ? [evidenceEntry(versionId, quote, occurrence)] : [],
+            details: detailsBody(details) })}>
           {submitLabel}
         </Button>
         {onCancel && <Button size="small" onClick={onCancel}>取消</Button>}
@@ -195,13 +250,18 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
               <CaseList cases={cases} onApprove={(c) => void act(() => client.approveEvalCase(kbId, c.id))} onEdit={setEditing} />
             )}
           </Card>
-          <Card size="small" className="side-card" title={editing ? `补证据 · ${editing.question}` : "新建用例"}>
+          <Card size="small" className="side-card" title={editing ? `补齐 · ${editing.question}` : "新建用例"}>
             {editing ? (
-              <EvidenceForm key={editing.id} docs={docs} initialQuestion={editing.question} submitLabel="保存证据" onCancel={() => setEditing(undefined)}
-                onSubmit={(v) => act(() => client.setEvalEvidence(kbId, editing.id, v.evidence))} />
+              <EvidenceForm key={editing.id} docs={docs} initial={editing} submitLabel="保存" onCancel={() => setEditing(undefined)}
+                onSubmit={(v) => act(async () => {
+                  // 未填写新证据时保留原证据，只更新样本字段。
+                  if (v.evidence.length) await client.setEvalEvidence(kbId, editing.id, v.evidence);
+                  await client.setEvalCaseDetails(kbId, editing.id, v.details);
+                })} />
             ) : (
               <EvidenceForm docs={docs} submitLabel="创建候选"
-                onSubmit={(v) => act(() => client.createEvalCase(kbId, v.evidence.length ? v : { question: v.question, label: v.label }))} />
+                onSubmit={(v) => act(() => client.createEvalCase(kbId, { question: v.question, label: v.label, ...v.details,
+                  ...(v.evidence.length ? { evidence: v.evidence } : {}) }))} />
             )}
           </Card>
         </Col>

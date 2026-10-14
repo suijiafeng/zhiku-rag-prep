@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CaseList, evidenceEntry, metricCards, resultTag } from "./LiveEvaluation";
+import { CaseList, detailsBody, evidenceEntry, metricCards, missingForApproval, parseFacts, resultTag } from "./LiveEvaluation";
 import { RecordsTable } from "../records/RecordsPage";
 import type { EvalCase, EvalSummary } from "../../api/client";
 
@@ -31,6 +31,20 @@ describe("live evaluation", () => {
     expect(resultTag(r)).toBe("未命中");
   });
 
+  it("lists what an answerable case still needs before approval", () => {
+    const base = { id: "c", question: "q", status: "candidate", source: "manual", createdAt: "", originMessageId: null, appliesTo: null, queryAt: null } as const;
+    expect(missingForApproval({ ...base, label: "answerable", evidence: [], expectedAnswer: null, requiredFacts: [] })).toEqual(["证据", "参考答案", "必要事实"]);
+    expect(missingForApproval({ ...base, label: "handoff", evidence: [], expectedAnswer: null, requiredFacts: [] })).toEqual([]);
+  });
+
+  it("reads one required fact per line and builds the details request", () => {
+    expect(parseFacts(" 10 年以上 15 天 \n\n按司龄计算\n")).toEqual(["10 年以上 15 天", "按司龄计算"]);
+    expect(detailsBody({ expectedAnswer: " 按司龄 ", facts: "a\nb", appliesTo: "", queryAt: "" }))
+      .toEqual({ expectedAnswer: "按司龄", requiredFacts: ["a", "b"] });
+    expect(detailsBody({ expectedAnswer: "x", facts: "a", appliesTo: "正式员工", queryAt: "2099-06-01T08:00" }).queryAt)
+      .toBe(new Date("2099-06-01T08:00").toISOString());
+  });
+
   it("sends the chosen occurrence only when one was given", () => {
     expect(evidenceEntry("v", " 五个工作日 ", undefined)).toEqual({ versionId: "v", quote: "五个工作日" });
     expect(evidenceEntry("v", "五个工作日", 2)).toEqual({ versionId: "v", quote: "五个工作日", occurrence: 2 });
@@ -42,20 +56,24 @@ describe("live evaluation", () => {
 
   it("lets candidates be approved and completed but freezes approved cases", () => {
     const cases: EvalCase[] = [
-      { id: "c1", question: "年假有几天?", label: "answerable", status: "candidate", source: "feedback", createdAt: "", evidence: [], originMessageId: "m1" },
+      { id: "c1", question: "年假有几天?", label: "answerable", status: "candidate", source: "feedback", createdAt: "", evidence: [], originMessageId: "m1",
+        expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null },
       { id: "c2", question: "报销多久?", label: "answerable", status: "approved", source: "manual", createdAt: "",
         evidence: [{ versionId: "v", documentTitle: "报销说明", versionLabel: "v2", startOffset: 0, endOffset: 4, quote: "五个工作日", available: true }],
-        originMessageId: null },
+        originMessageId: null, expectedAnswer: "五个工作日内到账", requiredFacts: ["五个工作日"], appliesTo: "正式员工", queryAt: null },
     ];
     const html = renderToStaticMarkup(<CaseList cases={cases} onApprove={() => {}} onEdit={() => {}} />);
     expect(html).toContain("候选");
-    expect(html).toContain("待补证据");
+    expect(html).toContain("待补齐：证据、参考答案、必要事实");
+    expect(html).toContain("必要事实：五个工作日");
+    expect(html).toContain("适用：正式员工");
     expect(html).toContain("五个工作日");
     expect((html.match(/批准/g) ?? []).length).toBe(1);
   });
 
   it("says a source was withdrawn or deleted instead of showing an empty quote", () => {
     const cases: EvalCase[] = [{ id: "c3", question: "差旅?", label: "answerable", status: "approved", source: "manual", createdAt: "", originMessageId: null,
+      expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null,
       evidence: [{ versionId: "v", documentTitle: "差旅标准", versionLabel: "v1", startOffset: 3, endOffset: 9, quote: null, available: false }] }];
     const html = renderToStaticMarkup(<CaseList cases={cases} onApprove={() => {}} onEdit={() => {}} />);
     expect(html).toContain("来源已撤回或删除，摘录不再显示");

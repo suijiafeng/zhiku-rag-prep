@@ -248,6 +248,18 @@ export interface EvalCase {
   evidence: EvalEvidence[];
   /** 生成该用例的反馈消息；只有此类用例才能验证该反馈的修复。 */
   originMessageId: string | null;
+  expectedAnswer: string | null;
+  requiredFacts: string[];
+  appliesTo: string | null;
+  /** 按此时点判断版本效力；为空表示按运行时刻。 */
+  queryAt: string | null;
+}
+
+export interface CaseDetails {
+  expectedAnswer?: string;
+  requiredFacts: string[];
+  appliesTo?: string;
+  queryAt?: string;
 }
 
 export interface EvalSummary {
@@ -354,10 +366,12 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     overview: (kbId: string) => request<OverviewApi>(`${kb(kbId)}/overview`),
     evalCases: (kbId: string) => request<EvalCase[]>(`${kb(kbId)}/eval-cases`),
     createEvalCase: (kbId: string, body: { question: string; label: EvalCase["label"]; source?: string; originMessageId?: string;
-      evidence?: EvidenceInput[] }) =>
+      evidence?: EvidenceInput[] } & Partial<CaseDetails>) =>
       request<{ id: string }>(`${kb(kbId)}/eval-cases`, post(body)),
     setEvalEvidence: (kbId: string, caseId: string, evidence: EvidenceInput[]) =>
       request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/evidence`, { ...post({ evidence }), method: "PUT" }),
+    setEvalCaseDetails: (kbId: string, caseId: string, details: CaseDetails) =>
+      request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/details`, { ...post(details), method: "PUT" }),
     approveEvalCase: (kbId: string, caseId: string) => request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/approve`, { method: "POST" }),
     runEvaluation: (kbId: string, k: number) => request<EvalRun>(`${kb(kbId)}/eval-runs`, post({ k })),
     latestRun: (kbId: string) => request<EvalRun | undefined>(`${kb(kbId)}/eval-runs/latest`),

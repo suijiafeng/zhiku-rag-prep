@@ -32,7 +32,7 @@ describe("closing feedback", () => {
   });
 
   it("offers only approved cases made from this feedback as verification", () => {
-    const base = { label: "answerable" as const, source: "feedback", createdAt: "", evidence: [] };
+    const base = { label: "answerable" as const, source: "feedback", createdAt: "", evidence: [], expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null };
     const cases: EvalCase[] = [
       { ...base, id: "own", question: "a", status: "approved", originMessageId: "m1" },
       { ...base, id: "draft", question: "b", status: "candidate", originMessageId: "m1" },
