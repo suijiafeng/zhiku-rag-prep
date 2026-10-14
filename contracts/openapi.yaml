@@ -116,6 +116,45 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
+  /api/me:
+    get:
+      operationId: me
+      description: Identity from the verified token plus knowledge bases granted right now.
+      responses:
+        '200':
+          description: Caller
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId: {type: string, format: uuid}
+                  enterpriseId: {type: string, format: uuid}
+                  roles: {type: array, items: {type: string}}
+                  knowledgeBaseIds: {type: array, items: {type: string, format: uuid}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /api/policy/roles:
+    get:
+      operationId: rolePolicy
+      description: Server role matrix (roles x knowledge-base actions -> ALLOWED | REQUIRES_EXPLICIT_GRANT | NEVER). Explicit grants are not modelled yet and are denied.
+      responses:
+        '200': {description: Matrix}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /api/admin/knowledge-bases:
+    get:
+      operationId: adminListKnowledgeBases
+      description: IT_ADMIN only. All knowledge bases of the caller's enterprise with member counts, including ones the admin is not granted.
+      responses:
+        '200': {description: Knowledge bases}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/knowledge-bases/{kbId}/grants:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: listGrants
+      description: IT_ADMIN of the same enterprise. User ids and grant times only; user profiles live in the identity provider.
+      responses:
+        '200': {description: Grants}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/knowledge-bases/{kbId}/grants/{userId}:
     parameters:
       - {name: kbId, in: path, required: true, schema: {type: string, format: uuid}}

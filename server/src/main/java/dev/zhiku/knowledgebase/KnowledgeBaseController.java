@@ -38,6 +38,11 @@ class KnowledgeBaseController {
     return service.create(request.name().strip());
   }
 
+  @GetMapping("/{kbId}/grants")
+  List<KnowledgeBaseRepository.GrantView> grants(@PathVariable UUID kbId) {
+    return service.grantsOf(kbId);
+  }
+
   @PutMapping("/{kbId}/grants/{userId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   void grant(@PathVariable UUID kbId, @PathVariable UUID userId) {

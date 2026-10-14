@@ -57,6 +57,17 @@ public class KnowledgeBaseService {
     audit.record(scope, "KB_REVOKE", "kb:" + kbId + "/user:" + userId, "OK", Map.of());
   }
 
+  @Transactional(readOnly = true)
+  public List<KnowledgeBaseRepository.AdminView> adminList() {
+    return repository.findAllInEnterprise(requireAdmin().enterpriseId());
+  }
+
+  @Transactional(readOnly = true)
+  public List<KnowledgeBaseRepository.GrantView> grantsOf(UUID kbId) {
+    requireAdminOf(kbId);
+    return repository.grants(kbId);
+  }
+
   private AccessScope requireAdmin() {
     var scope = requireScope();
     if (!scope.hasRole(Role.IT_ADMIN)) throw ApiException.forbidden();

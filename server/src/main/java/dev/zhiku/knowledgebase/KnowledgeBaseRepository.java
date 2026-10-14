@@ -32,6 +32,24 @@ public class KnowledgeBaseRepository implements GrantLookup {
         enterpriseId, ids.toArray(UUID[]::new));
   }
 
+  public record AdminView(UUID id, String name, int memberCount, java.time.Instant createdAt) {}
+
+  public record GrantView(UUID userId, java.time.Instant grantedAt) {}
+
+  public List<AdminView> findAllInEnterprise(UUID enterpriseId) {
+    return jdbc.query("""
+        SELECT kb.id, kb.name, kb.created_at, count(g.user_id) AS members
+        FROM knowledge_base kb LEFT JOIN kb_grant g ON g.kb_id = kb.id
+        WHERE kb.enterprise_id = ? GROUP BY kb.id ORDER BY kb.name
+        """, (rs, i) -> new AdminView(rs.getObject("id", UUID.class), rs.getString("name"), rs.getInt("members"),
+            rs.getTimestamp("created_at").toInstant()), enterpriseId);
+  }
+
+  public List<GrantView> grants(UUID kbId) {
+    return jdbc.query("SELECT user_id, granted_at FROM kb_grant WHERE kb_id = ? ORDER BY granted_at, user_id",
+        (rs, i) -> new GrantView(rs.getObject("user_id", UUID.class), rs.getTimestamp("granted_at").toInstant()), kbId);
+  }
+
   public Optional<KnowledgeBaseRef> find(UUID id) {
     return jdbc.query("SELECT id, enterprise_id FROM knowledge_base WHERE id = ?",
         (rs, i) -> new KnowledgeBaseRef(rs.getObject("id", UUID.class), rs.getObject("enterprise_id", UUID.class)), id)
