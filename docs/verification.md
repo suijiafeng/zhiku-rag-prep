@@ -1,12 +1,30 @@
-# 验证记录 · 2026-10-14
+# 验证记录
 
-## 前端（已完成）
+每节记录一次实际执行的命令、结果与未验证项，按时间顺序排列。只记录真正运行过的检查；未运行的不写"通过"。
+
+## 当前基线 · 2026-10-15
+
+基线提交 `e51a9d4`（本机 macOS，Java 21.0.12.1、Maven 3.9.16、Node 24、Docker 29.8.2）。
+
+| 包 | 命令 | 结果 |
+|---|---|---|
+| server | `mvn -B clean verify` | 239 项通过，BUILD SUCCESS |
+| admin-web | `npm run check` | 141 项中 140 通过、1 项失败（`LiveEvaluation.dom.test.tsx` 的"两份文档证据"用例，按文本定位下拉选项时命中两处；待修复），退出码 1 |
+| widget | `npm run check` | 37 项通过，构建成功 |
+
+**因此 CI 当前不会全绿。** 修复前不要把 admin-web 的检查结果写成"通过"。
+
+## 脚手架阶段（历史，已过时）
+
+> 以下四节记录的是仓库只有骨架时（云端环境，无 Docker）的结果，其中"17 项测试""未执行数据库集成测试""完整产品任务仍为 pending"等结论均已被后续记录取代，仅保留作历史证据。
+
+### 前端（已完成）
 环境：Node 24.19.0、npm 11.9.0。
 - admin-web：npm ci；npm run check（typecheck + vitest + Vite build）通过。1 项静态渲染测试通过。Vite dev server 的首页及 App.tsx HTTP 冒烟通过。
 - widget：npm ci；npm run check 通过。2 个文件共 9 项测试通过，包含 SSE 增量分帧、终止/上限和组件静态渲染；ESM/声明文件构建及构建包 Node import 通过。
 - 管理端 bundle 提示：573.24 kB minified / 185.94 kB gzip，超过 Vite 默认 chunk 建议线。保留警告，未抬阈值；真实功能接入时再做按路由拆包。
 
-## 后端
+### 后端
 Java 21 原始 release 21 配置编译成功；最终 Maven clean verify：BUILD SUCCESS。
 17 项测试全部通过：14 项权限/效力边界策略测试，3 项 HTTP 安全冒烟；Failures 0 / Errors 0 / Skipped 0。可执行 Spring Boot JAR 打包成功；实际启动 JAR，GET /api/status 返回 scaffold / modelEnabled=false 的 HTTP 冒烟通过，随后已停止进程。
 实际命令（云端环境专用路径，不是用户安装要求）：
@@ -15,10 +33,10 @@ Java 21 原始 release 21 配置编译成功；最终 Maven clean verify：BUILD
 首次遇默认缓存只读、裁剪 JRE 缺 ct.sym、下载/信任库环境问题；未改 release 21、未绕过 TLS。中间一次 14 通过 / 3 错误定位为 Mockito inline agent 自附着，加入标准 subclass mock maker 测试配置后全部通过；没有删测试/跳断言/放宽应用权限。Mockito 仍打印自附着警告，但本次测试结果全部通过。
 官方工具来源：https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.11/ 及 https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse 。工具、缓存和环境设置不在交付包。
 
-## 静态检查
+### 静态检查
 Python yaml.safe_load 成功解析 compose.yaml、contracts/openapi.yaml、.github/workflows/ci.yml；这只是 YAML 语法检查，不是 OpenAPI 语义或 GitHub Actions 运行验证。
 
-## 未验证及交付边界
+### 未验证及交付边界
 - 本环境没有 Docker 命令，未启动 Postgres/pgvector、未执行 migration、未做数据库集成测试。
 - 没有真实浏览器视觉/E2E、前后端业务联调、真实认证或模型调用；没有真实企业资料。
 - CI 配置已提供，未在 GitHub 运行。未做生产部署、压力测试、安全审计或RAG质量评测。
@@ -153,3 +171,10 @@ Python yaml.safe_load 成功解析 compose.yaml、contracts/openapi.yaml、.gith
 - server：`mvn -B clean verify` 230 项通过，空库 Flyway 迁移到 V23；admin-web `npm run check` 137 项通过并构建成功；widget `npm run check` 37 项通过并构建成功。
 - 未验证：V23 在已有数据的本地库上升级；真实 Ollama 下的上下文预算与并发摄取；浏览器中的调试对比与配置页交互（仅 DOM 测试）；C57 与 C43 的剩余路径未处理。
 
+## C76 来源失效后的用户文本保护 · 2026-10-15（本机）
+
+- 对应 T5；修改范围：chat 的历史、会话列表与反馈记录读取，新增 SourceTextVisibilityTest，同步 OpenAPI 行为说明及本地风险台账。工作区已有并行评测改动被保留，无新依赖或迁移。
+- 先补失败用例：`cd server && mvn -B clean test -Dtest=SourceTextVisibilityTest`。首次 4 失败/1 错误，错误为删除 fixture 缺少 cleanup_status；修正为 pending 后重跑，6 项中 5 失败/0 错误，确认原问题与标题泄漏，普通到期历史策略通过。
+- 修复：已完成轮次自身或前序来源不可核验时，消息问题与会话标题使用固定提示；问答记录中的原问题随 sourceAvailable=false 隐藏。标题检查复用记录页的来源规则，仅对已授权列表的会话 ID 批量查询。普通到期保留历史文本并标记 stale；独立非完成提问维持原规则。
+- 验收：`cd server && mvn -B clean verify`，239 项通过，Failures 0 / Errors 0 / Skipped 0，JAR 打包成功；其中本项新增 6 项，覆盖来源撤回/删除、chunk/来源记录缺失、间接依赖、恢复、普通到期及独立失败提问。既有 ChatTest 中失效历史不进入续问上下文的回归通过。总数包含本次编译时其他工作区评测改动，不把全部增量归于本项。
+- 未验证/风险：未执行前端或真实浏览器联调、并发撤回压力测试；接口字段与类型未改变，只收紧自由文本返回。现有回答来源依赖不能识别所有用户复制输入，尤其非完成轮次及评测副本，不宣称任意敏感文本血缘已解决。下一步另行处理尚存的回归凭据一致性和组合保存原子性；未提交、推送、部署或调用真实/付费模型。

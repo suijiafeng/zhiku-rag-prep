@@ -1,6 +1,6 @@
-# 知库独立 React Widget 骨架
+# 知库问答挂件（Widget）
 
-独立 ESM + TypeScript 类型包。包含问答组件、契约类型、SSE 文本分帧器与 streamChat 客户端。没有会话历史、引用语义验证或生产 IdP。
+独立 ESM + TypeScript 类型包，可嵌入宿主页面：悬浮按钮与问答面板、流式回答、引用展开、赞踩反馈、主题色与手机全屏。包含契约类型、SSE 文本分帧器、streamChat 与 rateMessage 客户端。对话只保存在组件内存中；不做引用语义验证，不接生产 IdP（令牌由宿主后端换取短期挂件令牌）。
 
 ## 验收与构建
 
@@ -18,7 +18,7 @@ npm run check
 
 构建输出到 dist/，依赖 React 19 宿主。React/React DOM 是 peerDependencies，不内嵌于包。package.json 标记 private，防止意外发布。测试使用静态渲染、纯解析器单测，以及 happy-dom + Testing Library 的交互测试（src/ZhikuWidget.dom.test.tsx，文件首行 `// @vitest-environment happy-dom`），不等同于浏览器联调。
 
-## 未来宿主集成示例
+## 宿主集成示例
 
 在宿主配置本地依赖 `"@zhiku/widget": "file:../widget"` 后先构建本包，再从公共入口导入：
 

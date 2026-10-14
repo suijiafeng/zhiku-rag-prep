@@ -1,6 +1,6 @@
-# 知库管理端骨架
+# 知库管理端
 
-React + TypeScript strict + Ant Design + Vite 管理端。打开后先进入登录页：企业 SSO 未接入（按钮禁用），本地开发用开发令牌登录，也可"以示例数据浏览"。登录后，文档管理、问答工作台、检索调试使用真实接口，系统设置读取 /api/status。令牌只保存在页面内存，刷新即失效。总览与评测中心仍为示例数据。
+React + TypeScript strict + Ant Design + Vite。打开后先进入登录页：企业 SSO 未接入（按钮禁用），本地开发用开发令牌登录，也可"以示例数据浏览"。登录并选中知识库后，总览、文档、问答、检索调试、评测、问答记录、用户与权限、系统设置等页面都使用真实接口；已登录但没有可访问的知识库时显示空态，不退回示例数据。令牌只保存在页面内存，刷新即失效。
 
 ## 本地运行
 
@@ -23,15 +23,15 @@ npm run preview
 npm run check
 ```
 
-## 目录与后续接入点
+## 目录
 
-- src/App.tsx：静态工程状态及边界说明
-- src/main.tsx：React 入口
-- src/App.test.tsx：服务端静态渲染 smoke test，不是浏览器交互测试
-- src/features/settings/LiveConfig.dom.test.tsx：happy-dom + Testing Library 的交互测试；文件首行 `// @vitest-environment happy-dom` 启用 DOM，其余测试仍在 node 环境
-- 仓库根 AGENTS.md 与 docs/conventions.md：唯一编码、安全与验收约定
+- src/App.tsx：导航与页面路由（未登录→示例页面，已登录→实时页面）
+- src/api/：HTTP 客户端、SSE 问答流与请求代次
+- src/features/：按页面划分的功能代码，`Live*.tsx` 为接真实接口的页面
+- `*.test.tsx`：静态渲染与纯函数测试（node 环境）；`*.dom.test.tsx`：happy-dom + Testing Library 交互测试，文件首行 `// @vitest-environment happy-dom` 启用 DOM
+- 编码、安全与验收约定以仓库根 AGENTS.md 与 docs/conventions.md 为准；接口以 contracts/openapi.yaml 为准
 
-KnowledgeBase、Document/Version、IngestionJob、Query/Citations 只标记为待实现。后续接入以根目录 API 契约为准；当前服务端只实现 GET /api/status，没有聊天路由。`validated: metadata-only` 不能证明回答内容正确。
+`validated: metadata-only` 只表示来源元数据检查通过，不能证明回答内容正确，界面也不得这样表述。
 
 ## 依赖基线
 
