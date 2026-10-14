@@ -9,6 +9,7 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { UsersPage } from "./features/users/UsersPage";
 import { RecordsPage } from "./features/records/RecordsPage";
 import { LoginPage } from "./features/login/LoginPage";
+import { LiveOverview } from "./features/overview/LiveOverview";
 import { IntegrationPage } from "./features/integration/IntegrationPage";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
@@ -41,12 +42,17 @@ export interface PageContext {
   kbName?: string | undefined;
   status?: Status | undefined;
   statusError?: string | undefined;
+  navigate?: ((key: NavKey) => void) | undefined;
 }
 
 /** Live pages need a connected session and a selected knowledge base; otherwise sample pages are shown and labelled. */
 export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   const live = ctx.client && ctx.kbId ? { client: ctx.client, kbId: ctx.kbId } : undefined;
-  if (key === "overview") return <OverviewPage data={overviewFixture} />;
+  if (key === "overview") {
+    return live
+      ? <LiveOverview {...live} zone={ctx.status?.businessTimeZone ?? "Asia/Shanghai"} onNewQuestion={() => ctx.navigate?.("qa")} />
+      : <OverviewPage data={overviewFixture} />;
+  }
   if (key === "documents") return live ? <LiveDocuments {...live} status={ctx.status} /> : <DocumentsPage data={documentsFixture} />;
   if (key === "qa") return live ? <LiveQa {...live} modelEnabled={ctx.status?.modelEnabled ?? false} /> : <QaWorkbench data={qaFixture} />;
   if (key === "debug") return live ? <LiveDebug {...live} kbName={ctx.kbName ?? ""} /> : <RetrievalDebugPage trace={debugFixture} />;
@@ -128,10 +134,10 @@ function Shell({ onLogin }: { onLogin: () => void }) {
               className="scaffold-alert"
               title="开发环境，尚未接入生产服务"
               description={session.client
-                ? "已连接本地服务：文档、问答、检索调试为真实数据；总览与评测仍为示例数据。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
+                ? "已连接本地服务：总览、文档、问答、记录、检索调试为真实数据；评测中心仍为示例数据。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
                 : "未登录时页面为虚构示例数据。登录需开发令牌；生产 IdP 未接入。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"}
             />
-            {pageFor(active, { client: session.client, kbId: session.kbId, kbName, status: session.status, statusError: session.statusError })}
+            {pageFor(active, { client: session.client, kbId: session.kbId, kbName, status: session.status, statusError: session.statusError, navigate: setActive })}
           </Layout.Content>
         </Layout>
       </Layout>

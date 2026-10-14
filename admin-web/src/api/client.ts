@@ -145,6 +145,22 @@ export interface Grant {
   grantedAt: string;
 }
 
+export interface OverviewApi {
+  documents: number;
+  versions: number;
+  readyVersions: number;
+  chunks: number;
+  vectors: number;
+  questionsToday: number;
+  questionsYesterday: number;
+  feedback: { up: number; down: number };
+  daily: { day: string; count: number }[];
+  embeddingSpaces: { model: string; dimension: number; vectors: number }[];
+  lastIndexedAt: string | null;
+  recentDocuments: { documentId: string; title: string; versionLabel: string; indexStatus: IndexState; chunks: number; createdAt: string }[];
+  recentQuestions: { messageId: string; own: boolean; question: string | null; citationCount: number; createdAt: string }[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -211,6 +227,7 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     reindex: (kbId: string, doc: string, v: string) => request<void>(`${version(kbId, doc, v)}/reindex`, { method: "POST" }),
     retrievalDebug: (kbId: string, query: string, k?: number) =>
       request<TraceResult>(`${kb(kbId)}/retrieval-debug`, post(k === undefined ? { query } : { query, k })),
+    overview: (kbId: string) => request<OverviewApi>(`${kb(kbId)}/overview`),
     me: () => request<Me>("/api/me"),
     rolePolicy: () => request<RolePolicy>("/api/policy/roles"),
     adminKnowledgeBases: () => request<AdminKnowledgeBase[]>("/api/admin/knowledge-bases"),

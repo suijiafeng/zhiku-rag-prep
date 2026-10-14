@@ -3,7 +3,7 @@ import type { IndexStatus } from "../../components/IndexStatusTag";
 
 export interface OverviewData {
   updatedAt: string;
-  metrics: { title: string; value: string; delta: string; trend: "up" | "down" }[];
+  metrics: { title: string; value: string; delta: string; trend: "up" | "down" | "none" }[];
   dailyQuestions: { day: string; count: number }[];
   vectorStore: { label: string; value: string }[];
   recentDocuments: { name: string; chunks: number | null; status: IndexStatus; updatedAt: string }[];
