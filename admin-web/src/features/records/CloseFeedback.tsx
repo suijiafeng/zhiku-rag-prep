@@ -15,6 +15,11 @@ export interface ClosingForm {
   caseId: string | undefined;
 }
 
+/** Only approved cases made from this feedback can verify its fix (the server checks the latest run as well). */
+export function verificationCandidates(cases: EvalCase[], messageId: string) {
+  return cases.filter((c) => c.status === "approved" && c.originMessageId === messageId);
+}
+
 /** Mirrors the server rule so the form explains what is missing; the server still decides (latest-run check). */
 export function closingBody(status: ClosingStatus, form: ClosingForm): { body: FeedbackUpdate } | { error: string } {
   const resolution = form.resolution.trim();
@@ -27,8 +32,9 @@ export function closingBody(status: ClosingStatus, form: ClosingForm): { body: F
   return { body: { status, rootCause: form.rootCause, resolution, verificationCaseId: form.caseId } };
 }
 
-export function CloseFeedbackModal({ status, initialRootCause, cases, onSubmit, onCancel }: {
+export function CloseFeedbackModal({ status, messageId, initialRootCause, cases, onSubmit, onCancel }: {
   status: ClosingStatus | undefined;
+  messageId: string | undefined;
   initialRootCause: string | undefined;
   cases: EvalCase[];
   onSubmit: (body: FeedbackUpdate) => Promise<string | undefined>;
@@ -41,7 +47,7 @@ export function CloseFeedbackModal({ status, initialRootCause, cases, onSubmit, 
     setForm({ rootCause: initialRootCause, resolution: "", caseId: undefined });
     setError(undefined);
   }, [status, initialRootCause]);
-  const approved = cases.filter((c) => c.status === "approved");
+  const approved = messageId ? verificationCandidates(cases, messageId) : [];
   const edit = (change: Partial<ClosingForm>) => {
     setForm({ ...form, ...change });
     setError(undefined);
@@ -66,11 +72,11 @@ export function CloseFeedbackModal({ status, initialRootCause, cases, onSubmit, 
         {status === "resolved" && (
           <>
             <Typography.Text type="secondary">
-              须选择一条已批准的评测用例，且它在本库最近一次评测运行中全部证据都被召回。这只验证检索，不证明回答正确。
+              须选择一条由本条反馈生成并已批准的评测用例，且它在本库最近一次评测运行中全部证据都被召回。这只验证检索，不证明回答正确。
             </Typography.Text>
             <Select<string> placeholder="根因" aria-label="根因" {...(form.rootCause ? { value: form.rootCause } : {})} onChange={(rootCause) => edit({ rootCause })}
               options={ROOT_CAUSES.map((c) => ({ value: c, label: c }))} />
-            <Select<string> placeholder={approved.length ? "验证用例" : "暂无已批准的评测用例"} aria-label="验证用例" {...(form.caseId ? { value: form.caseId } : {})}
+            <Select<string> placeholder={approved.length ? "验证用例" : "暂无由本条反馈生成并已批准的用例"} aria-label="验证用例" {...(form.caseId ? { value: form.caseId } : {})}
               disabled={!approved.length} onChange={(caseId) => edit({ caseId })}
               options={approved.map((c) => ({ value: c.id, label: c.question }))} />
           </>
@@ -91,6 +97,7 @@ export function HandlingList({ entries }: { entries: HandlingEntry[] }) {
       {entries.map((h, i) => (
         <li key={i}>
           <span className="mono">{new Date(h.changedAt).toLocaleString("zh-CN")}</span> · {STATUS_LABEL[h.status]}
+          {h.feedbackVersion !== null && ` · 反馈第 ${h.feedbackVersion} 版`}
           {h.rootCause && ` · ${h.rootCause}`}
           {h.resolution && <div className="card-unit">{h.resolution}</div>}
           {h.verificationCaseId && <div className="card-unit">验证用例 {h.verificationCaseId.slice(0, 8)}</div>}

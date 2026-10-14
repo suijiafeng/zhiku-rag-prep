@@ -35,7 +35,9 @@ export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onAp
               <span>{c.question}</span>
             </div>
             {c.evidence.map((e, i) => (
-              <div key={i} className="card-unit">证据：{e.documentTitle} {e.versionLabel} · 「{e.quote}」 [{e.startOffset}, {e.endOffset})</div>
+              <div key={i} className="card-unit">
+                证据：{e.documentTitle} {e.versionLabel} · {e.available ? `「${e.quote ?? ""}」` : "来源已撤回或删除，摘录不再显示"} [{e.startOffset}, {e.endOffset})
+              </div>
             ))}
             {c.status === "candidate" && (
               <Space size={4}>

@@ -1,17 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RecordsPage, RecordsTable, closeFailure, praiseRate, topReasons } from "./RecordsPage";
+import { RecordsPage, RecordsTable, candidateBody, closeFailure, praiseRate, topReasons } from "./RecordsPage";
 import { ApiError } from "../../api/client";
 import { FeedbackBar } from "../qa/FeedbackBar";
 import type { RecordItem } from "../../api/client";
 
 const items: RecordItem[] = [
   { messageId: "m1", createdAt: "2026-10-14T01:00:00Z", own: true, question: "年假有几天?", citationCount: 2, rating: "down",
-    reason: "WRONG", comment: "不对", status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
+    reason: "WRONG", comment: "不对", status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete", sourceAvailable: true },
   { messageId: "m2", createdAt: "2026-10-14T02:00:00Z", own: false, question: null, citationCount: 1, rating: "up",
-    reason: null, comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
+    reason: null, comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete", sourceAvailable: true },
   { messageId: "m3", createdAt: "2026-10-14T03:00:00Z", own: false, question: null, citationCount: 3, rating: null,
-    reason: null, comment: null, status: null, rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
+    reason: null, comment: null, status: null, rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete", sourceAvailable: true },
 ];
 
 describe("records page", () => {
@@ -48,6 +48,16 @@ describe("records page", () => {
     expect(closeFailure(refused, "resolved")).toBe("所选用例须已批准，且在本库最近一次评测运行中全部证据被召回（VALIDATION · r1）");
     expect(closeFailure(new ApiError(403, "FORBIDDEN", "Access denied"), "resolved")).toBe("Access denied（FORBIDDEN）");
     expect(closeFailure(new Error("x"), "wont_fix")).toBe("关闭失败");
+  });
+
+  it("marks answers whose sources are no longer available", () => {
+    const gone: RecordItem = { ...items[0]!, sourceAvailable: false, comment: null };
+    const html = renderToStaticMarkup(<RecordsTable items={[gone]} onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} />);
+    expect(html).toContain("来源已失效");
+  });
+
+  it("creates evaluation candidates linked to the feedback they came from", () => {
+    expect(candidateBody(items[0]!)).toEqual({ question: "年假有几天?", label: "answerable", source: "feedback", originMessageId: "m1" });
   });
 
   it("asks to connect instead of showing invented records", () => {

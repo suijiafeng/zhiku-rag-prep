@@ -27,6 +27,11 @@ export function closeFailure(e: unknown, status: FeedbackStatus) {
   return `${e.message}${ref}`;
 }
 
+/** An evaluation candidate made from a disliked answer keeps the feedback as its origin. */
+export function candidateBody(item: RecordItem) {
+  return { question: item.question ?? "", label: "answerable" as const, source: "feedback", originMessageId: item.messageId };
+}
+
 const isClosing = (s: FeedbackStatus): s is ClosingStatus => s === "resolved" || s === "wont_fix";
 
 export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate }: {
@@ -57,7 +62,12 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate 
           title: "结果",
           dataIndex: "outcome",
           width: 80,
-          render: (o: RecordItem["outcome"]) => <Tag color={o === "complete" ? "blue" : o === "refused" ? "default" : "warning"}>{OUTCOME_LABEL[o]}</Tag>,
+          render: (o: RecordItem["outcome"], r) => (
+            <>
+              <Tag color={o === "complete" ? "blue" : o === "refused" ? "default" : "warning"}>{OUTCOME_LABEL[o]}</Tag>
+              {r.sourceAvailable === false && <Tag color="red" title="回答或其依据的前序对话的来源已撤回、删除或无法核验">来源已失效</Tag>}
+            </>
+          ),
         },
         { title: "引用", dataIndex: "citationCount", className: "mono", width: 70, render: (n: number) => `${n} 篇` },
         {
@@ -125,7 +135,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
   const onCandidate = async (item: RecordItem) => {
     if (!client || !kbId || !item.question) return;
     try {
-      await client.createEvalCase(kbId, { question: item.question, label: "answerable", source: "feedback" });
+      await client.createEvalCase(kbId, candidateBody(item));
       setNotice("已加入评测候选，请到评测中心补齐证据后批准。");
     } catch (e) {
       setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "加入失败");
@@ -178,7 +188,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
 
   return (
     <div className="page">
-      <CloseFeedbackModal status={closing?.status} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
+      <CloseFeedbackModal status={closing?.status} messageId={closing?.item.messageId} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
         onSubmit={submitClose} onCancel={() => setClosing(undefined)} />
       <Modal open={history !== undefined} title="处理记录" footer={null} onCancel={() => setHistory(undefined)}>
         {history && <HandlingList entries={history} />}

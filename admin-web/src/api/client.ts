@@ -107,6 +107,8 @@ export interface RecordItem {
   resolution: string | null;
   verificationCaseId: string | null;
   outcome: TurnOutcome;
+  /** False once a source of the answer (or of an earlier turn it built on) is unavailable; null for non-answers. */
+  sourceAvailable: boolean | null;
 }
 
 export interface HandlingEntry {
@@ -116,6 +118,7 @@ export interface HandlingEntry {
   verificationCaseId: string | null;
   changedBy: string;
   changedAt: string;
+  feedbackVersion: number | null;
 }
 
 export interface FeedbackUpdate {
@@ -198,7 +201,9 @@ export interface EvalEvidence {
   versionLabel: string;
   startOffset: number;
   endOffset: number;
-  quote: string;
+  /** Null once the source version is withdrawn or its document deleted. */
+  quote: string | null;
+  available: boolean;
 }
 
 export interface EvalCase {
@@ -209,6 +214,8 @@ export interface EvalCase {
   source: string;
   createdAt: string;
   evidence: EvalEvidence[];
+  /** Feedback message the case was made from; only such cases can verify that feedback's fix. */
+  originMessageId: string | null;
 }
 
 export interface EvalSummary {
@@ -311,7 +318,8 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       request<TraceResult>(`${kb(kbId)}/retrieval-debug`, post(k === undefined ? { query } : { query, k })),
     overview: (kbId: string) => request<OverviewApi>(`${kb(kbId)}/overview`),
     evalCases: (kbId: string) => request<EvalCase[]>(`${kb(kbId)}/eval-cases`),
-    createEvalCase: (kbId: string, body: { question: string; label: EvalCase["label"]; source?: string; evidence?: { versionId: string; quote: string }[] }) =>
+    createEvalCase: (kbId: string, body: { question: string; label: EvalCase["label"]; source?: string; originMessageId?: string;
+      evidence?: { versionId: string; quote: string }[] }) =>
       request<{ id: string }>(`${kb(kbId)}/eval-cases`, post(body)),
     setEvalEvidence: (kbId: string, caseId: string, evidence: { versionId: string; quote: string }[]) =>
       request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/evidence`, { ...post({ evidence }), method: "PUT" }),

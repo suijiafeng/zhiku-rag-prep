@@ -22,9 +22,10 @@ describe("live evaluation", () => {
 
   it("lets candidates be approved and completed but freezes approved cases", () => {
     const cases: EvalCase[] = [
-      { id: "c1", question: "年假有几天?", label: "answerable", status: "candidate", source: "feedback", createdAt: "", evidence: [] },
+      { id: "c1", question: "年假有几天?", label: "answerable", status: "candidate", source: "feedback", createdAt: "", evidence: [], originMessageId: "m1" },
       { id: "c2", question: "报销多久?", label: "answerable", status: "approved", source: "manual", createdAt: "",
-        evidence: [{ versionId: "v", documentTitle: "报销说明", versionLabel: "v2", startOffset: 0, endOffset: 4, quote: "五个工作日" }] },
+        evidence: [{ versionId: "v", documentTitle: "报销说明", versionLabel: "v2", startOffset: 0, endOffset: 4, quote: "五个工作日", available: true }],
+        originMessageId: null },
     ];
     const html = renderToStaticMarkup(<CaseList cases={cases} onApprove={() => {}} onEdit={() => {}} />);
     expect(html).toContain("候选");
@@ -32,13 +33,21 @@ describe("live evaluation", () => {
     expect(html).toContain("五个工作日");
     expect((html.match(/批准/g) ?? []).length).toBe(1);
   });
+
+  it("says a source was withdrawn or deleted instead of showing an empty quote", () => {
+    const cases: EvalCase[] = [{ id: "c3", question: "差旅?", label: "answerable", status: "approved", source: "manual", createdAt: "", originMessageId: null,
+      evidence: [{ versionId: "v", documentTitle: "差旅标准", versionLabel: "v1", startOffset: 3, endOffset: 9, quote: null, available: false }] }];
+    const html = renderToStaticMarkup(<CaseList cases={cases} onApprove={() => {}} onEdit={() => {}} />);
+    expect(html).toContain("来源已撤回或删除，摘录不再显示");
+    expect(html).not.toContain("「");
+  });
 });
 
 describe("records to evaluation candidates", () => {
   it("enables the candidate action only for visible disliked questions", () => {
     const html = renderToStaticMarkup(<RecordsTable onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} items={[
-      { messageId: "a", createdAt: "2026-10-14T00:00:00Z", own: true, question: "年假?", citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
-      { messageId: "b", createdAt: "2026-10-14T00:00:00Z", own: false, question: null, citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete" },
+      { messageId: "a", createdAt: "2026-10-14T00:00:00Z", own: true, question: "年假?", citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete", sourceAvailable: true },
+      { messageId: "b", createdAt: "2026-10-14T00:00:00Z", own: false, question: null, citationCount: 1, rating: "down", reason: "WRONG", comment: null, status: "open", rootCause: null, resolution: null, verificationCaseId: null, outcome: "complete", sourceAvailable: true },
     ]} />);
     const buttons = html.match(/<button[^>]*>(?:(?!<\/button>).)*加入评测候选/gs) ?? [];
     expect(buttons).toHaveLength(2);
