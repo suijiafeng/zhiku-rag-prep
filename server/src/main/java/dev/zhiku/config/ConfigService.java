@@ -65,6 +65,17 @@ public class ConfigService {
         .orElseGet(() -> new Effective(0, retrieval.defaultK(), chat.contextChunks(), chat.handoffChannel(), null));
   }
 
+  /** 调试再运行用：读取某个已发布或被替代版本的参数；0 为部署默认值。不存在的版本返回 404。 */
+  @Transactional(readOnly = true)
+  public Effective version(UUID kbId, int version) {
+    access.require(kbId, DEBUG_AND_EVALUATE);
+    if (version == 0) return new Effective(0, retrieval.defaultK(), chat.contextChunks(), chat.handoffChannel(), null);
+    return repository.version(kbId, version)
+        .map(r -> new Effective(r.version(), r.retrievalK(), r.contextChunks(), blank(r.handoffChannel()) ? chat.handoffChannel() : r.handoffChannel(),
+            r.promptAddendum()))
+        .orElseThrow(ApiException::notFound);
+  }
+
   @Transactional(readOnly = true)
   public Overview overview(UUID kbId) {
     access.require(kbId, DEBUG_AND_EVALUATE);

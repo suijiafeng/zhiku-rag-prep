@@ -44,8 +44,13 @@ public class RetrievalService {
   }
 
   public Result search(UUID kbId, String question, Integer k, Instant at, KnowledgeBaseAction action) {
+    return search(kbId, question, k, at, action, 0);
+  }
+
+  /** 调试再运行：每次得到新的 traceId，按给定配置版本记录，不覆盖原轨迹。 */
+  public Result search(UUID kbId, String question, Integer k, Instant at, KnowledgeBaseAction action, int configVersion) {
     var scope = access.require(kbId, action);
-    return searchAuthorized(scope, kbId, question, k, at, "debug", UUID.randomUUID());
+    return searchAuthorized(scope, kbId, question, k, at, "debug", UUID.randomUUID(), configVersion);
   }
 
   /** 问答、调试与评测共用的检索链路；每次都按 traceId 记录各阶段元数据，失败时也保留轨迹。 */
@@ -86,7 +91,7 @@ public class RetrievalService {
     traces.setDimension(traceId, query.length);
     traces.addStages(traceId, stages);
     traces.addCandidates(traceId, candidates);
-    return new Result(traceId, question, at, provider.model(), query.length, stages, candidates);
+    return new Result(traceId, question, at, provider.model(), query.length, stages, candidates, configVersion);
   }
 
   private static List<Stage> stages(Stage rewrite, Stage vector, List<Stage> later) {

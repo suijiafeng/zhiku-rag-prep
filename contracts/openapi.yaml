@@ -523,8 +523,10 @@ paths:
                 query: {type: string, minLength: 1, maxLength: 2000}
                 k: {type: integer, minimum: 1, maximum: 30, default: 8}
                 at: {type: string, format: date-time}
+                configVersion: {type: integer, description: 'Re-run with the retrievalK of this published or superseded config version (k overrides it); 0 means deployment defaults; 404 when the version does not exist. Each run gets its own traceId recorded with that configVersion; nothing is published or changed.'}
       responses:
         '200': {description: Trace, content: {application/json: {schema: {$ref: '#/components/schemas/RetrievalTrace'}}}}
+        '404': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Error'}
         '503': {$ref: '#/components/responses/Error'}
@@ -699,6 +701,7 @@ components:
         at: {type: string, format: date-time}
         embeddingModel: {type: string}
         dimension: {type: integer}
+        configVersion: {type: integer, description: Config version the run used; 0 means deployment defaults}
         stages:
           type: array
           items:

@@ -218,4 +218,29 @@ class RetrievalTest extends IntegrationTest {
     assertThat(worker.processNext()).isTrue();
     assertThat(jdbc.queryForObject("SELECT index_status FROM content_version WHERE id = ?", String.class, version)).isEqualTo("ready");
   }
+
+  /** T01 再运行：按历史配置版本的召回 K 重新检索，得到新的轨迹并记录该版本；不改变当前配置。 */
+  @Test
+  void aDebugRunCanReplayAPastConfigVersionWithoutChangingIt() throws Exception {
+    ingest(kb, "员工手册", LEAVE, "2025-01-01T00:00:00Z", null, true);
+    ingest(kb, "差旅标准", TRAVEL, "2025-01-01T00:00:00Z", null, true);
+    jdbc.update("INSERT INTO kb_config (id, kb_id, status, version, retrieval_k, context_chunks, created_by, published_by, published_at) "
+        + "VALUES (?, ?, 'superseded', 1, 1, 1, ?, ?, now()), (?, ?, 'published', 2, 5, 3, ?, ?, now())",
+        UUID.randomUUID(), kb, operator, operator, UUID.randomUUID(), kb, operator, operator);
+    var replay = json.readTree(search(kb, "{\"query\":\"年假有几天\",\"configVersion\":1}", operator, Role.KB_OPERATOR)
+        .andExpect(status().isOk()).andExpect(jsonPath("$.configVersion").value(1)).andExpect(jsonPath("$.candidates.length()").value(1))
+        .andReturn().getResponse().getContentAsString());
+    var current = json.readTree(search(kb, "{\"query\":\"年假有几天\",\"configVersion\":2}", operator, Role.KB_OPERATOR)
+        .andExpect(status().isOk()).andExpect(jsonPath("$.configVersion").value(2)).andReturn().getResponse().getContentAsString());
+    assertThat(current.get("candidates").size()).isGreaterThan(1);
+    assertThat(replay.get("traceId").asText()).isNotEqualTo(current.get("traceId").asText());
+    trace(kb, replay.get("traceId").asText(), operator, Role.KB_OPERATOR).andExpect(jsonPath("$.k").value(1)).andExpect(jsonPath("$.configVersion").value(1));
+    // k 可以覆盖版本参数；版本本身不变。
+    search(kb, "{\"query\":\"年假有几天\",\"configVersion\":1,\"k\":2}", operator, Role.KB_OPERATOR)
+        .andExpect(jsonPath("$.configVersion").value(1)).andExpect(jsonPath("$.candidates.length()").value(2));
+    search(kb, "{\"query\":\"年假有几天\",\"configVersion\":0}", operator, Role.KB_OPERATOR).andExpect(jsonPath("$.configVersion").value(0));
+    search(kb, "{\"query\":\"年假有几天\",\"configVersion\":9}", operator, Role.KB_OPERATOR).andExpect(status().isNotFound());
+    search(kb, "{\"query\":\"年假有几天\",\"configVersion\":1}", operator, Role.EMPLOYEE).andExpect(status().isForbidden());
+    assertThat(jdbc.queryForObject("SELECT version FROM kb_config WHERE kb_id = ? AND status = 'published'", Integer.class, kb)).isEqualTo(2);
+  }
 }

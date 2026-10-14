@@ -23,8 +23,9 @@ public final class Retrieval {
     }
   }
 
+  /** configVersion 为本次检索采用的知识库配置版本；0 表示部署默认值。 */
   public record Result(UUID traceId, String question, Instant at, String embeddingModel, Integer dimension,
-      List<Stage> stages, List<Candidate> candidates) {}
+      List<Stage> stages, List<Candidate> candidates, int configVersion) {}
 
   public record TraceCandidate(int rank, UUID chunkId, UUID versionId, String documentTitle, double score) {}
 
