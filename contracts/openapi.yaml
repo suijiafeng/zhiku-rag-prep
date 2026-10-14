@@ -832,7 +832,7 @@ x-sse:
   rules:
     - All events use JSON data. Start comes first; error is terminal; done requires preceding validated.
     - While waiting the server sends SSE comment lines (":keepalive", every zhiku.chat.heartbeat-interval); they are not content and clients ignore them.
-    - A question containing an ID card, bank card or mobile number (format match only; may miss or over-match) ends with SENSITIVE_INPUT before retrieval and the model; the turn is stored as refused with the numbers replaced by [已隐藏]. Refusals point to zhiku.chat.handoff-channel, or say it is not configured.
+    - A question containing an ID card number (GB 11643 check digit), bank card number (Luhn) or mobile number (format only; may miss numbers written with separators) ends with SENSITIVE_INPUT (the message names the kind of number) before retrieval and the model; the turn is stored as refused with the numbers replaced by [已隐藏]. Refusals point to zhiku.chat.handoff-channel, or say it is not configured.
     - retryable is true only for MODEL_UNAVAILABLE and DEPENDENCY_UNAVAILABLE; a retry is a new question with a new clientRequestId, never an automatic re-POST.
     - Draft is provisional. Metadata validation does not establish semantic correctness.
     - Disconnect, cancellation or error must not preserve a usable answer. Every turn is stored with status complete | refused (NO_EVIDENCE) | cancelled | failed; only complete turns keep answer text and sources, and only they enter follow-up context or accept feedback.

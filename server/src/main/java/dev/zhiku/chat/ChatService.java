@@ -154,8 +154,9 @@ public class ChatService {
       return;
     }
     // 疑似个人敏感号码：不检索、不调用模型，只保存隐藏号码后的问题。
-    if (SensitiveInput.detect(question)) {
-      fail(turn, sink, "SENSITIVE_INPUT", "问题中可能包含个人敏感信息（如证件号、银行卡号或手机号），请删除后再提问；个人事务请联系"
+    var sensitive = SensitiveInput.detect(question);
+    if (sensitive.isPresent()) {
+      fail(turn, sink, "SENSITIVE_INPUT", "问题中疑似包含个人" + sensitive.get() + "，请删除该号码后重新提问；个人事务请联系"
           + handoff(config.handoffChannel()), requestId);
       return;
     }

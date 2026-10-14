@@ -208,7 +208,7 @@ class ChatTest extends IntegrationTest {
     var embedded = new java.util.concurrent.atomic.AtomicInteger();
     embeddings.beforeEmbed = embedded::incrementAndGet;
     model.script = m -> { throw new AssertionError("sensitive questions must not reach the model"); };
-    var frames = ask("我的身份证号是11010119900307123X，年假还剩几天");
+    var frames = ask("我的身份证号是110101199003071233，年假还剩几天");
     assertThat(names(frames)).containsExactly("start", "error");
     var error = last(frames).data();
     assertThat(error.get("code").asText()).isEqualTo("SENSITIVE_INPUT");
@@ -217,7 +217,7 @@ class ChatTest extends IntegrationTest {
     assertThat(embedded.get()).isZero();
     var stored = jdbc.queryForObject("SELECT m.question || '|' || c.title FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ?",
         String.class, kb);
-    assertThat(stored).doesNotContain("11010119900307123X").contains("[已隐藏]");
+    assertThat(stored).doesNotContain("110101199003071233").contains("[已隐藏]");
     assertThat(lastStatus()).isEqualTo("refused:SENSITIVE_INPUT:true");
   }
 
@@ -371,13 +371,13 @@ class ChatTest extends IntegrationTest {
   @Test
   void aCancelledSensitiveQuestionIsStoredRedactedToo() {
     var scope = new AccessScope(enterprise, employee, Set.of(kb), Set.of(Role.EMPLOYEE));
-    chat.stream(scope, kb, "我的身份证号是11010119900307123X，年假还剩几天", null, null, new ChatSink() {
+    chat.stream(scope, kb, "我的身份证号是110101199003071233，年假还剩几天", null, null, new ChatSink() {
       @Override public void send(String event, Object data) { }
       @Override public boolean cancelled() { return true; }
     }, "test-request");
     var stored = jdbc.queryForObject("SELECT m.question || '|' || c.title FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ?",
         String.class, kb);
-    assertThat(stored).doesNotContain("11010119900307123X").contains("[已隐藏]");
+    assertThat(stored).doesNotContain("110101199003071233").contains("[已隐藏]");
     assertThat(lastStatus()).isEqualTo("cancelled::true");
   }
 
