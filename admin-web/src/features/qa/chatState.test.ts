@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatReducer, initialChatState, type ChatAction, type ChatState } from "./chatState";
+import { chatReducer, createRequestGate, initialChatState, visibleCitations, type ChatAction, type ChatState } from "./chatState";
 
 const cite = { documentId: "d1", versionId: "v1", title: "员工手册 v3.2.pdf", excerpt: "…" };
 const run = (actions: ChatAction[], from: ChatState = initialChatState) => actions.reduce(chatReducer, from);
@@ -69,5 +69,30 @@ describe("chat state machine (draft SSE contract)", () => {
   it("can start a new question after a terminal state", () => {
     const s = run([start, { type: "cancel" }, { type: "start", question: "新问题" }]);
     expect(s).toMatchObject({ status: "streaming", question: "新问题", text: "" });
+  });
+});
+
+describe("switching context", () => {
+  it("resets to idle even while a stream is running", () => {
+    expect(run([{ type: "start", question: "年假?" }, { type: "event", event: { event: "draft", data: { text: "年" } } }, { type: "reset" }]))
+      .toEqual(initialChatState);
+  });
+
+  it("drops anything from a request that was superseded", () => {
+    const gate = createRequestGate();
+    const first = gate.next();
+    expect(gate.isCurrent(first)).toBe(true);
+    gate.invalidate();
+    expect(gate.isCurrent(first)).toBe(false);
+    const second = gate.next();
+    expect(gate.isCurrent(second)).toBe(true);
+    expect(gate.isCurrent(first)).toBe(false);
+  });
+
+  it("shows the running stream's sources only while it runs, otherwise the selected answer's", () => {
+    const other = { ...cite, versionId: "v9" };
+    expect(visibleCitations(true, [cite], { citations: [other] })).toEqual([cite]);
+    expect(visibleCitations(false, [cite], { citations: [other] })).toEqual([other]);
+    expect(visibleCitations(false, [cite], undefined)).toEqual([]);
   });
 });

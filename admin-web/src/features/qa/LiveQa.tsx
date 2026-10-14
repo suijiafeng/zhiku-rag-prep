@@ -6,7 +6,7 @@ import { AnswerText } from "./AnswerText";
 import { FeedbackBar } from "./FeedbackBar";
 import { OutcomeNote } from "./outcome";
 import { EmptyState, ErrorState } from "../../components/StateViews";
-import { chatReducer, initialChatState, type Citation } from "./chatState";
+import { chatReducer, createRequestGate, initialChatState, visibleCitations, type Citation } from "./chatState";
 
 const VALIDATED_NOTE = "来源信息检查通过，请核对内容";
 
@@ -38,6 +38,14 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   const [error, setError] = useState<string>();
   const [stream, dispatch] = useReducer(chatReducer, initialChatState);
   const abort = useRef<AbortController>(undefined);
+  const gate = useRef(createRequestGate());
+
+  /** Leaves the current request behind: aborts it, ignores its late events and clears the draft. */
+  const leave = useCallback(() => {
+    abort.current?.abort();
+    gate.current.invalidate();
+    dispatch({ type: "reset" });
+  }, []);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -59,10 +67,11 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   }, [client]);
 
   useEffect(() => {
+    leave();
     setConversationId(undefined);
     setHistory([]);
     void loadConversations();
-  }, [loadConversations]);
+  }, [loadConversations, leave]);
 
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -73,12 +82,16 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
     setQuestion("");
     setError(undefined);
     abort.current = new AbortController();
+    const generation = gate.current.next();
+    const current = () => gate.current.isCurrent(generation);
     dispatch({ type: "start", question: q });
     let target = conversationId;
-    await streamAnswer(client, conversationId ? { kbId, question: q, conversationId } : { kbId, question: q }, dispatch, {
-      signal: abort.current.signal,
-      onConversation: (id) => { target = id; setConversationId(id); },
-    });
+    await streamAnswer(client, conversationId ? { kbId, question: q, conversationId } : { kbId, question: q },
+      (action) => { if (current()) dispatch(action); }, {
+        signal: abort.current.signal,
+        onConversation: (id) => { if (current()) { target = id; setConversationId(id); } },
+      });
+    if (!current()) return;
     await loadConversations();
     await loadHistory(target);
   };
@@ -89,7 +102,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   };
 
   const selectedMessage = history.find((m) => m.id === selected);
-  const citations = running || stream.status === "complete" ? stream.citations : selectedMessage?.citations ?? [];
+  const citations = visibleCitations(running, stream.citations, selectedMessage);
 
   return (
     <div className="page">
@@ -103,12 +116,12 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
       {error && <Alert type="error" showIcon closable className="scaffold-alert" title={error} onClose={() => setError(undefined)} />}
       <div className="qa-grid">
         <Card size="small" title="会话历史">
-          <Button type="primary" block onClick={() => { setConversationId(undefined); setHistory([]); dispatch({ type: "cancel" }); }}>+ 新会话</Button>
+          <Button type="primary" block onClick={() => { leave(); setConversationId(undefined); setHistory([]); }}>+ 新会话</Button>
           <ul className="session-list">
             {conversations.map((c) => (
               <li key={c.id}>
                 <button type="button" className={c.id === conversationId ? "session active" : "session"}
-                  onClick={() => { setConversationId(c.id); void loadHistory(c.id); }}>
+                  onClick={() => { leave(); setConversationId(c.id); void loadHistory(c.id); }}>
                   <span>{c.title}</span>
                   <span className="mono session-time">{new Date(c.updatedAt).toLocaleString("zh-CN")}</span>
                 </button>

@@ -91,6 +91,12 @@ describe("streamAnswer", () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
+  it("does not report the conversation when done arrives without validated", async () => {
+    const { state, conversation } = await run(stream(sse("draft", { text: "年假" }) + sse("done", { status: "complete", conversationId: "c1" })));
+    expect(state.status).toBe("failed");
+    expect(conversation).toBeUndefined();
+  });
+
   it("turns HTTP errors into a failed state", async () => {
     const { state } = await run(json({ code: "DEPENDENCY_UNAVAILABLE", message: "x", requestId: "r" }, 503));
     expect(state).toMatchObject({ status: "failed", error: { code: "DEPENDENCY_UNAVAILABLE" } });

@@ -26,7 +26,7 @@ export interface ChatState {
   error: { code: string; message: string; requestId?: string } | undefined;
 }
 
-export type ChatAction = { type: "start"; question: string } | { type: "event"; event: ChatEvent } | { type: "cancel" };
+export type ChatAction = { type: "start"; question: string } | { type: "event"; event: ChatEvent } | { type: "cancel" } | { type: "reset" };
 
 export const initialChatState: ChatState = { status: "idle", question: "", text: "", citations: [], error: undefined };
 
@@ -39,6 +39,7 @@ function discard(state: ChatState, status: "failed" | "cancelled", error?: ChatS
 const protocolError = (message: string) => ({ code: "PROTOCOL", message });
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
+  if (action.type === "reset") return initialChatState;
   if (action.type === "start") {
     if (state.status === "streaming" || state.status === "validated") return state;
     return { ...initialChatState, status: "streaming", question: action.question };
@@ -63,4 +64,21 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "error":
       return discard(state, "failed", { ...event.data });
   }
+}
+
+/** Each request gets a generation; events and callbacks of a superseded request are ignored (switching context). */
+export function createRequestGate() {
+  let current = 0;
+  return {
+    next: () => ++current,
+    invalidate: () => {
+      current++;
+    },
+    isCurrent: (generation: number) => generation === current,
+  };
+}
+
+/** Sources of the answer being generated while it runs; afterwards always those of the selected history answer. */
+export function visibleCitations(running: boolean, streamCitations: Citation[], selected: { citations: Citation[] } | undefined) {
+  return running ? streamCitations : selected?.citations ?? [];
 }

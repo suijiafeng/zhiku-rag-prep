@@ -81,6 +81,7 @@ export async function streamAnswer(
   const decoder = new TextDecoder();
   let buffer = "";
   let terminal = false;
+  let validated = false;
   const handle = (block: string) => {
     let name = "message";
     const data: string[] = [];
@@ -92,7 +93,9 @@ export async function streamAnswer(
     const event = toEvent(name, data.join("\n"));
     if (!event) return;
     emit(event);
-    if (event.event === "done" && event.data.conversationId) onConversation?.(event.data.conversationId);
+    if (event.event === "validated") validated = true;
+    // Same rule as the reducer: done counts only after validated, so a rejected stream has no side effects.
+    if (event.event === "done" && validated && event.data.conversationId) onConversation?.(event.data.conversationId);
     if (event.event === "done" || event.event === "error") terminal = true;
   };
   try {
