@@ -134,15 +134,19 @@ class FeedbackTest extends IntegrationTest {
     handle(askerMessage, "{\"status\":\"done\"}").andExpect(status().isUnprocessableEntity());
     handle(askerMessage, "{\"status\":\"resolved\",\"rootCause\":\"模型问题\"}").andExpect(status().isUnprocessableEntity());
     mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, askerMessage), asker, Role.EMPLOYEE)
-        .contentType("application/json").content("{\"expectedVersion\":1,\"status\":\"resolved\"}")).andExpect(status().isForbidden());
+        .contentType("application/json").content("{\"expectedVersion\":1,\"expectedHandlingRevision\":0,\"status\":\"resolved\"}")).andExpect(status().isForbidden());
     handle(unratedMessage, "{\"status\":\"resolved\"}").andExpect(status().isNotFound());
   }
 
-  /** 处理请求须带 expectedVersion；测试里默认填当前反馈版本。 */
+  /** 处理请求须带 expectedVersion 与 expectedHandlingRevision；测试里默认填当前值。 */
   ResultActions handle(UUID messageId, String body) throws Exception {
     if (!body.contains("expectedVersion")) {
       var version = jdbc.queryForList("SELECT version FROM feedback WHERE message_id = ?", Integer.class, messageId);
       body = "{\"expectedVersion\":" + (version.isEmpty() ? 1 : version.getFirst()) + "," + body.substring(1);
+    }
+    if (!body.contains("expectedHandlingRevision")) {
+      var revision = jdbc.queryForList("SELECT handling_revision FROM feedback WHERE message_id = ?", Integer.class, messageId);
+      body = "{\"expectedHandlingRevision\":" + (revision.isEmpty() ? 0 : revision.getFirst()) + "," + body.substring(1);
     }
     return mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, messageId), operator, Role.KB_OPERATOR)
         .contentType("application/json").content(body));
@@ -238,6 +242,21 @@ class FeedbackTest extends IntegrationTest {
     handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
     jdbc.update("UPDATE ingestion_job SET updated_at = now() - interval '1 hour' WHERE version_id = ?", source);
     handle(askerMessage, resolve(passing)).andExpect(status().isNoContent());
+  }
+
+  /** C58：两个运营同时读到同一反馈，先完成的处理不会被另一人的旧操作覆盖。 */
+  @Test
+  void aStaleHandlingOperationCannotOverwriteAnotherOperatorsResult() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"WRONG\"}").andExpect(status().isOk());
+    records("down").andExpect(jsonPath("$.items[0].handlingRevision").value(0));
+    handle(askerMessage, "{\"expectedVersion\":1,\"expectedHandlingRevision\":0,\"status\":\"wont_fix\",\"resolution\":\"超出试点范围\"}")
+        .andExpect(status().isNoContent());
+    handle(askerMessage, "{\"expectedVersion\":1,\"expectedHandlingRevision\":0,\"status\":\"in_progress\"}")
+        .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("FEEDBACK_VERSION_CONFLICT"));
+    records("down").andExpect(jsonPath("$.items[0].status").value("wont_fix")).andExpect(jsonPath("$.items[0].resolution").value("超出试点范围"))
+        .andExpect(jsonPath("$.items[0].handlingRevision").value(1));
+    handle(askerMessage, "{\"expectedVersion\":1,\"expectedHandlingRevision\":1,\"status\":\"in_progress\"}").andExpect(status().isNoContent());
+    records("down").andExpect(jsonPath("$.items[0].status").value("in_progress")).andExpect(jsonPath("$.items[0].handlingRevision").value(2));
   }
 
   @Test

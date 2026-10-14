@@ -20,7 +20,7 @@ class FeedbackRepository {
 
   record RecordRow(UUID messageId, Instant createdAt, UUID userId, String question, int citationCount, String rating,
       String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
-      Boolean sourceAvailable, UUID traceId, Integer feedbackVersion) {}
+      Boolean sourceAvailable, UUID traceId, Integer feedbackVersion, Integer handlingRevision) {}
 
   record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt,
       Integer feedbackVersion, Boolean sourceAvailable) {}
@@ -76,7 +76,7 @@ class FeedbackRepository {
         INSERT INTO feedback (message_id, user_id, rating, reason, comment) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (message_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason, comment = EXCLUDED.comment,
           version = feedback.version + 1, status = 'open', root_cause = NULL, resolution = NULL, verification_case_id = NULL,
-          handled_by = NULL, updated_at = now()
+          handled_by = NULL, handling_revision = feedback.handling_revision + 1, updated_at = now()
         RETURNING rating, reason, comment, version, status, updated_at
         """, FeedbackRepository::view, messageId, userId, rating, reason, comment);
     jdbc.update("INSERT INTO feedback_history (message_id, version, rating, reason, comment) VALUES (?, ?, ?, ?, ?)",
@@ -110,7 +110,7 @@ class FeedbackRepository {
                f.rating, f.reason, f.comment, f.status, f.root_cause, f.resolution, f.verification_case_id, m.status AS outcome,
                %s AS source_available,
                (SELECT t.id FROM retrieval_trace t WHERE t.message_id = m.id ORDER BY t.created_at DESC LIMIT 1) AS trace_id,
-               f.version AS feedback_version
+               f.version AS feedback_version, f.handling_revision
         FROM message m JOIN conversation c ON c.id = m.conversation_id LEFT JOIN feedback f ON f.message_id = m.id
         WHERE c.kb_id = ?""".formatted(SOURCE_AVAILABLE) + where + " ORDER BY m.created_at DESC, m.id LIMIT 200";
     return jdbc.query(sql,
@@ -118,7 +118,7 @@ class FeedbackRepository {
             rs.getString("question"), rs.getInt("citations"), rs.getString("rating"), rs.getString("reason"), rs.getString("comment"),
             rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"), rs.getObject("verification_case_id", UUID.class),
             rs.getString("outcome"), (Boolean) rs.getObject("source_available"), rs.getObject("trace_id", UUID.class),
-            (Integer) rs.getObject("feedback_version")), kbId);
+            (Integer) rs.getObject("feedback_version"), (Integer) rs.getObject("handling_revision")), kbId);
   }
 
   Map<String, Integer> stats(UUID kbId, Instant since) {
@@ -142,13 +142,15 @@ class FeedbackRepository {
         """, Boolean.class, messageId, kbId));
   }
 
-  int updateStatus(UUID kbId, UUID messageId, int expectedVersion, String status, String rootCause, String resolution, UUID verificationCaseId,
-      UUID handledBy) {
+  /** 条件更新同时绑定反馈内容版本与处理修订号；成功时递增处理修订号，陈旧的处理操作落空。 */
+  int updateStatus(UUID kbId, UUID messageId, int expectedVersion, int expectedHandlingRevision, String status, String rootCause, String resolution,
+      UUID verificationCaseId, UUID handledBy) {
     int changed = jdbc.update("""
-        UPDATE feedback f SET status = ?, root_cause = ?, resolution = ?, verification_case_id = ?, handled_by = ?, updated_at = now()
+        UPDATE feedback f SET status = ?, root_cause = ?, resolution = ?, verification_case_id = ?, handled_by = ?,
+               handling_revision = f.handling_revision + 1, updated_at = now()
         FROM message m JOIN conversation c ON c.id = m.conversation_id
-        WHERE f.message_id = ? AND m.id = f.message_id AND c.kb_id = ? AND f.version = ?
-        """, status, rootCause, resolution, verificationCaseId, handledBy, messageId, kbId, expectedVersion);
+        WHERE f.message_id = ? AND m.id = f.message_id AND c.kb_id = ? AND f.version = ? AND f.handling_revision = ?
+        """, status, rootCause, resolution, verificationCaseId, handledBy, messageId, kbId, expectedVersion, expectedHandlingRevision);
     if (changed != 1) return changed;
     jdbc.update("""
         INSERT INTO feedback_handling (message_id, status, root_cause, resolution, verification_case_id, changed_by, feedback_version)

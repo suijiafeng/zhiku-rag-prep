@@ -34,7 +34,7 @@ class FeedbackService {
 
   record RecordItem(UUID messageId, Instant createdAt, boolean own, String question, int citationCount, String rating,
       String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
-      Boolean sourceAvailable, UUID traceId, Integer feedbackVersion) {}
+      Boolean sourceAvailable, UUID traceId, Integer feedbackVersion, Integer handlingRevision) {}
 
   record Stats(int total, int up, int down, int unrated, Map<String, Integer> reasons) {}
 
@@ -77,7 +77,7 @@ class FeedbackService {
       boolean sourceGone = Boolean.FALSE.equals(r.sourceAvailable());
       return new RecordItem(r.messageId(), r.createdAt(), own, visible ? r.question() : null, r.citationCount(), r.rating(),
           r.reason(), commentVisible ? r.comment() : null, r.status(), r.rootCause(), sourceGone ? null : r.resolution(), r.verificationCaseId(),
-          r.outcome(), r.sourceAvailable(), r.traceId(), r.feedbackVersion());
+          r.outcome(), r.sourceAvailable(), r.traceId(), r.feedbackVersion(), r.handlingRevision());
     }).toList();
     var raw = repository.stats(kbId, Instant.now().minus(Duration.ofDays(7)));
     var reasons = new LinkedHashMap<String, Integer>();
@@ -95,7 +95,8 @@ class FeedbackService {
    * 通过的评测用例；"wont_fix" 需要说明原因。每次变更都追加到处理历史中。
    */
   @Transactional
-  void updateStatus(UUID kbId, UUID messageId, int expectedVersion, String status, String rootCause, String resolution, UUID verificationCaseId) {
+  void updateStatus(UUID kbId, UUID messageId, int expectedVersion, int expectedHandlingRevision, String status, String rootCause, String resolution,
+      UUID verificationCaseId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     if (!STATUSES.contains(status)) throw ApiException.unprocessable("Unknown status");
     if (rootCause != null && !ROOT_CAUSES.contains(rootCause)) throw ApiException.unprocessable("Unknown root cause");
@@ -110,9 +111,9 @@ class FeedbackService {
         throw ApiException.unprocessable("Verification case must be made from this feedback, approved and pass the latest evaluation run");
       }
     }
-    // 条件更新绑定反馈版本：旧页面的操作或校验与更新之间的用户修改都会落空。
-    if (repository.updateStatus(kbId, messageId, expectedVersion, status, rootCause, note, verificationCaseId, scope.userId()) != 1) {
-      throw new ApiException(HttpStatus.CONFLICT, "FEEDBACK_VERSION_CONFLICT", "Feedback changed since it was loaded; reload and confirm again");
+    // 条件更新绑定反馈版本与处理修订号：旧页面的操作、他人已完成的处理，或校验与更新之间的用户修改都会落空。
+    if (repository.updateStatus(kbId, messageId, expectedVersion, expectedHandlingRevision, status, rootCause, note, verificationCaseId, scope.userId()) != 1) {
+      throw new ApiException(HttpStatus.CONFLICT, "FEEDBACK_VERSION_CONFLICT", "Feedback or its handling changed since it was loaded; reload and confirm again");
     }
     var detail = new LinkedHashMap<String, Object>();
     detail.put("status", status);

@@ -5,18 +5,18 @@ import type { EvalCase } from "../../api/client";
 
 describe("closing feedback", () => {
   it("requires root cause, fix and an approved verification case to resolve", () => {
-    expect(closingBody("resolved", { rootCause: undefined, resolution: "已修复", caseId: "c1" }, 1)).toEqual({ error: "请选择根因" });
-    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "  ", caseId: "c1" }, 1)).toEqual({ error: "请填写修复方案" });
-    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "重新切块", caseId: undefined }, 1)).toEqual({ error: "请选择验证用例" });
-    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: " 重新切块 ", caseId: "c1" }, 2)).toEqual({
-      body: { expectedVersion: 2, status: "resolved", rootCause: "解析/切块遗漏", resolution: "重新切块", verificationCaseId: "c1" },
+    expect(closingBody("resolved", { rootCause: undefined, resolution: "已修复", caseId: "c1" }, 1, 3)).toEqual({ error: "请选择根因" });
+    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "  ", caseId: "c1" }, 1, 3)).toEqual({ error: "请填写修复方案" });
+    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "重新切块", caseId: undefined }, 1, 3)).toEqual({ error: "请选择验证用例" });
+    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: " 重新切块 ", caseId: "c1" }, 2, 3)).toEqual({
+      body: { expectedVersion: 2, expectedHandlingRevision: 3, status: "resolved", rootCause: "解析/切块遗漏", resolution: "重新切块", verificationCaseId: "c1" },
     });
   });
 
   it("requires a reason to close without a fix", () => {
-    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "", caseId: undefined }, 1)).toEqual({ error: "请填写不处理的理由" });
-    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "超出试点范围", caseId: "c1" }, 1)).toEqual({
-      body: { expectedVersion: 1, status: "wont_fix", resolution: "超出试点范围" },
+    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "", caseId: undefined }, 1, 3)).toEqual({ error: "请填写不处理的理由" });
+    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "超出试点范围", caseId: "c1" }, 1, 3)).toEqual({
+      body: { expectedVersion: 1, expectedHandlingRevision: 3, status: "wont_fix", resolution: "超出试点范围" },
     });
   });
 

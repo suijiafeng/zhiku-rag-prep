@@ -155,9 +155,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [expectedVersion, status]
+              required: [expectedVersion, expectedHandlingRevision, status]
               properties:
                 expectedVersion: {type: integer, description: feedbackVersion from the records list; a changed feedback returns 409 FEEDBACK_VERSION_CONFLICT}
+                expectedHandlingRevision: {type: integer, description: handlingRevision from the records list; it increments on every handling change (and on a feedback change), so a stale operation returns 409 FEEDBACK_VERSION_CONFLICT instead of overwriting another operator's result}
                 status: {type: string}
                 rootCause: {type: string}
                 resolution: {type: string, maxLength: 1000}

@@ -158,8 +158,9 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
   const onStatus = async (messageId: string, status: FeedbackStatus, rootCause: string | undefined) => {
     if (!client || !kbId) return;
     try {
-      const expectedVersion = data?.items.find((i) => i.messageId === messageId)?.feedbackVersion ?? 1;
-      await client.updateFeedback(kbId, messageId, rootCause ? { expectedVersion, status, rootCause } : { expectedVersion, status });
+      const item = data?.items.find((i) => i.messageId === messageId);
+      const expected = { expectedVersion: item?.feedbackVersion ?? 1, expectedHandlingRevision: item?.handlingRevision ?? 0 };
+      await client.updateFeedback(kbId, messageId, rootCause ? { ...expected, status, rootCause } : { ...expected, status });
     } catch (e) {
       setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "更新失败");
     }
@@ -215,7 +216,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
       <Modal open={trace !== undefined} title="检索与生成轨迹" footer={null} width={760} onCancel={() => setTrace(undefined)}>
         {trace && <StoredTraceView trace={trace} />}
       </Modal>
-      <CloseFeedbackModal status={closing?.status} messageId={closing?.item.messageId} feedbackVersion={closing?.item.feedbackVersion ?? 1} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
+      <CloseFeedbackModal status={closing?.status} messageId={closing?.item.messageId} feedbackVersion={closing?.item.feedbackVersion ?? 1} handlingRevision={closing?.item.handlingRevision ?? 0} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
         onSubmit={submitClose} onCancel={() => setClosing(undefined)} />
       <Modal open={history !== undefined} title="处理记录" footer={null} onCancel={() => setHistory(undefined)}>
         {history && <HandlingList entries={history} />}

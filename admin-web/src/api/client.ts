@@ -172,6 +172,8 @@ export interface RecordItem {
   traceId?: string | null;
   /** 处理操作须带上它，反馈被修改后旧操作会被拒绝。 */
   feedbackVersion?: number | null;
+  /** 每次处理变更递增；带着旧值的处理操作会被拒绝，不会覆盖他人的结果。 */
+  handlingRevision?: number | null;
 }
 
 export interface HandlingEntry {
@@ -187,6 +189,7 @@ export interface HandlingEntry {
 
 export interface FeedbackUpdate {
   expectedVersion: number;
+  expectedHandlingRevision: number;
   status: FeedbackStatus;
   rootCause?: string;
   resolution?: string;
