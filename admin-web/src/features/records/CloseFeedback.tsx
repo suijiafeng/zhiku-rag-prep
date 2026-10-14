@@ -42,6 +42,10 @@ export function CloseFeedbackModal({ status, initialRootCause, cases, onSubmit, 
     setError(undefined);
   }, [status, initialRootCause]);
   const approved = cases.filter((c) => c.status === "approved");
+  const edit = (change: Partial<ClosingForm>) => {
+    setForm({ ...form, ...change });
+    setError(undefined);
+  };
 
   const submit = async () => {
     if (!status) return;
@@ -64,16 +68,16 @@ export function CloseFeedbackModal({ status, initialRootCause, cases, onSubmit, 
             <Typography.Text type="secondary">
               须选择一条已批准的评测用例，且它在本库最近一次评测运行中全部证据都被召回。这只验证检索，不证明回答正确。
             </Typography.Text>
-            <Select<string> placeholder="根因" aria-label="根因" {...(form.rootCause ? { value: form.rootCause } : {})} onChange={(rootCause) => setForm({ ...form, rootCause })}
+            <Select<string> placeholder="根因" aria-label="根因" {...(form.rootCause ? { value: form.rootCause } : {})} onChange={(rootCause) => edit({ rootCause })}
               options={ROOT_CAUSES.map((c) => ({ value: c, label: c }))} />
             <Select<string> placeholder={approved.length ? "验证用例" : "暂无已批准的评测用例"} aria-label="验证用例" {...(form.caseId ? { value: form.caseId } : {})}
-              disabled={!approved.length} onChange={(caseId) => setForm({ ...form, caseId })}
+              disabled={!approved.length} onChange={(caseId) => edit({ caseId })}
               options={approved.map((c) => ({ value: c.id, label: c.question }))} />
           </>
         )}
         <Input.TextArea rows={3} maxLength={1000} showCount aria-label={status === "resolved" ? "修复方案" : "不处理的理由"}
           placeholder={status === "resolved" ? "修复方案，如：发布新版本并重建索引" : "不处理的理由，如：超出试点范围，已转人工渠道"}
-          value={form.resolution} onChange={(e) => setForm({ ...form, resolution: e.target.value })} />
+          value={form.resolution} onChange={(e) => edit({ resolution: e.target.value })} />
         {error && <Alert type="error" showIcon title={error} />}
       </Space>
     </Modal>

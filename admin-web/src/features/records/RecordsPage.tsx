@@ -19,6 +19,14 @@ export function topReasons(reasons: RecordStats["reasons"]) {
     .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key, count]) => ({ key, count }));
 }
 
+/** The server explains in English; the one expected refusal is restated in Chinese, keeping the request id. */
+export function closeFailure(e: unknown, status: FeedbackStatus) {
+  if (!(e instanceof ApiError)) return "关闭失败";
+  const ref = `（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）`;
+  if (e.status === 422 && status === "resolved") return `所选用例须已批准，且在本库最近一次评测运行中全部证据被召回${ref}`;
+  return `${e.message}${ref}`;
+}
+
 const isClosing = (s: FeedbackStatus): s is ClosingStatus => s === "resolved" || s === "wont_fix";
 
 export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate }: {
@@ -34,7 +42,7 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate 
       rowKey="messageId"
       pagination={false}
       dataSource={items}
-      scroll={{ x: 900 }}
+      scroll={{ x: 1100 }}
       locale={{ emptyText: "暂无问答记录" }}
       columns={[
         { title: "时间", dataIndex: "createdAt", className: "mono", width: 170, render: (v: string) => new Date(v).toLocaleString("zh-CN") },
@@ -42,6 +50,7 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate 
         {
           title: "问题",
           dataIndex: "question",
+          minWidth: 200,
           render: (q: string | null) => q ?? <Typography.Text type="secondary">无权查看他人问答正文</Typography.Text>,
         },
         {
@@ -68,7 +77,7 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate 
           key: "status",
           render: (_, r) => !r.status ? "—" : (
             <div className="record-status">
-              <Select<FeedbackStatus> size="small" value={r.status} aria-label="处理状态"
+              <Select<FeedbackStatus> size="small" value={r.status} aria-label="处理状态" popupMatchSelectWidth={false}
                 onChange={(s) => (isClosing(s) ? onClose(r, s) : onStatus(r.messageId, s, r.rootCause ?? undefined))}
                 options={(Object.keys(STATUS_LABEL) as FeedbackStatus[]).map((k) => ({ value: k, label: STATUS_LABEL[k] }))} />
               <Select<string> size="small" placeholder="根因" aria-label="根因" className="record-cause"
@@ -150,7 +159,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
     try {
       await client.updateFeedback(kbId, closing.item.messageId, body);
     } catch (e) {
-      return e instanceof ApiError ? `${e.message}（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）` : "关闭失败";
+      return closeFailure(e, body.status);
     }
     setClosing(undefined);
     await load();

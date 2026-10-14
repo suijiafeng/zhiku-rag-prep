@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { RecordsPage, RecordsTable, praiseRate, topReasons } from "./RecordsPage";
+import { RecordsPage, RecordsTable, closeFailure, praiseRate, topReasons } from "./RecordsPage";
+import { ApiError } from "../../api/client";
 import { FeedbackBar } from "../qa/FeedbackBar";
 import type { RecordItem } from "../../api/client";
 
@@ -40,6 +41,13 @@ describe("records page", () => {
     const html = renderToStaticMarkup(<RecordsTable items={[closed]} onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} />);
     expect(html).toContain("理由：超出试点范围");
     expect(html).toContain("处理记录");
+  });
+
+  it("restates the server's refusal of an unverified resolution in Chinese with the request id", () => {
+    const refused = new ApiError(422, "VALIDATION", "Verification case must be approved and pass the latest evaluation run", "r1");
+    expect(closeFailure(refused, "resolved")).toBe("所选用例须已批准，且在本库最近一次评测运行中全部证据被召回（VALIDATION · r1）");
+    expect(closeFailure(new ApiError(403, "FORBIDDEN", "Access denied"), "resolved")).toBe("Access denied（FORBIDDEN）");
+    expect(closeFailure(new Error("x"), "wont_fix")).toBe("关闭失败");
   });
 
   it("asks to connect instead of showing invented records", () => {
