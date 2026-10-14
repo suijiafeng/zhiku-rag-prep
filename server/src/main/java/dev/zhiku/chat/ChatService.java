@@ -80,6 +80,7 @@ public class ChatService {
 
   private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, ChatSink sink, String requestId) throws IOException {
     var model = requireModel();
+    var turn = new Turn(scope, kbId, conversationId, question, model.model());
     var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
     // Follow-ups are retrieved together with the previous visible question so references like "那试用期呢" resolve.
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
@@ -87,11 +88,11 @@ public class ChatService {
     try {
       sources = retrieval.searchAuthorized(scope, kbId, searchQuery, settings.contextChunks(), Instant.now()).candidates();
     } catch (ApiException e) {
-      error(sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
+      fail(turn, sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
       return;
     }
     if (sources.isEmpty()) {
-      error(sink, "NO_EVIDENCE", "知识库中没有找到可依据的内容，请转人工咨询", requestId);
+      fail(turn, sink, "NO_EVIDENCE", "知识库中没有找到可依据的内容，请转人工咨询", requestId);
       return;
     }
 
@@ -106,22 +107,26 @@ public class ChatService {
         }
       }, sink::cancelled);
     } catch (ClientGone e) {
+      record(turn, "cancelled", null);
       return;
     } catch (RuntimeException e) {
       log.warn("Chat model failed, requestId={}: {}", requestId, e.getClass().getSimpleName());
-      error(sink, "MODEL_UNAVAILABLE", "模型服务暂不可用，请稍后重试", requestId);
+      fail(turn, sink, "MODEL_UNAVAILABLE", "模型服务暂不可用，请稍后重试", requestId);
       return;
     }
-    if (sink.cancelled()) return;
+    if (sink.cancelled()) {
+      record(turn, "cancelled", null);
+      return;
+    }
 
     var text = answer.toString();
     switch (CitationCheck.check(text, sources.size())) {
       case NONE -> {
-        error(sink, "NO_EVIDENCE", "回答没有可核对的引用，已丢弃", requestId);
+        fail(turn, sink, "NO_EVIDENCE", "回答没有可核对的引用，已丢弃", requestId);
         return;
       }
       case OUT_OF_RANGE -> {
-        error(sink, "CITATION_INVALID", "回答引用了不存在的来源，已丢弃", requestId);
+        fail(turn, sink, "CITATION_INVALID", "回答引用了不存在的来源，已丢弃", requestId);
         return;
       }
       case OK -> { }
@@ -130,15 +135,18 @@ public class ChatService {
     // Revocation and withdrawal can happen while the model runs: re-read grants and eligibility before disclosure.
     var fresh = new AccessScope(scope.enterpriseId(), scope.userId(), grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()), scope.roles());
     if (!fresh.permits(scope.enterpriseId(), kbId, ASK_AND_CITE)) {
-      error(sink, "ACCESS_REVOKED", "访问权限已变更，回答已停止", requestId);
+      fail(turn, sink, "ACCESS_REVOKED", "访问权限已变更，回答已停止", requestId);
       return;
     }
     var eligible = new HashSet<>(documents.eligibleVersionIds(fresh, kbId, Instant.now()));
     if (!sources.stream().allMatch(s -> eligible.contains(s.versionId()))) {
-      error(sink, "SOURCE_UNAVAILABLE", "引用的来源已变更，回答已停止", requestId);
+      fail(turn, sink, "SOURCE_UNAVAILABLE", "引用的来源已变更，回答已停止", requestId);
       return;
     }
-    if (sink.cancelled()) return;
+    if (sink.cancelled()) {
+      record(turn, "cancelled", null);
+      return;
+    }
 
     UUID[] stored = tx.execute(status -> {
       var id = conversationId != null ? conversationId
@@ -157,7 +165,7 @@ public class ChatService {
    * answers based on versions that are no longer current keep only the question. At most the last three turns.
    */
   private List<MessageView> priorContext(AccessScope scope, UUID conversationId) {
-    var visible = messages(scope, conversationId).stream().filter(m -> !m.hidden()).toList();
+    var visible = messages(scope, conversationId).stream().filter(m -> !m.hidden() && "complete".equals(m.status())).toList();
     return visible.subList(Math.max(0, visible.size() - 3), visible.size());
   }
 
@@ -181,6 +189,22 @@ public class ChatService {
     sb.append("\n问题：").append(question);
     return List.of(new Message("system", SYSTEM_PROMPT), new Message("user", sb.toString()));
   }
+
+  /** Persists a refused or failed turn (no draft text) and then sends the terminal error event. */
+  private void fail(Turn turn, ChatSink sink, String code, String message, String requestId) throws IOException {
+    record(turn, "NO_EVIDENCE".equals(code) ? "refused" : "failed", code);
+    error(sink, code, message, requestId);
+  }
+
+  private void record(Turn turn, String status, String code) {
+    tx.executeWithoutResult(t -> {
+      var id = turn.conversationId() != null ? turn.conversationId()
+          : repository.createConversation(turn.scope().enterpriseId(), turn.scope().userId(), turn.kbId(), title(turn.question()));
+      repository.saveOutcome(id, turn.question(), status, code, turn.model());
+    });
+  }
+
+  private record Turn(AccessScope scope, UUID kbId, UUID conversationId, String question, String model) {}
 
   private static void error(ChatSink sink, String code, String message, String requestId) throws IOException {
     var data = new LinkedHashMap<String, String>();
@@ -208,7 +232,7 @@ public class ChatService {
   public record CitationView(String documentId, String versionId, String title, String excerpt) {}
 
   public record MessageView(UUID id, String question, String answer, boolean hidden, String reason, boolean stale,
-      List<CitationView> citations, Instant createdAt, FeedbackRepository.FeedbackView feedback) {}
+      List<CitationView> citations, Instant createdAt, FeedbackRepository.FeedbackView feedback, String status, String errorCode) {}
 
   public record ConversationView(UUID id, UUID kbId, String title, Instant updatedAt) {}
 
@@ -226,15 +250,18 @@ public class ChatService {
     var sourcesByMessage = new LinkedHashMap<UUID, List<ChatRepository.SourceRow>>();
     repository.sources(conversationId).forEach(s -> sourcesByMessage.computeIfAbsent(s.messageId(), k -> new ArrayList<>()).add(s));
     return repository.messages(conversationId).stream().map(m -> {
+      if (!"complete".equals(m.status())) {
+        return new MessageView(m.id(), m.question(), null, false, null, false, List.of(), m.createdAt(), null, m.status(), m.errorCode());
+      }
       var sources = sourcesByMessage.getOrDefault(m.id(), List.of());
       boolean available = !sources.isEmpty() && sources.stream().allMatch(s -> s.documentId() != null && !s.withdrawn()
           && s.chunkText() != null && conversation.kbId().equals(s.kbId()));
       if (!available) {
-        return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), ratings.get(m.id()));
+        return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), ratings.get(m.id()), m.status(), null);
       }
       boolean stale = sources.stream().anyMatch(s -> !eligibleNow.contains(s.versionId()));
       var citations = sources.stream().map(s -> new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()))).toList();
-      return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt(), ratings.get(m.id()));
+      return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt(), ratings.get(m.id()), m.status(), null);
     }).toList();
   }
 }

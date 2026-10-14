@@ -31,7 +31,7 @@ class FeedbackService {
       "融合或重排误排", "上下文预算挤出", "生成没有遵循证据", "引用映射失败");
 
   record RecordItem(UUID messageId, Instant createdAt, boolean own, String question, int citationCount, String rating,
-      String reason, String comment, String status, String rootCause) {}
+      String reason, String comment, String status, String rootCause, String outcome) {}
 
   record Stats(int total, int up, int down, int unrated, Map<String, Integer> reasons) {}
 
@@ -54,6 +54,7 @@ class FeedbackService {
         || !scope.permits(scope.enterpriseId(), owner.kbId(), ASK_AND_CITE)) {
       throw ApiException.forbidden();
     }
+    if (!"complete".equals(owner.status())) throw ApiException.conflict("Only completed answers can be rated");
     if ("down".equals(rating) && (reason == null || !REASONS.contains(reason))) throw ApiException.unprocessable("A valid reason is required");
     return repository.upsert(messageId, scope.userId(), rating, "down".equals(rating) ? reason : null, blankToNull(comment));
   }
@@ -66,7 +67,7 @@ class FeedbackService {
       boolean own = r.userId().equals(scope.userId());
       boolean visible = own || canReadOthers;
       return new RecordItem(r.messageId(), r.createdAt(), own, visible ? r.question() : null, r.citationCount(), r.rating(),
-          r.reason(), visible ? r.comment() : null, r.status(), r.rootCause());
+          r.reason(), visible ? r.comment() : null, r.status(), r.rootCause(), r.outcome());
     }).toList();
     var raw = repository.stats(kbId, Instant.now().minus(Duration.ofDays(7)));
     var reasons = new LinkedHashMap<String, Integer>();

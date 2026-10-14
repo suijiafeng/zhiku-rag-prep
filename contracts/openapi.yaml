@@ -69,6 +69,7 @@ paths:
         Own conversation only; knowledge base must still be granted. Each stored answer is re-checked against its source
         dependencies: if any source version is withdrawn, deleted or re-indexed, the answer and citations are hidden
         (hidden=true, reason=SOURCE_UNAVAILABLE). stale=true means a source is no longer the currently effective version.
+        Non-complete turns carry status and errorCode with answer null.
       responses:
         '200': {description: Messages}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -571,7 +572,7 @@ x-sse:
   rules:
     - All events use JSON data. Error is terminal. Done requires preceding validated.
     - Draft is provisional. Metadata validation does not establish semantic correctness.
-    - Disconnect, cancellation or error must not preserve a usable answer; the server stores only answers that reached done.
+    - Disconnect, cancellation or error must not preserve a usable answer. Every turn is stored with status complete | refused (NO_EVIDENCE) | cancelled | failed; only complete turns keep answer text and sources, and only they enter follow-up context or accept feedback.
     - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1].
     - done.data includes conversationId (to continue) and messageId (for feedback).
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.

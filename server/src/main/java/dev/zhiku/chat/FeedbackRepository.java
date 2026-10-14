@@ -15,10 +15,10 @@ import org.springframework.stereotype.Repository;
 class FeedbackRepository {
   record FeedbackView(String rating, String reason, String comment, int version, String status, Instant updatedAt) {}
 
-  record OwnedMessage(UUID messageId, UUID userId, UUID enterpriseId, UUID kbId) {}
+  record OwnedMessage(UUID messageId, UUID userId, UUID enterpriseId, UUID kbId, String status) {}
 
   record RecordRow(UUID messageId, Instant createdAt, UUID userId, String question, int citationCount, String rating,
-      String reason, String comment, String status, String rootCause) {}
+      String reason, String comment, String status, String rootCause, String outcome) {}
 
   private final JdbcTemplate jdbc;
 
@@ -32,9 +32,9 @@ class FeedbackRepository {
   }
 
   Optional<OwnedMessage> owner(UUID messageId) {
-    return jdbc.query("SELECT m.id, c.user_id, c.enterprise_id, c.kb_id FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE m.id = ?",
+    return jdbc.query("SELECT m.id, c.user_id, c.enterprise_id, c.kb_id, m.status FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE m.id = ?",
         (rs, i) -> new OwnedMessage(rs.getObject("id", UUID.class), rs.getObject("user_id", UUID.class),
-            rs.getObject("enterprise_id", UUID.class), rs.getObject("kb_id", UUID.class)), messageId).stream().findFirst();
+            rs.getObject("enterprise_id", UUID.class), rs.getObject("kb_id", UUID.class), rs.getString("status")), messageId).stream().findFirst();
   }
 
   FeedbackView upsert(UUID messageId, UUID userId, String rating, String reason, String comment) {
@@ -68,12 +68,12 @@ class FeedbackRepository {
     return jdbc.query("""
         SELECT m.id, m.created_at, c.user_id, m.question,
                (SELECT count(*) FROM message_source s WHERE s.message_id = m.id) AS citations,
-               f.rating, f.reason, f.comment, f.status, f.root_cause
+               f.rating, f.reason, f.comment, f.status, f.root_cause, m.status AS outcome
         FROM message m JOIN conversation c ON c.id = m.conversation_id LEFT JOIN feedback f ON f.message_id = m.id
         WHERE c.kb_id = ?""" + where + " ORDER BY m.created_at DESC, m.id LIMIT 200",
         (rs, i) -> new RecordRow(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant(), rs.getObject("user_id", UUID.class),
             rs.getString("question"), rs.getInt("citations"), rs.getString("rating"), rs.getString("reason"), rs.getString("comment"),
-            rs.getString("status"), rs.getString("root_cause")), kbId);
+            rs.getString("status"), rs.getString("root_cause"), rs.getString("outcome")), kbId);
   }
 
   Map<String, Integer> stats(UUID kbId, Instant since) {

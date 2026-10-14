@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 class ChatRepository {
   record ConversationRow(UUID id, UUID kbId, String title, Instant updatedAt) {}
 
-  record MessageRow(UUID id, String question, String answer, Instant createdAt) {}
+  record MessageRow(UUID id, String question, String answer, Instant createdAt, String status, String errorCode) {}
 
   record SourceRow(UUID messageId, int ordinal, UUID versionId, UUID chunkId, UUID documentId, String title, UUID kbId,
       boolean withdrawn, String chunkText) {}
@@ -54,9 +54,18 @@ class ChatRepository {
   }
 
   List<MessageRow> messages(UUID conversationId) {
-    return jdbc.query("SELECT id, question, answer, created_at FROM message WHERE conversation_id = ? ORDER BY created_at, id",
+    return jdbc.query("SELECT id, question, answer, created_at, status, error_code FROM message WHERE conversation_id = ? ORDER BY created_at, id",
         (rs, i) -> new MessageRow(rs.getObject("id", UUID.class), rs.getString("question"), rs.getString("answer"),
-            rs.getTimestamp("created_at").toInstant()), conversationId);
+            rs.getTimestamp("created_at").toInstant(), rs.getString("status"), rs.getString("error_code")), conversationId);
+  }
+
+  /** Stores a non-completed turn: question and outcome only, never draft text or sources. */
+  UUID saveOutcome(UUID conversationId, String question, String status, String errorCode, String model) {
+    var id = UUID.randomUUID();
+    jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model, status, error_code) VALUES (?, ?, ?, NULL, ?, ?, ?)",
+        id, conversationId, question, model, status, errorCode);
+    jdbc.update("UPDATE conversation SET updated_at = now() WHERE id = ?", conversationId);
+    return id;
   }
 
   /** Sources joined to their current state; missing joins (deleted or re-indexed) come back with null ids. */

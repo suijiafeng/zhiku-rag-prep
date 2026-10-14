@@ -101,8 +101,14 @@ class ChatTest extends IntegrationTest {
     return ask(token(employee, Role.EMPLOYEE), "{\"kbId\":\"" + kb + "\",\"question\":\"" + question + "\"}");
   }
 
+  /** Completed answers only; failed, refused and cancelled turns are stored as status records without text. */
   int messages() {
-    return jdbc.queryForObject("SELECT count(*) FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ?", Integer.class, kb);
+    return jdbc.queryForObject("SELECT count(*) FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ? AND m.status = 'complete'", Integer.class, kb);
+  }
+
+  String lastStatus() {
+    return jdbc.queryForObject("SELECT m.status || ':' || coalesce(m.error_code, '') || ':' || (m.answer IS NULL) FROM message m JOIN conversation c ON c.id = m.conversation_id "
+        + "WHERE c.kb_id = ? ORDER BY m.created_at DESC LIMIT 1", String.class, kb);
   }
 
   static List<String> names(List<Frame> frames) {
@@ -149,8 +155,10 @@ class ChatTest extends IntegrationTest {
     assertThat(last(frames).event()).isEqualTo("error");
     assertThat(last(frames).data().get("code").asText()).isEqualTo("NO_EVIDENCE");
 
+    assertThat(lastStatus()).isEqualTo("refused:NO_EVIDENCE:true");
     model.script = m -> "十天[7]。";
     assertThat(last(ask("年假有几天?")).data().get("code").asText()).isEqualTo("CITATION_INVALID");
+    assertThat(lastStatus()).isEqualTo("failed:CITATION_INVALID:true");
     assertThat(messages()).isZero();
   }
 
@@ -199,6 +207,7 @@ class ChatTest extends IntegrationTest {
     }, "test-request");
     assertThat(sent).containsExactly("draft");
     assertThat(messages()).isZero();
+    assertThat(lastStatus()).isEqualTo("cancelled::true");
   }
 
   @Test
@@ -266,6 +275,26 @@ class ChatTest extends IntegrationTest {
     ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "那试用期呢?"));
     var user = model.lastPrompt.getLast().content();
     assertThat(user).doesNotContain("此前对话").doesNotContain("年假有几天?");
+  }
+
+  @Test
+  void failedTurnsAppearInHistoryWithoutTextAndStayOutOfContext() throws Exception {
+    var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();
+    model.failMidway = true;
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "失败的问题"));
+    model.reset();
+    mvc.perform(get("/api/conversations/{id}/messages", conversation).header(HttpHeaders.AUTHORIZATION, token(employee, Role.EMPLOYEE)))
+        .andExpect(jsonPath("$.length()").value(2))
+        .andExpect(jsonPath("$[1].status").value("failed"))
+        .andExpect(jsonPath("$[1].errorCode").value("MODEL_UNAVAILABLE"))
+        .andExpect(jsonPath("$[1].answer").doesNotExist())
+        .andExpect(jsonPath("$[1].hidden").value(false));
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "再问一次"));
+    assertThat(model.lastPrompt.getLast().content()).doesNotContain("失败的问题").contains("年假有几天?");
+    var failedId = jdbc.queryForObject("SELECT id FROM message WHERE question = '失败的问题' AND conversation_id = CAST(? AS uuid)", UUID.class, conversation);
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/messages/{id}/feedback", failedId)
+            .header(HttpHeaders.AUTHORIZATION, token(employee, Role.EMPLOYEE)).contentType("application/json").content("{\"rating\":\"up\"}"))
+        .andExpect(status().isConflict());
   }
 
   @Test
