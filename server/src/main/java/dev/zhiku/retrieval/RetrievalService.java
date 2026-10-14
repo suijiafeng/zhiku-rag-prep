@@ -49,10 +49,14 @@ public class RetrievalService {
 
   /** 问答、调试与评测共用的检索链路；每次都按 traceId 记录各阶段元数据，失败时也保留轨迹。 */
   public Result searchAuthorized(AccessScope scope, UUID kbId, String question, Integer k, Instant at, String origin, UUID traceId) {
+    return searchAuthorized(scope, kbId, question, k, at, origin, traceId, 0);
+  }
+
+  public Result searchAuthorized(AccessScope scope, UUID kbId, String question, Integer k, Instant at, String origin, UUID traceId, int configVersion) {
     int limit = k == null ? settings.defaultK() : k;
     if (limit < 1 || limit > settings.maxK()) throw ApiException.unprocessable("k must be between 1 and " + settings.maxK());
     var provider = embeddings.getIfAvailable();
-    traces.insert(traceId, scope, kbId, origin, at, limit, provider == null ? null : provider.model());
+    traces.insert(traceId, scope, kbId, origin, at, limit, provider == null ? null : provider.model(), configVersion);
     var rewrite = Stage.skipped("rewrite", "查询改写", "未改写，保留原问题");
     var later = List.of(Stage.skipped("lexical", "词法召回", "未启用"), Stage.skipped("fusion", "融合排序", "未启用"),
         Stage.skipped("rerank", "重排", "未接入"));

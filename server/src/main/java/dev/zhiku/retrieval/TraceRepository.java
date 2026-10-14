@@ -32,9 +32,9 @@ class TraceRepository {
     return t == null ? null : t.toInstant();
   }
 
-  void insert(UUID id, AccessScope scope, UUID kbId, String origin, Instant at, int k, String model) {
-    jdbc.update("INSERT INTO retrieval_trace (id, enterprise_id, kb_id, user_id, origin, at, k, embedding_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        id, scope.enterpriseId(), kbId, scope.userId(), origin, ts(at), k, model);
+  void insert(UUID id, AccessScope scope, UUID kbId, String origin, Instant at, int k, String model, int configVersion) {
+    jdbc.update("INSERT INTO retrieval_trace (id, enterprise_id, kb_id, user_id, origin, at, k, embedding_model, config_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        id, scope.enterpriseId(), kbId, scope.userId(), origin, ts(at), k, model, configVersion);
   }
 
   void setDimension(UUID id, int dimension) {
@@ -79,9 +79,9 @@ class TraceRepository {
         WHERE c.trace_id = ? ORDER BY c.rank
         """, (rs, i) -> new TraceCandidate(rs.getInt("rank"), rs.getObject("chunk_id", UUID.class), rs.getObject("version_id", UUID.class),
             rs.getString("title"), rs.getDouble("score")), id);
-    return jdbc.query("SELECT id, origin, at, k, embedding_model, dimension, message_id, created_at FROM retrieval_trace WHERE id = ? AND kb_id = ?",
+    return jdbc.query("SELECT id, origin, at, k, embedding_model, dimension, message_id, created_at, config_version FROM retrieval_trace WHERE id = ? AND kb_id = ?",
         (rs, i) -> new TraceView(rs.getObject("id", UUID.class), rs.getString("origin"), instant(rs, "at"), rs.getInt("k"),
             rs.getString("embedding_model"), (Integer) rs.getObject("dimension"), rs.getObject("message_id", UUID.class),
-            instant(rs, "created_at"), stages, candidates), id, kbId).stream().findFirst();
+            instant(rs, "created_at"), stages, candidates, rs.getInt("config_version")), id, kbId).stream().findFirst();
   }
 }

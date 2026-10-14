@@ -4,6 +4,7 @@ import static dev.zhiku.auth.KnowledgeBaseAction.ASK_AND_CITE;
 
 import dev.zhiku.auth.AccessScope;
 import dev.zhiku.auth.GrantLookup;
+import dev.zhiku.config.ConfigService;
 import dev.zhiku.chat.ChatModel.Message;
 import dev.zhiku.document.DocumentService;
 import dev.zhiku.platform.ApiException;
@@ -57,9 +58,11 @@ public class ChatService {
   private final ChatSettings settings;
   private final TransactionTemplate tx;
   private final FeedbackRepository feedback;
+  private final ConfigService configs;
 
   public ChatService(RetrievalService retrieval, DocumentService documents, GrantLookup grants, ObjectProvider<ChatModel> models,
-      ChatRepository repository, ChatSettings settings, TransactionTemplate tx, FeedbackRepository feedback) {
+      ChatRepository repository, ChatSettings settings, TransactionTemplate tx, FeedbackRepository feedback, ConfigService configs) {
+    this.configs = configs;
     this.feedback = feedback;
     this.retrieval = retrieval;
     this.documents = documents;
@@ -124,21 +127,25 @@ public class ChatService {
 
   /** 执行一次回答。范围已由调用方授权；披露前会从授权存储重新读取访问权限。 */
   public void stream(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId) {
-    stream(scope, kbId, question, conversationId, clientRequestId, sink, requestId, UUID.randomUUID());
+    stream(scope, kbId, question, conversationId, clientRequestId, sink, requestId, UUID.randomUUID(), configs.effective(kbId));
   }
 
-  /** traceId 由调用方生成，以便在 start 事件中先行告知客户端。 */
+  public ConfigService.Effective effectiveConfig(UUID kbId) {
+    return configs.effective(kbId);
+  }
+
+  /** traceId 与配置版本由调用方在请求开始时确定，以便 start 事件先行告知；进行中的请求不再切换配置。 */
   public void stream(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId,
-      UUID traceId) {
+      UUID traceId, ConfigService.Effective config) {
     try {
-      run(scope, kbId, question, conversationId, clientRequestId, sink, requestId, traceId);
+      run(scope, kbId, question, conversationId, clientRequestId, sink, requestId, traceId, config);
     } catch (IOException e) {
       log.debug("Client disconnected, requestId={}", requestId);
     }
   }
 
   private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId,
-      UUID traceId) throws IOException {
+      UUID traceId, ConfigService.Effective config) throws IOException {
     var model = requireModel();
     var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId, traceId, new Instant[1]);
     // 排队期间已取消的请求不再做向量化，也不调用模型。
@@ -150,7 +157,7 @@ public class ChatService {
     if (SensitiveInput.detect(question)) {
       var redacted = new Turn(scope, kbId, conversationId, SensitiveInput.redact(question), model.model(), clientRequestId, traceId, new Instant[1]);
       fail(redacted, sink, "SENSITIVE_INPUT", "问题中可能包含个人敏感信息（如证件号、银行卡号或手机号），请删除后再提问；个人事务请联系"
-          + handoff(settings.handoffChannel()), requestId);
+          + handoff(config.handoffChannel()), requestId);
       return;
     }
     long startedAt = System.nanoTime();
@@ -159,7 +166,9 @@ public class ChatService {
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
     List<Candidate> sources;
     try {
-      sources = retrieval.searchAuthorized(scope, kbId, searchQuery, settings.contextChunks(), Instant.now(), "chat", turn.traceId()).candidates();
+      // 召回 K 条，只把前 contextChunks 条交给模型。
+      var retrieved = retrieval.searchAuthorized(scope, kbId, searchQuery, config.retrievalK(), Instant.now(), "chat", turn.traceId(), config.version()).candidates();
+      sources = retrieved.subList(0, Math.min(retrieved.size(), config.contextChunks()));
     } catch (ApiException e) {
       fail(turn, sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
       return;
@@ -169,7 +178,7 @@ public class ChatService {
       return;
     }
     if (sources.isEmpty()) {
-      fail(turn, sink, "NO_EVIDENCE", "知识库中没有找到可依据的内容，请联系" + handoff(settings.handoffChannel()), requestId);
+      fail(turn, sink, "NO_EVIDENCE", "知识库中没有找到可依据的内容，请联系" + handoff(config.handoffChannel()), requestId);
       return;
     }
 
@@ -184,7 +193,7 @@ public class ChatService {
     var seq = new int[] {0};
     turn.modelStarted()[0] = Instant.now();
     try {
-      model.stream(prompt(question, sources, context), token -> {
+      model.stream(prompt(question, sources, context, config), token -> {
         // 披露更多草稿前重新读取授权和效力（每个重新检查间隔内最多一次）。
         if (System.nanoTime() - lastCheck[0] >= settings.recheckInterval().toNanos()) {
           lastCheck[0] = System.nanoTime();
@@ -285,7 +294,7 @@ public class ChatService {
     return out;
   }
 
-  private List<Message> prompt(String question, List<Candidate> sources, List<MessageView> context) {
+  private List<Message> prompt(String question, List<Candidate> sources, List<MessageView> context, ConfigService.Effective config) {
     var sb = new StringBuilder();
     if (!context.isEmpty()) {
       sb.append("此前对话（仅帮助理解指代，不是事实依据，不得引用）：\n");
@@ -303,7 +312,9 @@ public class ChatService {
           .append(body.replace("<<<", "‹‹‹").replace(">>>", "›››")).append("\n>>>\n");
     }
     sb.append("\n问题：").append(question);
-    return List.of(new Message("system", SYSTEM_PROMPT), new Message("user", sb.toString()));
+    var system = config.promptAddendum() == null ? SYSTEM_PROMPT
+        : SYSTEM_PROMPT + "\n补充规则（知识库运营发布，配置版本 " + config.version() + "）：\n" + config.promptAddendum() + "\n";
+    return List.of(new Message("system", system), new Message("user", sb.toString()));
   }
 
   /** 人工渠道由业务确认后配置（ADR-002）；未配置时如实说明。 */

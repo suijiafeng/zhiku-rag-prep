@@ -81,9 +81,11 @@ class ChatController {
     };
     // start 在请求线程上发送：提前发送的事件由 Spring 缓冲并在初始化时写出，工作线程之后才开始写响应。
     var traceId = UUID.randomUUID();
+    var config = chat.effectiveConfig(request.kbId());
     var start = new java.util.LinkedHashMap<String, Object>();
     start.put("requestId", requestId);
     start.put("traceId", traceId.toString());
+    start.put("configVersion", config.version());
     if (request.clientRequestId() != null) start.put("clientRequestId", request.clientRequestId().toString());
     try {
       emitter.send(SseEmitter.event().name("start").data(start, MediaType.APPLICATION_JSON));
@@ -102,7 +104,7 @@ class ChatController {
     try {
       executor.execute(() -> {
         try {
-          chat.stream(scope, request.kbId(), question, request.conversationId(), request.clientRequestId(), sink, requestId, traceId);
+          chat.stream(scope, request.kbId(), question, request.conversationId(), request.clientRequestId(), sink, requestId, traceId, config);
         } finally {
           heartbeat.cancel(false);
           emitter.complete();

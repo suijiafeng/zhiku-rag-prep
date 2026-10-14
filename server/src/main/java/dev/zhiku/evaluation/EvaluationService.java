@@ -35,7 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 当前 chunk。无法映射到任何 chunk 的片段属于准备失败，而非检索未命中。不调用模型。
  */
 @Service
-class EvaluationService {
+public class EvaluationService {
   static final Set<String> LABELS = Set.of("answerable", "clarify", "handoff");
 
   /** occurrence（从 1 开始）从多个相同段落中选出一个；引文出现多次时必填。 */
@@ -68,16 +68,16 @@ class EvaluationService {
     }
   }
 
-  record Ratio(int num, int den) {}
+  public record Ratio(int num, int den) {}
 
-  record Summary(int cases, int evaluated, int prepFailed, int notApplicable, Ratio hit, Ratio recall, Double recallMacro, Long p95Ms,
+  public record Summary(int cases, int evaluated, int prepFailed, int notApplicable, Ratio hit, Ratio recall, Double recallMacro, Long p95Ms,
       int sourceUnavailable) {}
 
   /** sourceUnavailable：某个证据版本当前无效；此类用例会被报告，但不计入分数。 */
-  record ResultView(UUID caseId, String question, String label, boolean mappingFailed, boolean hit, int evidenceHit, int evidenceTotal, int latencyMs,
+  public record ResultView(UUID caseId, String question, String label, boolean mappingFailed, boolean hit, int evidenceHit, int evidenceTotal, int latencyMs,
       boolean sourceUnavailable) {}
 
-  record RunView(UUID id, int k, String model, Instant createdAt, Summary summary, List<ResultView> results) {}
+  public record RunView(UUID id, int k, String model, Instant createdAt, Summary summary, List<ResultView> results) {}
 
   private record Span(UUID versionId, int start, int end) {}
 
@@ -239,7 +239,7 @@ class EvaluationService {
   }
 
   @Transactional
-  RunView run(UUID kbId, Integer requestedK) {
+  public RunView run(UUID kbId, Integer requestedK) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     int k = requestedK == null ? 5 : requestedK;
     if (k < 1 || k > 30) throw ApiException.unprocessable("k must be between 1 and 30");

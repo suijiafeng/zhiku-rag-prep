@@ -389,6 +389,76 @@ paths:
         '202': {description: Queued}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/config:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: knowledgeBaseConfig
+      description: >-
+        DEBUG_AND_EVALUATE. Published version (null means deployment defaults apply, reported as defaults), the single
+        candidate if any, and the version history. Configurable here: retrievalK (1..max-k), contextChunks (1..20, at
+        most retrievalK; the chunks given to the model), handoffChannel, promptAddendum (appended to the fixed system
+        prompt). Embedding and chunking are deployment settings: changing them re-indexes everything and is not done here.
+      responses:
+        '200':
+          description: Overview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  published: {$ref: '#/components/schemas/KnowledgeBaseConfig'}
+                  candidate: {$ref: '#/components/schemas/KnowledgeBaseConfig'}
+                  history: {type: array, items: {$ref: '#/components/schemas/KnowledgeBaseConfig'}}
+                  defaults: {type: object, properties: {retrievalK: {type: integer}, contextChunks: {type: integer}, handoffChannel: {type: string}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/knowledge-bases/{kbId}/config/candidate:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    put:
+      operationId: saveConfigCandidate
+      description: >-
+        DEBUG_AND_EVALUATE. Creates the candidate (no expectedRevision) or updates it (expectedRevision must equal the
+        candidate's current revision, else 409 CONFIG_CONFLICT: reload and confirm again). Any update clears a previous
+        validation. Bounds violations are 422. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [retrievalK, contextChunks]
+              properties:
+                retrievalK: {type: integer, minimum: 1, maximum: 30}
+                contextChunks: {type: integer, minimum: 1, maximum: 20}
+                handoffChannel: {type: string, maxLength: 200}
+                promptAddendum: {type: string, maxLength: 1000}
+                note: {type: string, maxLength: 500}
+                expectedRevision: {type: integer}
+      responses:
+        '200': {description: Candidate, content: {application/json: {schema: {$ref: '#/components/schemas/KnowledgeBaseConfig'}}}}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/config/candidate/{action}:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: action, in: path, required: true, schema: {type: string, enum: [validate, publish]}}]
+    post:
+      operationId: configCandidateAction
+      description: >-
+        DEBUG_AND_EVALUATE. validate runs one real retrieval at the candidate's K (503 when retrieval is unavailable) and
+        one retrieval evaluation run, recorded as the basis; humanQualityChecked is always false (not measured here).
+        publish needs a validation of the current revision (else 409) and makes the candidate the next published version;
+        the previous one becomes superseded. New chat requests use it; requests in flight keep theirs. Audited.
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedRevision], properties: {expectedRevision: {type: integer}}}}}}
+      responses:
+        '200': {description: Updated config, content: {application/json: {schema: {$ref: '#/components/schemas/KnowledgeBaseConfig'}}}}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/config/versions/{version}/rollback:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: version, in: path, required: true, schema: {type: integer}}]
+    post:
+      operationId: rollbackConfig
+      description: DEBUG_AND_EVALUATE. Republishes an earlier version's values as a new version (rolledBackFrom set); history stays linear. 404 for unknown versions. Audited.
+      responses:
+        '200': {description: New published version, content: {application/json: {schema: {$ref: '#/components/schemas/KnowledgeBaseConfig'}}}}
+        '404': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/traces/{traceId}:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: traceId, in: path, required: true, schema: {type: string, format: uuid}}]
     get:
@@ -414,6 +484,7 @@ paths:
                   dimension: {type: integer}
                   messageId: {type: string, format: uuid}
                   createdAt: {type: string, format: date-time}
+                  configVersion: {type: integer}
                   stages: {type: array, items: {type: object}}
                   candidates:
                     type: array
@@ -652,6 +723,25 @@ components:
               text: {type: string}
               score: {type: number, description: cosine similarity; not a confidence in the answer}
               rank: {type: integer}
+    KnowledgeBaseConfig:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        version: {type: integer, description: null for the candidate}
+        status: {type: string, enum: [candidate, published, superseded]}
+        revision: {type: integer, description: Optimistic-lock revision of the candidate}
+        retrievalK: {type: integer}
+        contextChunks: {type: integer}
+        handoffChannel: {type: string}
+        promptAddendum: {type: string}
+        note: {type: string}
+        createdBy: {type: string, format: uuid}
+        createdAt: {type: string, format: date-time}
+        validatedAt: {type: string, format: date-time}
+        validation: {type: object, properties: {evaluationRunId: {type: string, format: uuid}, cases: {type: integer}, humanQualityChecked: {type: boolean}}}
+        publishedBy: {type: string, format: uuid}
+        publishedAt: {type: string, format: date-time}
+        rolledBackFrom: {type: integer}
     Created:
       type: object
       required: [id]
@@ -731,12 +821,12 @@ x-sse:
   status: implemented (POST /api/chat)
   events: [start, draft, validated, error, done]
   fields:
-    start: {requestId: string, traceId: uuid, clientRequestId: "uuid (when sent)"}
+    start: {requestId: string, traceId: uuid, configVersion: "integer (0 = deployment defaults)", clientRequestId: "uuid (when sent)"}
     draft: {text: string, seq: "integer, 1-based, increasing"}
     validated: {citations: array, validation: metadata-only}
     done: {status: complete, finishReason: stop, conversationId: uuid, messageId: uuid, traceId: uuid, latencyMs: integer}
     error: {code: string, message: string, requestId: string, traceId: uuid, retryable: boolean, discardDraft: true}
-  notYetReported: [message_id in start (assigned when the answer is stored), config_version (no configuration versions yet), token usage]
+  notYetReported: [message_id in start (assigned when the answer is stored), token usage]
   rules:
     - All events use JSON data. Start comes first; error is terminal; done requires preceding validated.
     - While waiting the server sends SSE comment lines (":keepalive", every zhiku.chat.heartbeat-interval); they are not content and clients ignore them.

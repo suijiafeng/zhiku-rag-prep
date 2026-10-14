@@ -30,5 +30,5 @@ public final class Retrieval {
 
   /** 存档的轨迹：只有元数据，没有问题和片段正文。 */
   public record TraceView(UUID traceId, String origin, Instant at, int k, String embeddingModel, Integer dimension, UUID messageId,
-      Instant createdAt, List<Stage> stages, List<TraceCandidate> candidates) {}
+      Instant createdAt, List<Stage> stages, List<TraceCandidate> candidates, int configVersion) {}
 }
