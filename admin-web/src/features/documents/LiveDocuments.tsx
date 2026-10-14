@@ -1,16 +1,37 @@
-import { Alert, Button, Card, Input, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Input, Popconfirm, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, type ApiClient, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
+import { ApiError, type ApiClient, type DeletionInfo, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
 import { EmptyState, LoadingList } from "../../components/StateViews";
 
 export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
   s === "ready" ? "indexed" : s === "failed" ? "failed" : s === "processing" ? "parsing" : "pending";
 
-/** "pending" also covers versions that never got content, so it is only polled right after an upload or reindex. */
+const cleaning = (d: DocumentInfo) => d.deletion?.status === "pending" || d.deletion?.status === "running";
+
+/**
+ * "pending" also covers versions that never got content, so it is only polled right after an upload or reindex.
+ * Deletion cleanup is polled only right after a deletion, so a stopped cleanup worker cannot cause endless polling.
+ */
 export function shouldPoll(docs: DocumentInfo[] | undefined, watchBudget: number) {
   const states = docs?.flatMap((d) => d.versions.map((v) => v.indexStatus)) ?? [];
-  return states.includes("processing") || (watchBudget > 0 && states.includes("pending"));
+  return states.includes("processing") || (watchBudget > 0 && (states.includes("pending") || (docs ?? []).some(cleaning)));
+}
+
+export function deletionLabel(status: DeletionInfo["status"]) {
+  if (status === "done") return "已删除 · 清理完成";
+  if (status === "failed") return "访问已停用 · 清理失败";
+  return "访问已停用 · 清理进行中";
+}
+
+function DeletionTag({ deletion }: { deletion: DeletionInfo }) {
+  const color = deletion.status === "failed" ? "red" : deletion.status === "done" ? "default" : "orange";
+  return (
+    <Space orientation="vertical" size={0}>
+      <Tag color={color}>{deletionLabel(deletion.status)}</Tag>
+      {deletion.error && <span className="card-unit">{deletion.error}</span>}
+    </Space>
+  );
 }
 
 const WATCH_POLLS = 30;
@@ -157,7 +178,9 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
           rowKey="id"
           dataSource={docs ?? []}
           pagination={false}
+          rowClassName={(d) => (d.deletion ? "doc-deleted" : "")}
           expandable={{
+            rowExpandable: (doc) => !doc.deletion,
             expandedRowRender: (doc) => (
               <div className="version-panel">
                 <Table<VersionInfo> size="small" rowKey="id" pagination={false} dataSource={doc.versions} columns={versionColumns(doc)}
@@ -174,11 +197,34 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
               title: "最新版本索引",
               key: "latest",
               render: (_, d) => {
+                if (d.deletion) return <DeletionTag deletion={d.deletion} />;
                 const latest = d.versions.at(-1);
                 return latest ? <IndexStatusTag status={indexState(latest.indexStatus)} /> : "—";
               },
             },
             { title: "创建时间", dataIndex: "createdAt", className: "mono", render: (v: string) => businessDate(v, zone) },
+            {
+              title: "操作",
+              key: "op",
+              render: (_, d) => {
+                if (d.deletion?.status === "failed") {
+                  return <Button size="small" onClick={() => act(() => client.deleteDocument(kbId, d.id), true)}>重试清理</Button>;
+                }
+                if (d.deletion) return null;
+                return (
+                  <Popconfirm
+                    title="删除该文档的全部版本？"
+                    description="立即停止检索、引用与问答，依赖它的历史回答将被隐藏；原文、切块与向量随后在后台清理，不可恢复。数据库备份中的副本不在此清理范围内。"
+                    okText="删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => act(() => client.deleteDocument(kbId, d.id), true)}
+                  >
+                    <Button size="small" danger>删除</Button>
+                  </Popconfirm>
+                );
+              },
+            },
           ]}
         />}
       </Card>

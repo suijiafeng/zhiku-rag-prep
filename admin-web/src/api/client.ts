@@ -37,11 +37,19 @@ export interface VersionInfo {
   indexError: string | null;
 }
 
+/** Present only for deleted documents: access already stopped; status is the background content cleanup. */
+export interface DeletionInfo {
+  status: "pending" | "running" | "done" | "failed";
+  deletedAt: string;
+  error: string | null;
+}
+
 export interface DocumentInfo {
   id: string;
   title: string;
   createdAt: string;
   versions: VersionInfo[];
+  deletion?: DeletionInfo | null;
 }
 
 export interface TraceResult {
@@ -270,6 +278,7 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     knowledgeBases: () => request<KnowledgeBase[]>("/api/knowledge-bases"),
     documents: (kbId: string) => request<DocumentInfo[]>(`${kb(kbId)}/documents`),
     createDocument: (kbId: string, title: string) => request<{ id: string }>(`${kb(kbId)}/documents`, post({ title })),
+    deleteDocument: (kbId: string, doc: string) => request<void>(`${kb(kbId)}/documents/${e(doc)}`, { method: "DELETE" }),
     createVersion: (kbId: string, doc: string, body: { versionLabel: string; effectiveFrom: string; effectiveUntil?: string }) =>
       request<{ id: string }>(`${kb(kbId)}/documents/${e(doc)}/versions`, post(body)),
     transition: (kbId: string, doc: string, v: string, action: "approve" | "publish" | "withdraw") =>

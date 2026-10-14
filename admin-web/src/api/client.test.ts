@@ -41,6 +41,14 @@ describe("api client", () => {
     expect(fetchImpl.mock.calls[0]![0]).toBe("/api/knowledge-bases/a%2Fb/documents");
   });
 
+  it("deletes a document with DELETE and accepts an empty 202", async () => {
+    const fetchImpl = vi.fn(async (_u: string, _i: RequestInit) => new Response(null, { status: 202 }));
+    expect(await createClient("tok", fetchImpl).deleteDocument("kb", "d/1")).toBeUndefined();
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("/api/knowledge-bases/kb/documents/d%2F1");
+    expect(init.method).toBe("DELETE");
+  });
+
   it("uploads multipart content with PUT", async () => {
     const fetchImpl = vi.fn(async (_u: string, _i: RequestInit) => json({ jobId: "j1" }, 202));
     const file = new File(["# 手册"], "handbook.md");

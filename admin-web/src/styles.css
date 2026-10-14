@@ -57,6 +57,7 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .doc-table .ant-card-body { padding: 0; }
 .doc-table .ant-table-row { cursor: pointer; }
 .doc-table .row-selected > td { background: #f2f5fd; }
+.doc-table .doc-deleted > td { color: rgba(0, 0, 0, 0.45); cursor: default; }
 .doc-name { display: inline-flex; align-items: center; gap: 8px; }
 .doc-type { width: 10px; height: 12px; border-radius: 2px; background: #8b93a7; flex: none; }
 .doc-type-pdf { background: #6b7385; }
