@@ -16,7 +16,7 @@ npm run build
 npm run check
 ```
 
-构建输出到 dist/，依赖 React 19 宿主。React/React DOM 是 peerDependencies，不内嵌于包。package.json 标记 private，防止意外发布。测试使用静态渲染与纯解析器单测，不等同于浏览器联调。
+构建输出到 dist/，依赖 React 19 宿主。React/React DOM 是 peerDependencies，不内嵌于包。package.json 标记 private，防止意外发布。测试使用静态渲染、纯解析器单测，以及 happy-dom + Testing Library 的交互测试（src/ZhikuWidget.dom.test.tsx，文件首行 `// @vitest-environment happy-dom`），不等同于浏览器联调。
 
 ## 未来宿主集成示例
 
@@ -71,7 +71,7 @@ ZhikuWidget 使用 streamChat：发送时才调用 getAccessToken，流式显示
 
 ## 依赖基线
 
-2026-10-14 通过官方 npm registry 核对 React/React DOM 19.3.0、对应类型 19.3.0、Vitest 5.0.4 和 TypeScript 5.9.3。直接依赖固定版本，package-lock.json 锁定依赖树。可从 <https://registry.npmjs.org/react>、<https://registry.npmjs.org/vitest> 和 <https://registry.npmjs.org/typescript> 复核。
+2026-10-14 通过官方 npm registry 核对 React/React DOM 19.3.0、对应类型 19.3.0、Vitest 5.0.4 和 TypeScript 5.9.3。直接依赖固定版本，package-lock.json 锁定依赖树。2026-10-15 新增仅测试用的 happy-dom 21.0.1 与 @testing-library/react 16.3.3，不进入构建产物。可从 <https://registry.npmjs.org/react>、<https://registry.npmjs.org/vitest> 和 <https://registry.npmjs.org/typescript> 复核。
 
 编码规则统一见仓库根 AGENTS.md 和 docs/conventions.md。
 
