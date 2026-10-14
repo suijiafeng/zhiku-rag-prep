@@ -6,11 +6,11 @@ import type { RecordItem } from "../../api/client";
 
 const items: RecordItem[] = [
   { messageId: "m1", createdAt: "2026-10-14T01:00:00Z", own: true, question: "年假有几天?", citationCount: 2, rating: "down",
-    reason: "WRONG", comment: "不对", status: "open", rootCause: null },
+    reason: "WRONG", comment: "不对", status: "open", rootCause: null, outcome: "complete" },
   { messageId: "m2", createdAt: "2026-10-14T02:00:00Z", own: false, question: null, citationCount: 1, rating: "up",
-    reason: null, comment: null, status: "open", rootCause: null },
+    reason: null, comment: null, status: "open", rootCause: null, outcome: "complete" },
   { messageId: "m3", createdAt: "2026-10-14T03:00:00Z", own: false, question: null, citationCount: 3, rating: null,
-    reason: null, comment: null, status: null, rootCause: null },
+    reason: null, comment: null, status: null, rootCause: null, outcome: "complete" },
 ];
 
 describe("records page", () => {

@@ -4,6 +4,7 @@ import { type ApiClient, type Conversation, type HistoryMessage } from "../../ap
 import { streamAnswer } from "../../api/chatStream";
 import { AnswerText } from "./AnswerText";
 import { FeedbackBar } from "./FeedbackBar";
+import { OutcomeNote } from "./outcome";
 import { EmptyState, ErrorState } from "../../components/StateViews";
 import { chatReducer, initialChatState, type Citation } from "./chatState";
 
@@ -124,7 +125,9 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
             <div key={m.id} onClick={() => setSelected(m.id)}>
               <div className="bubble-user">{m.question}</div>
               <div className={m.id === selected ? "answer-card selected" : "answer-card"}>
-                {m.hidden ? (
+                {m.status !== "complete" ? (
+                  <OutcomeNote status={m.status} errorCode={m.errorCode} />
+                ) : m.hidden ? (
                   <Alert type="warning" showIcon title="来源已撤回或变更，这条回答已隐藏" />
                 ) : (
                   <>

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, type ApiClient, type FeedbackReason, type FeedbackStatus, type RecordItem, type RecordStats } from "../../api/client";
 import { ROOT_CAUSES } from "../evaluation/fixtures";
 import { REASON_LABEL } from "../qa/FeedbackBar";
+import { OUTCOME_LABEL } from "../qa/outcome";
 import { EmptyState, LoadingList } from "../../components/StateViews";
 
 type Filter = "all" | "up" | "down" | "none";
@@ -41,6 +42,12 @@ export function RecordsTable({ items, onStatus, onCandidate }: {
           title: "问题",
           dataIndex: "question",
           render: (q: string | null) => q ?? <Typography.Text type="secondary">无权查看他人问答正文</Typography.Text>,
+        },
+        {
+          title: "结果",
+          dataIndex: "outcome",
+          width: 80,
+          render: (o: RecordItem["outcome"]) => <Tag color={o === "complete" ? "blue" : o === "refused" ? "default" : "warning"}>{OUTCOME_LABEL[o]}</Tag>,
         },
         { title: "引用", dataIndex: "citationCount", className: "mono", width: 70, render: (n: number) => `${n} 篇` },
         {

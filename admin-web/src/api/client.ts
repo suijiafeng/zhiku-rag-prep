@@ -83,6 +83,8 @@ export interface FeedbackInfo {
   updatedAt: string;
 }
 
+export type TurnOutcome = "complete" | "refused" | "cancelled" | "failed";
+
 export interface RecordItem {
   messageId: string;
   createdAt: string;
@@ -94,6 +96,7 @@ export interface RecordItem {
   comment: string | null;
   status: FeedbackStatus | null;
   rootCause: string | null;
+  outcome: TurnOutcome;
 }
 
 export interface RecordStats {
@@ -114,6 +117,8 @@ export interface HistoryMessage {
   citations: HistoryCitation[];
   createdAt: string;
   feedback: FeedbackInfo | null;
+  status: TurnOutcome;
+  errorCode: string | null;
 }
 
 export type Role = "IT_ADMIN" | "KB_OPERATOR" | "EMPLOYEE";
