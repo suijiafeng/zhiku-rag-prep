@@ -145,3 +145,11 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .candidate-row:last-child { border-bottom: 0; }
 .proposal-list { margin: 8px 0; padding-left: 18px; font-size: 13px; color: #3a4256; }
 .proposal-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+.kb-select { min-width: 180px; }
+.version-panel { display: grid; gap: 12px; }
+.version-form .ant-input { width: 160px; }
+.answer-card.selected { border-color: #2f5bd3; }
+.debug-query { margin-bottom: 16px; }
+.debug-input { width: min(520px, 70vw); }
+.debug-k { width: 120px; }

@@ -23,6 +23,16 @@ describe("admin shell", () => {
     expect(html).toMatch(/<input[^>]*disabled/);
   });
 
+  it("shows sample pages until a session with a knowledge base is connected", async () => {
+    const { pageFor } = await import("./App");
+    const { createClient } = await import("./api/client");
+    const client = createClient("t", async () => new Response("[]", { headers: { "Content-Type": "application/json" } }));
+    expect(renderToStaticMarkup(pageFor("documents", { client }))).toContain("员工手册 v3.2.pdf");
+    const live = renderToStaticMarkup(pageFor("documents", { client, kbId: "kb" }));
+    expect(live).toContain("已连接本地服务");
+    expect(live).not.toContain("员工手册 v3.2.pdf");
+  });
+
   it("routes the documents nav item to a real page, not a placeholder", async () => {
     const { pageFor } = await import("./App");
     expect(renderToStaticMarkup(pageFor("documents"))).toContain("文档管理");
@@ -32,6 +42,6 @@ describe("admin shell", () => {
     expect(renderToStaticMarkup(pageFor("debug"))).not.toContain("待实现");
     expect(renderToStaticMarkup(pageFor("evaluation"))).toContain("评测中心");
     expect(renderToStaticMarkup(pageFor("evaluation"))).not.toContain("待实现");
-    expect(renderToStaticMarkup(pageFor("settings"))).toContain("待实现");
+    expect(renderToStaticMarkup(pageFor("settings"))).toContain("系统设置");
   });
 });

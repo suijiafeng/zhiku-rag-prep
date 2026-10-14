@@ -1,6 +1,6 @@
 # 知库管理端骨架
 
-React + TypeScript strict + Ant Design + Vite 的静态 smoke 页面。只用于验证工程启动、类型检查和构建链路；没有业务功能、API 调用、生产登录或模型调用。
+React + TypeScript strict + Ant Design + Vite 管理端。未连接时显示标注的示例数据；点击"连接本地服务"粘贴开发令牌后，文档管理、问答工作台、检索调试使用真实接口，系统设置读取 /api/status。令牌只保存在页面内存，刷新即失效。总览与评测中心仍为示例数据。
 
 ## 本地运行
 
@@ -12,7 +12,7 @@ npm ci
 npm run dev
 ```
 
-打开 Vite 输出的本地地址（默认 http://127.0.0.1:5173）。服务只绑定回环地址。无需 .env、token 或服务端。
+打开 Vite 输出的本地地址（默认 http://127.0.0.1:5173）。开发服务器把 /api 代理到 127.0.0.1:8080，服务端无需 CORS。不启动服务端时页面以示例模式运行。
 
 ```sh
 npm run typecheck

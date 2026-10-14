@@ -1,11 +1,15 @@
 # 架构边界 · PRD v0.3
 
 ## 当前存在
-- server：单个 Spring Boot 应用。公开的无敏感信息 `/api/status`；其余路径拒绝。纯策略示例 AccessScope、VersionEligibility 及测试。
-- admin-web：React/TypeScript/antd 静态冒烟页。
-- widget：独立 React 库壳、草案 SSE 类型/解析测试，无业务流程。
-- compose：本地 PostgreSQL 16 + pgvector；仅基础设施。迁移文件尚未接入 Flyway。
-没有模型调用、真实向量、用户登录、上传、任务执行器、聊天、引用验证器、评测系统或审计持久化。
+- server：单个 Spring Boot 应用，包 auth / knowledgebase / document / ingestion / embedding / retrieval / chat / audit / platform。
+  - 身份：JWT 资源服务器；授权库每请求从数据库读取；挂件令牌限单库且只能调用 /api/chat。
+  - 数据：Flyway V1–V6（知识库与授权、文档与内容版本、内容与摄取任务、切块、向量、会话与来源依赖、审计）。
+  - 摄取：数据库租约队列（FOR UPDATE SKIP LOCKED），租约内一次性写入切块与向量；无 @Async。
+  - 检索：先按授权与效力得出合格版本，再在同一 embedding 模型与维度内做精确余弦检索；无 ANN、无融合、无重排。
+  - 问答：SSE draft → validated → done；披露前检查引用编号并重读授权与效力；只保存完成的回答。
+- admin-web：管理端，示例模式与已连接模式；令牌只在页面内存。
+- widget：可嵌入问答组件。
+未实现：生产 IdP、多轮上下文、引用语义验证、评测运行、反馈闭环、配置发布流程。
 
 ## 目标模块依赖（设计约束，非实现清单）
 单体按业务包：auth → 身份/权限；knowledgebase → 授权库；document → 内容版本/业务效力；ingestion → 持久任务与解析；retrieval → 合格版本内检索；chat → 编排；citation → 来源解析；evaluation → 独立真值与回归；audit → 脱敏追加事件。
@@ -15,4 +19,4 @@ chat 依赖 auth、document 的资格选择、retrieval 和 citation 的公开�
 ## 数据/检索关键边界
 未来 migration 应区分 document、content_version、business_effectivity、index_version、ingestion_job、source_dependency。ingestion_job 持久落库/租约/幂等完成后才可声称可恢复任务；@Async 不是队列。
 先确认主题、受众、业务时区和替代关系，再在授权有效版本集合内检索。示例策略仅覆盖一个已确认主题/适用范围；不实现替代关系图或完整业务引擎。不得直接用于生产判定。
-embedding provider/model/revision/dimension/metric 全部待确认。禁止先建 vector(1536) 等猜测维度；没有模型不生成假向量。中文词法、ANN、reranker 以后用评测证明收益。
+embedding 维度不写死：每行记录模型与维度，检索只比较同一空间。没有模型不生成假向量（测试用确定性测试向量，仅存在于测试代码）。中文词法、ANN、reranker 以后用评测证明收益。

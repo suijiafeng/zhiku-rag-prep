@@ -7,19 +7,21 @@
 3. 从 `TASKS.md` 只选一个任务，套用 `docs/ai-task-template.md`，明确路径和验收。
 
 ## 目录
-- server：Java 21 / Spring Boot 最小应用、默认拒绝业务路径、边界策略单测
-- admin-web：React + TypeScript + antd 静态冒烟页
-- widget：独立 React Widget 壳与 SSE 草案解析器
-- contracts/openapi.yaml：状态端点与未来 SSE 数据形状（未实现聊天）
-- compose.yaml：可选本地 Postgres/pgvector；无生产部署
-- docs：架构、约定、ADR、任务提示词、验证记录
+- server：Java 21 / Spring Boot 模块化单体。JWT 身份、知识库授权、文档版本与效力、持久摄取任务、精确向量检索、SSE 问答、历史依赖重查、挂件短期令牌、追加式审计；Flyway V1–V6。
+- admin-web：React + TypeScript + antd 管理端。未连接时显示标注的示例数据；连接本地服务后文档、问答、检索调试、系统设置为真实数据。
+- widget：独立 React 问答挂件、SSE 分帧器与 streamChat 客户端。
+- contracts/openapi.yaml：已实现接口与 SSE 协议。
+- scripts：本地开发令牌签发与虚构示例种子数据（仅开发用）。
+- compose.yaml：本地 Postgres/pgvector。
+- docs：架构、约定、ADR、任务提示词、验证记录。
 
 ## 运行与验证
-后端：`cd server && mvn -B clean verify`；启动 `mvn spring-boot:run`，访问 http://127.0.0.1:8080/api/status 。需 Java 21 / Maven 3.9.11。
-前端与 Widget 见各包 README，使用提交的 lockfile 执行 npm ci 后检查/构建。
-可选数据库：复制 `.env.example` 为 `.env`，填入新本地密码，再 `docker compose up -d postgres`；没有程序读取数据库、没有自动迁移。勿把本地容器配置用于生产。销毁卷会删数据，不在默认步骤中执行。
+- 后端：`cd server && mvn -B clean verify`（需要 Docker，集成测试用 Testcontainers 启动 pgvector）。本地运行步骤见 server/README.md。
+- 管理端与挂件：各包 `npm ci && npm run check`。管理端 `npm run dev` 通过 Vite 代理访问 127.0.0.1:8080。
+- 模型：本地 Ollama。`ZHIKU_CHAT_PROVIDER=ollama` 启用问答；`ZHIKU_EMBEDDING_PROVIDER=ollama` 启用向量化，需要一个支持 `/api/embed` 的 embedding 模型（默认 bge-m3，需自行 `ollama pull`）。未配置 embedding 时文档会切块但标记失败，不可检索。
 
 ## 范围与真实状态
-没有实现登录、文档上传、业务持久化、任务队列、真实向量检索、模型问答、引用验证或评测平台。纯 Java 策略示例和协议解析测试不等同于端到端 RAG 验收。目录规划不代表功能完成。
-无真实企业材料、无模型 API Key、无外部网关。所有测试资料是中性虚构 fixture。
-实际执行证据与未验证项见 `docs/verification.md`。此包没有推送、部署或创建远程仓库。
+已实现并有集成测试：身份与授权（本地 JWT）、文档版本与效力、Markdown/TXT 摄取、精确向量检索、SSE 问答与引用元数据检查、撤权与历史依赖重查、挂件短期令牌。
+未实现：生产 IdP/SSO、多轮对话上下文、词法检索/融合/重排、引用语义验证、评测运行与数据集管理、反馈闭环、配置候选/发布流程、用户与权限管理页、API 与集成页、问答记录页。总览与评测页仍为示例数据。
+本地签发令牌只用于开发；默认值来源见 ADR-002。没有真实企业材料、没有付费模型调用。
+实际执行证据与未验证项见 `docs/verification.md`。

@@ -17,14 +17,15 @@ const seconds = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
 const score = (v: number | null) => (v === null ? "—" : v.toFixed(2));
 const usageLabel: Record<Candidate["usage"], string> = { cited: "引用", context: "入上下文", none: "—" };
 
-export function RetrievalDebugPage({ trace }: { trace: DebugTrace }) {
+export function RetrievalDebugPage({ trace, live = false }: { trace: DebugTrace; live?: boolean }) {
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <Typography.Title level={3} className="page-title">检索调试</Typography.Title>
           <Typography.Text type="secondary" className="page-sub">
-            示例轨迹 · 问题：「{trace.question}」 · trace_id {trace.traceId} · 调试服务未接入
+            {live ? "实时轨迹" : "示例轨迹"} · 问题：「{trace.question}」 · trace_id {trace.traceId}
+            {live ? "" : " · 未连接本地服务"}
           </Typography.Text>
         </div>
       </div>

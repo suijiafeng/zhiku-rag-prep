@@ -1,6 +1,6 @@
 # 知库独立 React Widget 骨架
 
-独立 ESM + TypeScript 类型包。当前仅包含组件占位、临时契约类型和 SSE 文本分帧器；没有完整对话、网络请求、模型接入、引用真实性验证或生产鉴权。组件不会调用 getAccessToken。
+独立 ESM + TypeScript 类型包。包含问答组件、契约类型、SSE 文本分帧器与 streamChat 客户端。没有会话历史、引用语义验证或生产 IdP。
 
 ## 验收与构建
 
@@ -26,13 +26,13 @@ npm run check
 import { ZhikuWidget } from "@zhiku/widget";
 
 <ZhikuWidget
-  endpoint="/future/chat"
-  knowledgeBaseId="demo"
-  title="知库助手"
+  endpoint="https://kb.example.test/api/chat"
+  knowledgeBaseId="<知识库 UUID>"
+  getAccessToken={() => fetchWidgetTokenFromHostBackend()}
 />
 ```
 
-endpoint 与 knowledgeBaseId 目前是预留接口，不会触发请求。/future/chat 只是宿主集成占位值；服务端没有聊天路由，当前只有 GET /api/status。后续可传 getAccessToken: () => Promise<string | undefined>，由宿主按请求获取短期、最小权限 token；不要把模型密钥或长期 token 放到前端。包内不提供 token 存储、自动重连或全局样式。生产只允许受信 HTTPS 后端。
+getAccessToken 由宿主按请求获取短期、最小权限 token；不要把模型密钥或长期 token 放到前端。包内不提供 token 存储、自动重连或全局样式。生产只允许受信 HTTPS 后端。
 
 ## SSE 约定（临时）
 
@@ -57,7 +57,13 @@ createSseParser 仅解析 event/data 分帧，输出字符串；不会执行 HTM
 - 只有先 validated 后 done 才算 complete；error、取消、协议违规、流提前结束（`STREAM_INCOMPLETE`）都丢弃回答。onEvent 收到的 draft 是临时内容，结果不是 complete 时调用方必须丢弃。
 - 从不自动重试，避免重复 POST 造成重复计费。
 
-服务端尚无聊天路由；组件 ZhikuWidget 目前仍不调用 streamChat。
+ZhikuWidget 使用 streamChat：发送时才调用 getAccessToken，流式显示草稿，只有 complete 才保留回答和来源；取消或失败即丢弃。组件不读写 localStorage/sessionStorage/Cookie。
+
+## 宿主接入
+
+1. 宿主后端用用户身份调用 `POST /api/widget-tokens {kbId}`，得到 10 分钟、单知识库、仅能调用 `/api/chat` 的令牌。
+2. 前端把该调用包装为 `getAccessToken` 传给组件；令牌只在内存中使用。
+3. 跨域宿主需要在服务端 `ZHIKU_WIDGET_ORIGINS` 显式列出来源，否则浏览器无法跨域调用。
 
 ## 依赖基线
 

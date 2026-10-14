@@ -31,3 +31,11 @@ Python yaml.safe_load 成功解析 compose.yaml、contracts/openapi.yaml、.gith
 - admin-web：`npm ci && npm run check` 通过，1 项测试通过，Vite 构建成功；573.24 kB chunk 警告保留。
 - 环境问题：用户 npm 缓存中存在 root 属主目录导致 `npm ci` 报 EACCES，改用 `npm ci --cache <临时目录>` 绕开，未修改系统权限，与仓库无关。
 - 仍未验证：Docker 未启动 Postgres/pgvector，migration 与数据库集成测试未执行；CI 未在 GitHub 运行。
+
+## 剩余功能实现 · 2026-10-14（macOS，本机）
+环境：Java 21.0.12.1、Maven 3.9.16、Node 24.12.0、Docker 29.8.2、Ollama（qwen3.5 对话模型；本机 Ollama 未开启 embedding 接口）。
+- server：`mvn -B clean verify` BUILD SUCCESS，98 项测试通过，其中集成测试用 Testcontainers 启动 pgvector:0.8.0-pg16。
+- admin-web：`npm run check` 通过，64 项测试。widget：`npm run check` 通过，26 项测试，构建包 Node 导入成功。
+- 端到端（本机 compose Postgres + spring-boot + Vite，浏览器操作）：Flyway 在空库执行 V1–V6；开发令牌连接后列出授权库；篡改签名 401；页面新建文档与版本、批准、发布；API 上传 .md 返回 202，.pdf 返回 422；真实 worker 切块后因未配置 embedding 将版本标记失败且不重试，页面显示原因；问答页经 SSE 收到 DEPENDENCY_UNAVAILABLE 与请求编号，未保存会话；刷新后令牌消失。
+- 联调中发现并修复：无内容版本被显示为"解析中"并无限轮询。
+- 未验证：真实 embedding 模型下的检索与问答（本机无可用 embedding 接口）；真实模型回答质量与引用语义；多实例并发 worker；CI 在 GitHub 运行；生产 IdP、性能与安全审计。

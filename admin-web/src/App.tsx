@@ -1,5 +1,11 @@
-import { Alert, Avatar, Breadcrumb, ConfigProvider, Input, Layout, Menu, Result, Tag } from "antd";
+import { Alert, Avatar, Breadcrumb, ConfigProvider, Input, Layout, Menu } from "antd";
 import { useState, type ReactNode } from "react";
+import type { ApiClient, Status } from "./api/client";
+import { ConnectControl, SessionProvider, useSession } from "./session";
+import { LiveDocuments } from "./features/documents/LiveDocuments";
+import { LiveQa } from "./features/qa/LiveQa";
+import { LiveDebug } from "./features/debug/LiveDebug";
+import { SettingsPage } from "./features/settings/SettingsPage";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
 import { QaWorkbench } from "./features/qa/QaWorkbench";
@@ -22,19 +28,38 @@ const NAV = [
 
 type NavKey = (typeof NAV)[number]["key"];
 
-export function pageFor(key: NavKey): ReactNode {
-  if (key === "overview") return <OverviewPage data={overviewFixture} />;
-  if (key === "documents") return <DocumentsPage data={documentsFixture} />;
-  if (key === "qa") return <QaWorkbench data={qaFixture} />;
-  if (key === "debug") return <RetrievalDebugPage trace={debugFixture} />;
-  if (key === "evaluation") return <EvaluationPage data={evaluationFixture} />;
-  const label = NAV.find((n) => n.key === key)?.label ?? key;
-  return <Result status="info" title={`${label}：待实现`} subTitle="该页面已在设计稿中，按任务顺序后续接入。" />;
+export interface PageContext {
+  client?: ApiClient | undefined;
+  kbId?: string | undefined;
+  kbName?: string | undefined;
+  status?: Status | undefined;
+  statusError?: string | undefined;
 }
 
-/** Admin shell following the Figma "知识库总览" frame. No fetching, mutation or authentication. */
+/** Live pages need a connected session and a selected knowledge base; otherwise sample pages are shown and labelled. */
+export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
+  const live = ctx.client && ctx.kbId ? { client: ctx.client, kbId: ctx.kbId } : undefined;
+  if (key === "overview") return <OverviewPage data={overviewFixture} />;
+  if (key === "documents") return live ? <LiveDocuments {...live} status={ctx.status} /> : <DocumentsPage data={documentsFixture} />;
+  if (key === "qa") return live ? <LiveQa {...live} modelEnabled={ctx.status?.modelEnabled ?? false} /> : <QaWorkbench data={qaFixture} />;
+  if (key === "debug") return live ? <LiveDebug {...live} kbName={ctx.kbName ?? ""} /> : <RetrievalDebugPage trace={debugFixture} />;
+  if (key === "evaluation") return <EvaluationPage data={evaluationFixture} />;
+  return <SettingsPage status={ctx.status} error={ctx.statusError} />;
+}
+
 export function App() {
+  return (
+    <SessionProvider>
+      <Shell />
+    </SessionProvider>
+  );
+}
+
+/** Admin shell following the Figma frames. Sample data until a local session is connected. */
+function Shell() {
+  const session = useSession();
   const [active, setActive] = useState<NavKey>("overview");
+  const kbName = session.knowledgeBases.find((k) => k.id === session.kbId)?.name;
   const current = NAV.find((n) => n.key === active) ?? NAV[0];
 
   return (
@@ -59,17 +84,17 @@ export function App() {
           <div className="shell-user">
             <Avatar className="shell-avatar">访</Avatar>
             <div>
-              <div className="brand-name">未登录</div>
-              <div className="brand-sub">身份接入待 T1</div>
+              <div className="brand-name">{session.client ? "开发令牌" : "未连接"}</div>
+              <div className="brand-sub">{session.client ? "本地 JWT · 生产需 IdP" : "示例数据"}</div>
             </div>
           </div>
         </Layout.Sider>
         <Layout>
           <Layout.Header className="shell-header">
-            <Breadcrumb items={[{ title: "知识库" }, { title: current.label }]} />
+            <Breadcrumb items={[{ title: kbName ?? "知识库" }, { title: current.label }]} />
             <div className="shell-tools">
               <Input className="shell-search" placeholder="搜索文档、问答…" disabled aria-label="搜索（未实现）" />
-              <Tag color="orange">本地骨架 · 示例数据</Tag>
+              <ConnectControl />
             </div>
           </Layout.Header>
           <Layout.Content className="shell-content">
@@ -77,10 +102,12 @@ export function App() {
               type="warning"
               showIcon
               className="scaffold-alert"
-              title="开发骨架，尚未接入生产服务"
-              description="页面数字均为虚构示例数据；未实现登录、权限、上传、检索或模型调用。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
+              title="开发环境，尚未接入生产服务"
+              description={session.client
+                ? "已连接本地服务：文档、问答、检索调试为真实数据；总览与评测仍为示例数据。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
+                : "未连接时页面为虚构示例数据。连接本地服务需开发令牌；生产 IdP 未接入。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"}
             />
-            {pageFor(active)}
+            {pageFor(active, { client: session.client, kbId: session.kbId, kbName, status: session.status, statusError: session.statusError })}
           </Layout.Content>
         </Layout>
       </Layout>

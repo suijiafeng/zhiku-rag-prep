@@ -1,5 +1,5 @@
 /**
- * Client state for the draft SSE contract in contracts/openapi.yaml (x-sse-draft).
+ * Client state for the SSE contract in contracts/openapi.yaml (x-sse).
  * Mirrors the widget's provisional types; admin-web does not depend on the widget package.
  * Rules: done counts only after validated; error, cancel and protocol violations discard the answer.
  */
@@ -13,7 +13,7 @@ export interface Citation {
 export type ChatEvent =
   | { event: "draft"; data: { text: string } }
   | { event: "validated"; data: { citations: Citation[]; validation: "metadata-only" } }
-  | { event: "done"; data: { status: "complete" } }
+  | { event: "done"; data: { status: "complete"; conversationId?: string } }
   | { event: "error"; data: { code: string; message: string; requestId: string } };
 
 export type ChatStatus = "idle" | "streaming" | "validated" | "complete" | "failed" | "cancelled";

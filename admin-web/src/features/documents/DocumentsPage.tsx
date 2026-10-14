@@ -7,7 +7,7 @@ import type { DocumentRow, DocumentsData } from "./fixtures";
 type Filter = "all" | IndexStatus;
 
 export function countByStatus(docs: DocumentRow[]) {
-  const counts = { all: docs.length, indexed: 0, parsing: 0, failed: 0 };
+  const counts = { all: docs.length, pending: 0, indexed: 0, parsing: 0, failed: 0 };
   for (const d of docs) counts[d.status] += 1;
   return counts;
 }
