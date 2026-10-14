@@ -125,6 +125,7 @@ class EvaluationTest extends IntegrationTest {
     var message = UUID.randomUUID();
     jdbc.update("INSERT INTO conversation (id, enterprise_id, user_id, kb_id, title) VALUES (?, ?, ?, ?, '年假')", conversation, enterprise, operator, knowledgeBase);
     jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model) VALUES (?, ?, '年假有几天?', '答[1]', 'test')", message, conversation);
+    jdbc.update("INSERT INTO feedback (message_id, user_id, rating, reason, version) VALUES (?, ?, 'down', 'WRONG', 2)", message, operator);
     return message;
   }
 
@@ -135,6 +136,7 @@ class EvaluationTest extends IntegrationTest {
         .andExpect(status().isCreated());
     mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.KB_OPERATOR))
         .andExpect(jsonPath("$[0].originMessageId").value(origin.toString()));
+    assertThat(jdbc.queryForObject("SELECT origin_feedback_version FROM eval_case WHERE origin_message_id = ?", Integer.class, origin)).isEqualTo(2);
 
     var otherKb = UUID.randomUUID();
     jdbc.update("INSERT INTO knowledge_base (id, enterprise_id, name) VALUES (?, ?, ?)", otherKb, enterprise, "其他-" + otherKb);

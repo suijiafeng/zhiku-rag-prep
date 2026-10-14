@@ -146,7 +146,7 @@ paths:
       description: >-
         DEBUG_AND_EVALUATE. status open | in_progress | to_verify | resolved | wont_fix; rootCause must be a PRD chapter 11
         category. Closing needs a basis: resolved requires rootCause, resolution and verificationCaseId of an approved case
-        in this knowledge base made from this feedback (originMessageId) whose evidence spans were all retrieved in the latest evaluation run (a retrieval check, not
+        in this knowledge base made from the current version of this feedback (originMessageId) whose evidence spans were all retrieved in the latest evaluation run, with no evidence source withdrawn, deleted, not ready or re-indexed since that run (a retrieval check, not
         proof that the answer is correct); wont_fix requires resolution as the reason. Every change is kept in the handling
         history. Audited.
       requestBody:

@@ -91,8 +91,10 @@ class EvaluationService {
     }
     var inputs = evidence == null ? List.<EvidenceInput>of() : evidence;
     var id = UUID.randomUUID();
-    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, source, created_by, origin_message_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        id, kbId, question, label, source == null ? "manual" : source, scope.userId(), originMessageId);
+    jdbc.update("""
+        INSERT INTO eval_case (id, kb_id, question, label, source, created_by, origin_message_id, origin_feedback_version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT version FROM feedback WHERE message_id = ?))
+        """, id, kbId, question, label, source == null ? "manual" : source, scope.userId(), originMessageId, originMessageId);
     insertEvidence(kbId, id, inputs);
     audit.record(scope, "EVAL_CASE_CREATE", "eval-case:" + id, "OK", Map.of("label", label, "evidence", inputs.size()));
     return id;

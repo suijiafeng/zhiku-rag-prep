@@ -147,8 +147,8 @@ class FeedbackTest extends IntegrationTest {
 
   UUID evalCase(String status, UUID origin) {
     var id = UUID.randomUUID();
-    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, status, created_by, origin_message_id) VALUES (?, ?, '年假有几天?', 'answerable', ?, ?, ?)",
-        id, kb, status, operator, origin);
+    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, status, created_by, origin_message_id, origin_feedback_version) "
+        + "VALUES (?, ?, '年假有几天?', 'answerable', ?, ?, ?, (SELECT version FROM feedback WHERE message_id = ?))", id, kb, status, operator, origin, origin);
     return id;
   }
 
@@ -203,6 +203,33 @@ class FeedbackTest extends IntegrationTest {
         .andExpect(jsonPath("$.items[0].status").value("resolved"))
         .andExpect(jsonPath("$.items[0].resolution").value("发布新版本并重建索引"))
         .andExpect(jsonPath("$.items[0].verificationCaseId").value(passing.toString()));
+  }
+
+  @Test
+  void aCaseMadeForAnEarlierFeedbackVersionCannotCloseTheChangedFeedback() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"OUTDATED\"}").andExpect(status().isOk());
+    var passing = evalCase("approved");
+    run(passing, true, 0);
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"WRONG\"}").andExpect(status().isOk());
+    handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  void aPassingRunNoLongerCountsOnceItsEvidenceSourceChanged() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"OUTDATED\"}").andExpect(status().isOk());
+    var source = answeredFromRealSource(operator)[2];
+    var passing = evalCase("approved");
+    jdbc.update("INSERT INTO eval_evidence (case_id, ordinal, version_id, start_offset, end_offset, quote) VALUES (?, 1, ?, 0, 7, '年假按司龄计算')", passing, source);
+    jdbc.update("INSERT INTO ingestion_job (id, version_id, status, updated_at) VALUES (gen_random_uuid(), ?, 'succeeded', now() - interval '1 hour')", source);
+    run(passing, true, 0);
+
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", source);
+    handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
+    jdbc.update("UPDATE content_version SET withdrawn_at = NULL WHERE id = ?", source);
+    jdbc.update("UPDATE ingestion_job SET updated_at = now() + interval '1 minute' WHERE version_id = ?", source);
+    handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
+    jdbc.update("UPDATE ingestion_job SET updated_at = now() - interval '1 hour' WHERE version_id = ?", source);
+    handle(askerMessage, resolve(passing)).andExpect(status().isNoContent());
   }
 
   @Test
