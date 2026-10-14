@@ -72,6 +72,54 @@ paths:
       responses:
         '200': {description: Messages}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /api/messages/{messageId}/feedback:
+    parameters: [{name: messageId, in: path, required: true, schema: {type: string, format: uuid}}]
+    put:
+      operationId: rateMessage
+      description: >-
+        Only the person who asked, while the knowledge base is still granted. down requires reason
+        (WRONG | MISSING | BAD_CITATION | SHOULD_REFUSE | OUTDATED); up clears the reason. Each change increments
+        version and is kept in history. Feedback never creates a trusted answer by itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: {type: string, enum: [up, down]}
+                reason: {type: string}
+                comment: {type: string, maxLength: 500}
+      responses:
+        '200': {description: Stored feedback}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/records:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: filter, in: query, schema: {type: string, enum: [all, up, down, none], default: all}}]
+    get:
+      operationId: listRecords
+      description: >-
+        DEBUG_AND_EVALUATE (KB_OPERATOR). Latest 200 answers with feedback and handling status, plus 7-day stats.
+        question and comment are null for other people's records unless READ_OTHERS_CONVERSATIONS is granted (no role has it yet).
+      responses:
+        '200': {description: Records}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/knowledge-bases/{kbId}/feedback/{messageId}:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: messageId, in: path, required: true, schema: {type: string, format: uuid}}]
+    patch:
+      operationId: updateFeedbackStatus
+      description: DEBUG_AND_EVALUATE. status open | in_progress | to_verify | resolved | wont_fix; rootCause must be a PRD chapter 11 category. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [status], properties: {status: {type: string}, rootCause: {type: string}}}
+      responses:
+        '204': {description: Updated}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
   /api/widget-tokens:
     post:
       operationId: issueWidgetToken

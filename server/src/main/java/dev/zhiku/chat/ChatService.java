@@ -44,9 +44,11 @@ public class ChatService {
   private final ChatRepository repository;
   private final ChatSettings settings;
   private final TransactionTemplate tx;
+  private final FeedbackRepository feedback;
 
   public ChatService(RetrievalService retrieval, DocumentService documents, GrantLookup grants, ObjectProvider<ChatModel> models,
-      ChatRepository repository, ChatSettings settings, TransactionTemplate tx) {
+      ChatRepository repository, ChatSettings settings, TransactionTemplate tx, FeedbackRepository feedback) {
+    this.feedback = feedback;
     this.retrieval = retrieval;
     this.documents = documents;
     this.grants = grants;
@@ -186,7 +188,7 @@ public class ChatService {
   public record CitationView(String documentId, String versionId, String title, String excerpt) {}
 
   public record MessageView(UUID id, String question, String answer, boolean hidden, String reason, boolean stale,
-      List<CitationView> citations, Instant createdAt) {}
+      List<CitationView> citations, Instant createdAt, FeedbackRepository.FeedbackView feedback) {}
 
   public record ConversationView(UUID id, UUID kbId, String title, Instant updatedAt) {}
 
@@ -200,6 +202,7 @@ public class ChatService {
     var conversation = repository.conversation(conversationId, scope.enterpriseId(), scope.userId()).orElseThrow(ApiException::forbidden);
     if (!scope.permits(scope.enterpriseId(), conversation.kbId(), ASK_AND_CITE)) throw ApiException.forbidden();
     var eligibleNow = new HashSet<>(documents.eligibleVersionIds(scope, conversation.kbId(), Instant.now()));
+    var ratings = feedback.forConversation(conversationId);
     var sourcesByMessage = new LinkedHashMap<UUID, List<ChatRepository.SourceRow>>();
     repository.sources(conversationId).forEach(s -> sourcesByMessage.computeIfAbsent(s.messageId(), k -> new ArrayList<>()).add(s));
     return repository.messages(conversationId).stream().map(m -> {
@@ -207,11 +210,11 @@ public class ChatService {
       boolean available = !sources.isEmpty() && sources.stream().allMatch(s -> s.documentId() != null && !s.withdrawn()
           && s.chunkText() != null && conversation.kbId().equals(s.kbId()));
       if (!available) {
-        return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt());
+        return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), ratings.get(m.id()));
       }
       boolean stale = sources.stream().anyMatch(s -> !eligibleNow.contains(s.versionId()));
       var citations = sources.stream().map(s -> new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()))).toList();
-      return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt());
+      return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt(), ratings.get(m.id()));
     }).toList();
   }
 }

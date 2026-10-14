@@ -29,6 +29,10 @@ public class ApiException extends RuntimeException {
     return new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied");
   }
 
+  public static ApiException notFound() {
+    return new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Not found");
+  }
+
   public static ApiException unprocessable(String message) {
     return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION", message);
   }
