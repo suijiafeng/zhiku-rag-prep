@@ -190,3 +190,9 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
   .login { grid-template-columns: 1fr; }
   .login-brand { padding: 24px 16px; }
 }
+
+.empty-state { display: grid; justify-items: center; gap: 6px; padding: 36px 16px; text-align: center; background: #fff; border-radius: 8px; }
+.empty-icon { font-size: 32px; line-height: 1; opacity: 0.7; }
+.empty-title { font-weight: 600; font-size: 15px; }
+.empty-desc { color: #8b93a7; font-size: 13px; max-width: 360px; }
+.state-pad { padding: 16px; }

@@ -4,6 +4,7 @@ import { ApiError, type ApiClient } from "../../api/client";
 import { traceFromResult } from "./liveTrace";
 import { RetrievalDebugPage } from "./RetrievalDebugPage";
 import type { DebugTrace } from "./fixtures";
+import { EmptyState } from "../../components/StateViews";
 
 /** Runs the real authorized retrieval for one question; no model call, nothing stored. */
 export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: string; kbName: string }) {
@@ -36,6 +37,9 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
         </Space>
       </Card>
       {error && <Alert type="error" showIcon className="scaffold-alert" title="检索失败" description={error} />}
+      {trace && trace.candidates.length === 0 && (
+        <div className="debug-card"><EmptyState icon="search" title="无检索结果" description="没有符合授权与效力的切块：检查文档版本是否已发布、在生效期内且索引就绪。" /></div>
+      )}
       {trace ? <RetrievalDebugPage trace={trace} live /> : <Alert type="info" showIcon title="输入问题后运行，查看本次检索的各阶段与候选得分。" />}
     </>
   );

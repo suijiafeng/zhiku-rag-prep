@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiError, type ApiClient, type FeedbackReason, type FeedbackStatus, type RecordItem, type RecordStats } from "../../api/client";
 import { ROOT_CAUSES } from "../evaluation/fixtures";
 import { REASON_LABEL } from "../qa/FeedbackBar";
+import { EmptyState, LoadingList } from "../../components/StateViews";
 
 type Filter = "all" | "up" | "down" | "none";
 
@@ -124,7 +125,9 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
             <Segmented className="doc-filter" value={filter} onChange={(v) => setFilter(v as Filter)}
               options={[{ value: "all", label: "全部" }, { value: "up", label: "赞" }, { value: "down", label: "踩" }, { value: "none", label: "未评价" }]} />
             <Card className="doc-table">
-              <RecordsTable items={data?.items ?? []} onStatus={(m, s, c) => void onStatus(m, s, c)} />
+              {!data && !error && <div className="state-pad"><LoadingList /></div>}
+              {data?.items.length === 0 && <EmptyState icon="chat" title="暂无问答记录" description="员工在问答工作台或挂件中提问后，记录会出现在这里。" />}
+              {data && data.items.length > 0 && <RecordsTable items={data.items} onStatus={(m, s, c) => void onStatus(m, s, c)} />}
             </Card>
           </Col>
           <Col xs={24} xl={7}>

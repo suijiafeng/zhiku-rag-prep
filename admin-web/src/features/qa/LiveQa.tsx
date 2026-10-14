@@ -4,6 +4,7 @@ import { type ApiClient, type Conversation, type HistoryMessage } from "../../ap
 import { streamAnswer } from "../../api/chatStream";
 import { AnswerText } from "./AnswerText";
 import { FeedbackBar } from "./FeedbackBar";
+import { EmptyState, ErrorState } from "../../components/StateViews";
 import { chatReducer, initialChatState, type Citation } from "./chatState";
 
 const VALIDATED_NOTE = "来源信息检查通过，请核对内容";
@@ -116,7 +117,9 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
         </Card>
 
         <Card size="small" className="qa-main">
-          {history.length === 0 && stream.status === "idle" && <Typography.Paragraph type="secondary" className="qa-empty">新会话：输入问题开始。</Typography.Paragraph>}
+          {history.length === 0 && stream.status === "idle" && (
+            <EmptyState icon="chat" title="暂无问答记录" description="输入问题开始提问；回答只依据当前授权且生效的版本。" />
+          )}
           {history.map((m) => (
             <div key={m.id} onClick={() => setSelected(m.id)}>
               <div className="bubble-user">{m.question}</div>
@@ -155,8 +158,8 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                 )}
                 {stream.status === "cancelled" && <Alert type="info" showIcon title="已停止生成，未完成的回答已丢弃" />}
                 {stream.status === "failed" && (
-                  <Alert type="error" showIcon title={`${stream.error?.message ?? "生成失败"}（${stream.error?.code ?? "UNKNOWN"}）`}
-                    description={stream.error?.requestId ? `请求编号 ${stream.error.requestId}` : undefined} />
+                  <ErrorState code={stream.error?.code ?? "UNKNOWN"} message={stream.error?.message ?? "生成失败"}
+                    requestId={stream.error?.requestId || undefined} onRetry={() => void send(stream.question)} />
                 )}
               </div>
             </>

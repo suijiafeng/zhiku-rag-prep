@@ -2,6 +2,7 @@ import { Alert, Button, Card, Input, Space, Table, Tag, Typography } from "antd"
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, type ApiClient, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
+import { EmptyState, LoadingList } from "../../components/StateViews";
 
 export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
   s === "ready" ? "indexed" : s === "failed" ? "failed" : s === "processing" ? "parsing" : "pending";
@@ -148,12 +149,14 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
         }}
       />
       <Card className="doc-table">
-        <Table<DocumentInfo>
+        {docs === undefined && !error && <div className="state-pad"><LoadingList /></div>}
+        {docs?.length === 0 && (
+          <EmptyState icon="doc" title="暂无文档" description="在右上角新建文档，再为版本上传 .md / .txt，解析完成后即可问答。" />
+        )}
+        {docs && docs.length > 0 && <Table<DocumentInfo>
           rowKey="id"
-          loading={docs === undefined && !error}
           dataSource={docs ?? []}
           pagination={false}
-          locale={{ emptyText: "该知识库还没有文档" }}
           expandable={{
             expandedRowRender: (doc) => (
               <div className="version-panel">
@@ -177,7 +180,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
             },
             { title: "创建时间", dataIndex: "createdAt", className: "mono", render: (v: string) => businessDate(v, zone) },
           ]}
-        />
+        />}
       </Card>
     </div>
   );
