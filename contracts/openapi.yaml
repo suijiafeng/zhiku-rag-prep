@@ -24,6 +24,23 @@ paths:
                   prdVersion: {type: string, const: '0.3'}
                   modelEnabled: {type: boolean, const: false}
 components:
+  responses:
+    Unauthenticated:
+      description: No trusted server-side identity. Body never reveals whether the path or resource exists.
+      headers:
+        X-Request-Id: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {code: UNAUTHENTICATED, message: Authentication required, requestId: 00000000-0000-0000-0000-000000000000}
+    Forbidden:
+      description: Identity exists but the target is not granted, or CSRF check failed. Identical for foreign and unknown targets.
+      headers:
+        X-Request-Id: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {code: FORBIDDEN, message: Access denied, requestId: 00000000-0000-0000-0000-000000000000}
   schemas:
     Error:
       type: object
@@ -67,3 +84,9 @@ x-sse-draft:
     - All events use JSON data. Error is terminal. Done requires preceding validated.
     - Draft is provisional. Metadata validation does not establish semantic correctness.
     - Disconnect, cancellation or error must not preserve a usable answer.
+x-auth-draft:
+  status: port-and-tests-only; identity source, roles and session scheme pending ADR-002 item 2
+  rules:
+    - Identity is established server-side only. Request bodies, query parameters and browser-chosen headers never carry enterpriseId, userId or roles.
+    - Every business path returns Unauthenticated (401) without identity and Forbidden (403) without a grant; no business path exists yet.
+    - CSRF remains at framework default until the session/token scheme is decided.
