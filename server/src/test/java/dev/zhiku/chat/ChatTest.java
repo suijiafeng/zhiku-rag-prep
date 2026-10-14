@@ -127,6 +127,8 @@ class ChatTest extends IntegrationTest {
     assertThat(validated.get("citations").get(0).get("versionId").asText()).isEqualTo(version.toString());
     assertThat(last(frames).data().get("status").asText()).isEqualTo("complete");
     assertThat(last(frames).data().get("conversationId").asText()).isNotBlank();
+    var messageId = last(frames).data().get("messageId").asText();
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM message WHERE id = CAST(? AS uuid)", Integer.class, messageId)).isEqualTo(1);
     assertThat(messages()).isEqualTo(1);
   }
 
@@ -260,7 +262,13 @@ class ChatTest extends IntegrationTest {
     var widget = bearer(issued.get("token").asText());
     assertThat(java.time.Instant.parse(issued.get("expiresAt").asText())).isBefore(java.time.Instant.now().plusSeconds(601));
 
-    assertThat(names(ask(widget, "{\"kbId\":\"" + kb + "\",\"question\":\"年假有几天?\"}"))).contains("done");
+    var widgetFrames = ask(widget, "{\"kbId\":\"" + kb + "\",\"question\":\"年假有几天?\"}");
+    assertThat(names(widgetFrames)).contains("done");
+    var answered = last(widgetFrames).data().get("messageId").asText();
+    mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/messages/{id}/feedback", answered)
+            .header(HttpHeaders.AUTHORIZATION, widget).contentType("application/json").content("{\"rating\":\"down\",\"reason\":\"MISSING\"}"))
+        .andExpect(status().isOk());
+    mvc.perform(get("/api/conversations").header(HttpHeaders.AUTHORIZATION, widget)).andExpect(status().isForbidden());
     mvc.perform(post("/api/chat").header(HttpHeaders.AUTHORIZATION, widget)
             .contentType("application/json").content("{\"kbId\":\"" + otherKb + "\",\"question\":\"年假?\"}"))
         .andExpect(status().isForbidden());

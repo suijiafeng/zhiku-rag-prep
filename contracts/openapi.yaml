@@ -36,7 +36,7 @@ paths:
       operationId: chat
       description: >-
         ASK_AND_CITE on kbId. Authorization, conversation ownership and model availability fail as JSON (401/403/422/503)
-        before streaming. Otherwise text/event-stream per x-sse. Widget tokens may call only this endpoint.
+        before streaming. Otherwise text/event-stream per x-sse. Widget tokens may call only this endpoint and feedback.
       requestBody:
         required: true
         content:
@@ -491,7 +491,7 @@ x-sse:
     - Draft is provisional. Metadata validation does not establish semantic correctness.
     - Disconnect, cancellation or error must not preserve a usable answer; the server stores only answers that reached done.
     - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1].
-    - done.data may include conversationId to continue the conversation.
+    - done.data includes conversationId (to continue) and messageId (for feedback).
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
   errorCodes: [NO_EVIDENCE, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE]
 x-auth:
@@ -503,8 +503,8 @@ x-auth:
     enterprise_id: enterprise id (uuid)
     roles: "array of IT_ADMIN, KB_OPERATOR, EMPLOYEE (PRD v0.3 suggested mapping)"
     exp: required
-  widgetToken: {token_use: widget, kb_scope: [kbId], roles: [EMPLOYEE], ttl: PT10M}
+  widgetToken: {token_use: widget, kb_scope: [kbId], roles: [EMPLOYEE], ttl: PT10M, allowed: ["POST /api/chat", "PUT /api/messages/{id}/feedback"]}
   rules:
     - Identity comes only from the verified token. Bodies, query parameters and other headers never carry enterpriseId, userId or roles.
     - Knowledge base grants are read from the database on every request, so revocation applies to the next request.
-    - Stateless; no cookies or sessions, so CSRF protection is not applicable. CORS only for zhiku.widget.allowed-origins on POST /api/chat, without credentials.
+    - Stateless; no cookies or sessions, so CSRF protection is not applicable. CORS only for zhiku.widget.allowed-origins on POST /api/chat and PUT /api/messages/{id}/feedback, without credentials.

@@ -45,15 +45,16 @@ public class SecurityConfiguration {
     var errors = new ApiErrorResponses(json);
     var origins = widgetOrigins.stream().map(String::strip).filter(o -> !o.isEmpty()).toList();
     if (!origins.isEmpty()) {
-      // Only explicitly configured widget hosts, only the chat endpoint, never credentials.
+      // Only explicitly configured widget hosts, only the widget endpoints, never credentials.
       var cors = new CorsConfiguration();
       cors.setAllowedOrigins(origins);
-      cors.setAllowedMethods(List.of("POST"));
+      cors.setAllowedMethods(List.of("POST", "PUT"));
       cors.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
       cors.setExposedHeaders(List.of("X-Request-Id"));
       cors.setAllowCredentials(false);
       var source = new UrlBasedCorsConfigurationSource();
       source.registerCorsConfiguration("/api/chat", cors);
+      source.registerCorsConfiguration("/api/messages/*/feedback", cors);
       http.cors(c -> c.configurationSource(source));
     }
     return http
@@ -63,7 +64,8 @@ public class SecurityConfiguration {
         .authorizeHttpRequests(a -> a
             .requestMatchers(HttpMethod.GET, "/api/status").permitAll()
             .requestMatchers(HttpMethod.POST, "/api/chat").authenticated()
-            // Widget tokens may only call the chat endpoint.
+            .requestMatchers(HttpMethod.PUT, "/api/messages/*/feedback").authenticated()
+            // Widget tokens may only ask and rate their own answers.
             .requestMatchers("/api/**").access((auth, ctx) -> new AuthorizationDecision(auth.get() instanceof JwtAuthenticationToken t
                 && t.isAuthenticated() && !JwtAccessScopeResolver.WIDGET.equals(t.getToken().getClaimAsString(JwtAccessScopeResolver.TOKEN_USE))))
             .anyRequest().denyAll())

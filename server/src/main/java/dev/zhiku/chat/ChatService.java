@@ -137,17 +137,16 @@ public class ChatService {
     }
     if (sink.cancelled()) return;
 
-    UUID conversation = tx.execute(status -> {
+    UUID[] stored = tx.execute(status -> {
       var id = conversationId != null ? conversationId
           : repository.createConversation(scope.enterpriseId(), scope.userId(), kbId, title(question));
-      repository.saveMessage(id, question, text, model.model(), sources);
-      return id;
+      return new UUID[] {id, repository.saveMessage(id, question, text, model.model(), sources)};
     });
 
     var citations = sources.stream().map(s -> Map.of("documentId", s.documentId().toString(), "versionId", s.versionId().toString(),
         "title", s.title(), "excerpt", excerpt(s.text()))).toList();
     sink.send("validated", Map.of("citations", citations, "validation", "metadata-only"));
-    sink.send("done", Map.of("status", "complete", "conversationId", conversation.toString()));
+    sink.send("done", Map.of("status", "complete", "conversationId", stored[0].toString(), "messageId", stored[1].toString()));
   }
 
   private List<Message> prompt(String question, List<Candidate> sources) {
