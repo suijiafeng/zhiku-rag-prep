@@ -2,9 +2,11 @@ openapi: 3.1.0
 info:
   title: 知库 scaffold API
   version: 0.1.0-draft
-  description: PRD v0.3 preparation. Only status endpoint implemented. SSE schemas are provisional, no chat route exists.
+  description: PRD v0.3. Bearer JWT (HS256, locally issued for development) on every /api path except status. SSE schemas are provisional.
 servers:
   - url: http://127.0.0.1:8080
+security:
+  - bearer: []
 paths:
   /api/status:
     get:
@@ -23,8 +25,68 @@ paths:
                   stage: {type: string, const: scaffold}
                   prdVersion: {type: string, const: '0.3'}
                   modelEnabled: {type: boolean, const: false}
+  /api/knowledge-bases:
+    get:
+      operationId: listKnowledgeBases
+      description: Knowledge bases currently granted to the caller. Grants are re-read on every request.
+      responses:
+        '200':
+          description: Granted knowledge bases
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/KnowledgeBase'}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      operationId: createKnowledgeBase
+      description: IT_ADMIN only. Created in the caller's enterprise; any enterprise field in the body is ignored. Creator is not granted automatically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 100}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KnowledgeBase'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/grants/{userId}:
+    parameters:
+      - {name: kbId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: userId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      operationId: grantKnowledgeBase
+      description: IT_ADMIN of the same enterprise. Audited. Unknown and foreign knowledge bases both return 403.
+      responses:
+        '204': {description: Granted}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    delete:
+      operationId: revokeKnowledgeBase
+      description: IT_ADMIN of the same enterprise. Audited. Takes effect on the next request.
+      responses:
+        '204': {description: Revoked}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
 components:
+  securitySchemes:
+    bearer: {type: http, scheme: bearer, bearerFormat: JWT}
   responses:
+    Error:
+      description: Contract error body
+      headers:
+        X-Request-Id: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     Unauthenticated:
       description: No trusted server-side identity. Body never reveals whether the path or resource exists.
       headers:
@@ -34,7 +96,7 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
           example: {code: UNAUTHENTICATED, message: Authentication required, requestId: 00000000-0000-0000-0000-000000000000}
     Forbidden:
-      description: Identity exists but the target is not granted, or CSRF check failed. Identical for foreign and unknown targets.
+      description: Identity exists but the role or grant is missing. Identical for foreign and unknown targets.
       headers:
         X-Request-Id: {schema: {type: string}}
       content:
@@ -42,6 +104,12 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
           example: {code: FORBIDDEN, message: Access denied, requestId: 00000000-0000-0000-0000-000000000000}
   schemas:
+    KnowledgeBase:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
     Error:
       type: object
       required: [code, message, requestId]
@@ -84,9 +152,16 @@ x-sse-draft:
     - All events use JSON data. Error is terminal. Done requires preceding validated.
     - Draft is provisional. Metadata validation does not establish semantic correctness.
     - Disconnect, cancellation or error must not preserve a usable answer.
-x-auth-draft:
-  status: port-and-tests-only; identity source, roles and session scheme pending ADR-002 item 2
+x-auth:
+  status: implemented (local HS256 issuer; OIDC provider replaceable)
+  claims:
+    iss: zhiku-local
+    aud: zhiku-api
+    sub: user id (uuid)
+    enterprise_id: enterprise id (uuid)
+    roles: "array of IT_ADMIN, KB_OPERATOR, EMPLOYEE (PRD v0.3 suggested mapping)"
+    exp: required
   rules:
-    - Identity is established server-side only. Request bodies, query parameters and browser-chosen headers never carry enterpriseId, userId or roles.
-    - Every business path returns Unauthenticated (401) without identity and Forbidden (403) without a grant; no business path exists yet.
-    - CSRF remains at framework default until the session/token scheme is decided.
+    - Identity comes only from the verified token. Bodies, query parameters and other headers never carry enterpriseId, userId or roles.
+    - Knowledge base grants are read from the database on every request, so revocation applies to the next request.
+    - Stateless; no cookies or sessions, so CSRF protection is not applicable. CORS is not enabled.

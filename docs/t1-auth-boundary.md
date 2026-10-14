@@ -1,5 +1,5 @@
 # T1 身份与知识库授权边界 · 接口与测试计划
-状态：2026-10-14 完成"无输入"部分。身份源、角色、同受众拆库规则仍待 ADR-002 第 2 项确认，未接任何身份提供方。
+状态：2026-10-14 按 ADR-002 记录的推荐默认值实现：本地 HS256 JWT + 数据库授权表。生产 IdP、最终角色名称仍待业务确认。
 
 ## 已落地接口
 - `auth.AccessScopeResolver`：应用层端口，返回当前请求的 `Optional<AccessScope>`。只允许由服务端认证上下文实现；无生产实现，容器中没有该 bean。
@@ -12,6 +12,12 @@
 ## 已有测试（41 项通过）
 - 单元：角色矩阵每格都有显式规则、员工不能管理/调试/读他人问答、显式授权格失败关闭、角色与库范围缺一即拒绝、无角色范围拒绝；无身份→未认证、resolver 返回 null 失败关闭、跨企业拒绝、同企业未授权库拒绝、外企业与未知库结果相同、空目标拒绝、构造参数非空。
 - HTTP 冒烟：公开状态端点、匿名 GET/POST（含 CSRF）401、已认证 GET/POST 403、未知路径与业务路径响应一致。
+
+## 已接入（2026-10-14）
+- `SecurityConfiguration`：JWT 资源服务器，校验签名、iss、aud、必需 exp；密钥缺失时拒绝所有令牌；无状态、无 Cookie，因此关闭 CSRF；不开放 CORS。
+- `JwtAccessScopeResolver`：身份只取自已验证令牌；授权库每请求从 `kb_grant` 重读，撤权下一请求生效。
+- 接口：`GET/POST /api/knowledge-bases`、`PUT/DELETE /api/knowledge-bases/{kb}/grants/{user}`（仅同企业 IT_ADMIN），授权变更写入追加式 `audit_event`。
+- 集成测试（真实 pgvector）：无效签名/过期/错误 audience/缺 exp/非法 sub 一律 401；授权与撤权即时生效；请求体伪造 enterpriseId 被忽略；跨企业与不存在的库响应一致；审计不可更新。
 
 ## 待输入后补充的测试
 1. 身份源接入：从真实认证上下文构造 `AccessScope` 的集成测试；伪造 `X-Enterprise-Id` 之类请求头或 DTO 字段必须被忽略。

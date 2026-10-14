@@ -6,3 +6,11 @@
 4. 版本冲突/替代和适用对象规则；确认当前/历史/未来查询语义。
 5. 质量目标、人工兜底渠道、日志/历史/审计保留期。
 确认后记录负责人、日期、依据和影响，再添加 provider、schema 或生产接口。未知输入只允许 fixture 和接口讨论。
+
+## 2026-10-14 用户授权按推荐方案推进（工程默认值，非业务审批）
+项目负责人在会话中要求一次完成剩余功能，并接受以下推荐默认值；业务负责人评审后可替换：
+- 身份：本地 HS256 JWT（iss zhiku-local / aud zhiku-api），claims 携带 enterprise_id、roles；授权库存数据库、每请求重读。生产应替换为企业 IdP（OIDC），本地签发脚本只用于开发。
+- 持久化：Spring JDBC + Flyway + PostgreSQL 驱动；集成测试用 Testcontainers 启动 pgvector:0.8.0-pg16。
+- 模型：本地 Ollama（不付费、不外传）；embedding 维度以实际返回为准，不在 schema 中写死。
+- 业务默认：时区 Asia/Shanghai（PRD 标注 UTC+8）、单文件 20 MB、首版格式 Markdown/TXT。
+以上不改变 D01–D06 的业务确认责任；角色名称、试点主题、保留期、质量目标仍待业务负责人确认。

@@ -4,5 +4,20 @@ server:
 spring:
   application:
     name: zhiku-scaffold
+  config:
+    # Local developer settings only; .env is git-ignored and never required in tests.
+    import: optional:file:../.env[.properties]
   autoconfigure:
     exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: ${ZHIKU_DB_URL:jdbc:postgresql://127.0.0.1:5432/zhiku}
+    username: ${POSTGRES_USER:zhiku_local}
+    password: ${POSTGRES_PASSWORD:}
+  flyway:
+    clean-disabled: true
+zhiku:
+  auth:
+    # HS256 key for locally issued tokens; at least 32 bytes. Empty means every token is rejected.
+    jwt-secret: ${ZHIKU_JWT_SECRET:}
+    issuer: zhiku-local
+    audience: zhiku-api

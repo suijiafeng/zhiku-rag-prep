@@ -20,6 +20,10 @@ public record AccessScope(UUID enterpriseId, UUID userId, Set<UUID> knowledgeBas
         && enterpriseId.equals(enterprise) && knowledgeBaseIds.contains(knowledgeBase);
   }
 
+  public boolean hasRole(Role role) {
+    return roles.contains(role);
+  }
+
   public boolean permits(UUID enterprise, UUID knowledgeBase, KnowledgeBaseAction action) {
     return permits(enterprise, knowledgeBase) && RolePolicy.allows(roles, action);
   }

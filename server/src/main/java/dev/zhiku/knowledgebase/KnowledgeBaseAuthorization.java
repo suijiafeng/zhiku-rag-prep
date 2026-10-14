@@ -5,6 +5,7 @@ import dev.zhiku.auth.AuthorizationDecision;
 import dev.zhiku.auth.KnowledgeBaseAction;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.stereotype.Component;
 
 /**
  * Application-level gate for every knowledge base data entry point (query, export, history,
@@ -12,6 +13,7 @@ import java.util.Optional;
  * Role permission and knowledge base scope must both hold (PRD v0.3 chapter 3); the role
  * matrix is the PRD suggestion pending D02. Shared-audience splitting is a data rule, not code.
  */
+@Component
 public final class KnowledgeBaseAuthorization {
   private final AccessScopeResolver resolver;
 

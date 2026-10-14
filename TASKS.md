@@ -1,7 +1,7 @@
 # 第一轮任务（全部待开始）
 本包完成的是准备骨架；以下不是已实现功能。按顺序推进，不用一次提示词生成全部产品。
 
-## T1 身份与知识库授权边界 · in progress（无输入部分已完成，见 docs/t1-auth-boundary.md）
+## T1 身份与知识库授权边界 · done（本地 JWT 默认方案，见 ADR-002 与 docs/t1-auth-boundary.md）
 输入：确认企业/身份源、角色和同受众拆库规则。允许路径 server/src/main/java/dev/zhiku/auth/、server/src/main/java/dev/zhiku/knowledgebase/、server/src/test/java/dev/zhiku/、contracts/。验收：未登录/跨企业/跨库拒绝；身份不能由 DTO 伪造；最小集成测试；任何临时 demo 不开放真实材料。无输入则只写接口与测试计划。
 
 ## T2 文档版本与迁移 · pending
