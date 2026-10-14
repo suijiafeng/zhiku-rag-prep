@@ -80,8 +80,10 @@ public class IngestionRepository {
     jdbc.update("UPDATE content_version SET index_status = 'processing', index_error = NULL WHERE id = ? AND index_status <> 'ready'", versionId);
   }
 
-  public boolean isReady(UUID versionId) {
-    return "ready".equals(jdbc.queryForObject("SELECT index_status FROM content_version WHERE id = ?", String.class, versionId));
+  /** 本实例无法向量化时在排队状态上说明原因；任务仍留在队列，等待具备能力的实例。 */
+  public void noteWaitingForEmbedding(UUID versionId) {
+    jdbc.update("UPDATE content_version SET index_error = ? WHERE id = ? AND index_status = 'pending'",
+        "接收上传的实例未配置 embedding 模型，任务排队等待可向量化的实例处理", versionId);
   }
 
   public Blob blob(UUID versionId) {
@@ -128,11 +130,6 @@ public class IngestionRepository {
           ps.setInt(3, dimension);
           ps.setString(4, EmbeddingVectors.literal(vectors.get(i)));
         });
-  }
-
-  public void failWithoutRetry(UUID jobId, UUID versionId, String reason, boolean keepReady) {
-    jdbc.update("UPDATE ingestion_job SET status = 'failed', lease_owner = NULL, lease_until = NULL, last_error = ?, updated_at = now() WHERE id = ?", reason, jobId);
-    jdbc.update("UPDATE content_version SET index_status = ?, index_error = ? WHERE id = ?", keepReady ? "ready" : "failed", reason, versionId);
   }
 
   public void succeed(UUID jobId, UUID versionId) {

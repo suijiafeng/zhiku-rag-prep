@@ -28,6 +28,9 @@ class IngestionTest extends IntegrationTest {
   @Autowired JdbcTemplate jdbc;
   @Autowired IngestionWorker worker;
   @Autowired dev.zhiku.support.TestEmbeddingProvider embeddings;
+  @Autowired IngestionRepository repository;
+  @Autowired IngestionSettings settings;
+  @Autowired org.springframework.transaction.support.TransactionTemplate tx;
 
   final UUID enterprise = UUID.randomUUID();
   final UUID operator = UUID.randomUUID();
@@ -223,5 +226,31 @@ class IngestionTest extends IntegrationTest {
     assertThat(jobStatus()).isEqualTo("failed");
     assertThat(indexStatus()).isEqualTo("failed");
     assertThat(jdbc.queryForObject("SELECT index_error FROM content_version WHERE id = ?", String.class, version)).isNotBlank();
+  }
+
+  /** 多实例共用一个库时，没有 embedding 的实例不能认领需要向量化的任务，否则会把任务永久标失败。 */
+  @Test
+  void anInstanceWithoutEmbeddingLeavesJobsToCapableInstances() throws Exception {
+    upload("handbook.md", HANDBOOK).andExpect(status().isAccepted());
+    var none = new org.springframework.beans.factory.ObjectProvider<dev.zhiku.embedding.EmbeddingProvider>() {
+      @Override
+      public dev.zhiku.embedding.EmbeddingProvider getObject() {
+        throw new org.springframework.beans.factory.NoSuchBeanDefinitionException(dev.zhiku.embedding.EmbeddingProvider.class);
+      }
+
+      @Override
+      public dev.zhiku.embedding.EmbeddingProvider getIfAvailable() {
+        return null;
+      }
+    };
+    var bare = new IngestionWorker(repository, settings, tx, none);
+    assertThat(bare.canProcess()).isFalse();
+    assertThat(bare.processNext()).isFalse();
+    assertThat(jobStatus()).isEqualTo("queued");
+    assertThat(indexStatus()).isEqualTo("pending");
+    assertThat(jdbc.queryForObject("SELECT attempts FROM ingestion_job WHERE version_id = ?", Integer.class, version)).isZero();
+    assertThat(worker.processNext()).isTrue();
+    assertThat(jobStatus()).isEqualTo("succeeded");
+    assertThat(vectors()).isPositive();
   }
 }

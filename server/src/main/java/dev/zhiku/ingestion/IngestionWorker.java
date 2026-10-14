@@ -5,6 +5,7 @@ import dev.zhiku.embedding.EmbeddingVectors;
 import dev.zhiku.ingestion.IngestionRepository.ClaimedJob;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -36,6 +37,7 @@ public class IngestionWorker {
   private final TextChunker chunker;
   private final ObjectProvider<EmbeddingProvider> embeddings;
   private final String owner = ManagementFactory.getRuntimeMXBean().getName() + "/" + UUID.randomUUID();
+  private final java.util.concurrent.atomic.AtomicBoolean warnedNoEmbedding = new java.util.concurrent.atomic.AtomicBoolean();
 
   public IngestionWorker(IngestionRepository repository, IngestionSettings settings, TransactionTemplate tx,
       ObjectProvider<EmbeddingProvider> embeddings) {
@@ -48,13 +50,25 @@ public class IngestionWorker {
 
   /** 最多处理一个任务；返回是否认领到任务。 */
   public boolean processNext() {
+    if (!canProcess()) return false;
     repository.failExhausted(settings.maxAttempts());
     var job = claim();
     job.ifPresent(this::process);
     return job.isPresent();
   }
 
+  /**
+   * 任务都需要向量化，没有 embedding 提供方的实例不具备执行能力。多个实例共用一个库时，
+   * 这样的实例不能认领任务，否则会把别的实例能完成的任务永久标为失败。
+   */
+  public boolean canProcess() {
+    if (embeddings.getIfAvailable() != null) return true;
+    if (warnedNoEmbedding.compareAndSet(false, true)) log.warn("No embedding provider configured; this instance will not claim ingestion jobs");
+    return false;
+  }
+
   public Optional<ClaimedJob> claim() {
+    if (!canProcess()) return Optional.empty();
     var job = repository.claim(owner, settings.leaseSeconds(), settings.maxAttempts());
     job.ifPresent(j -> repository.markProcessing(j.versionId()));
     return job;
@@ -76,24 +90,16 @@ public class IngestionWorker {
       var blob = repository.blob(job.versionId());
       var chunks = chunker.chunk(new String(blob.content(), StandardCharsets.UTF_8).replaceFirst("^﻿", ""), "text/markdown".equals(blob.mediaType()));
       var provider = embeddings.getIfAvailable();
+      // 认领时已确认有提供方；运行中被移除按普通失败处理，任务回到队列由其他实例接手。
+      if (provider == null) throw new IllegalStateException("embedding provider unavailable");
       // 向量在写事务之前计算，因此模型调用期间不持有行锁。
-      var vectors = provider == null || chunks.isEmpty() ? null : provider.embed(chunks.stream().map(TextChunker.Chunk::text).toList(), lost::get);
-      int dimension = vectors == null ? 0 : EmbeddingVectors.validate(vectors, chunks.size());
+      var vectors = chunks.isEmpty() ? List.<float[]>of() : provider.embed(chunks.stream().map(TextChunker.Chunk::text).toList(), lost::get);
+      int dimension = chunks.isEmpty() ? 0 : EmbeddingVectors.validate(vectors, chunks.size());
       boolean written = Boolean.TRUE.equals(tx.execute(status -> {
         if (!repository.holdsLease(job.jobId(), owner)) return false;
-        if (provider == null) {
-          // 没有向量就不可检索；已就绪的版本保留原索引不动。
-          if (repository.isReady(job.versionId())) {
-            repository.failWithoutRetry(job.jobId(), job.versionId(), IngestionRepository.REBUILD_FAILED, true);
-          } else {
-            repository.replaceChunks(job.versionId(), chunks);
-            repository.failWithoutRetry(job.jobId(), job.versionId(), "未配置 embedding 模型，无法建立检索索引", false);
-          }
-        } else {
-          var ids = repository.replaceChunks(job.versionId(), chunks);
-          repository.insertEmbeddings(ids, vectors, provider.model(), dimension);
-          repository.succeed(job.jobId(), job.versionId());
-        }
+        var ids = repository.replaceChunks(job.versionId(), chunks);
+        repository.insertEmbeddings(ids, vectors, provider.model(), dimension);
+        repository.succeed(job.jobId(), job.versionId());
         return true;
       }));
       if (!written) log.warn("Ingestion job {} lost its lease; result discarded", job.jobId());

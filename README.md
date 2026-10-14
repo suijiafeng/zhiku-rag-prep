@@ -18,7 +18,7 @@
 ## 运行与验证
 - 后端：`cd server && mvn -B clean verify`（需要 Docker，集成测试用 Testcontainers 启动 pgvector）。本地运行步骤见 server/README.md。
 - 管理端与挂件：各包 `npm ci && npm run check`。管理端 `npm run dev` 通过 Vite 代理访问 127.0.0.1:8080。
-- 模型：本地 Ollama。`ZHIKU_CHAT_PROVIDER=ollama` 启用问答；`ZHIKU_EMBEDDING_PROVIDER=ollama` 启用向量化，需要一个支持 `/api/embed` 的 embedding 模型（默认 bge-m3，需自行 `ollama pull`）。未配置 embedding 时文档会切块但标记失败，不可检索。
+- 模型：本地 Ollama。`ZHIKU_CHAT_PROVIDER=ollama` 启用问答；`ZHIKU_EMBEDDING_PROVIDER=ollama` 启用向量化，需要一个支持 `/api/embed` 的 embedding 模型（默认 bge-m3，需自行 `ollama pull`）。未配置 embedding 的实例不认领摄取任务：文档保持排队并说明原因，等待配置了 embedding 的实例处理；单实例下需配置后才可检索。
 
 ## 范围与真实状态
 已实现并有集成测试：身份与授权（本地 JWT）、文档版本与效力、文档删除（立即停止访问，后台清理内容、切块与向量）、Markdown/TXT 摄取、精确向量检索、SSE 问答与引用元数据检查、撤权与历史依赖重查、挂件短期令牌、问答反馈与问答记录、反馈处理（关闭须有依据：经最近一次检索评测验证或填写理由，处理留痕）、续问上下文（经来源复核的前序对话，非事实依据，依赖随答案记录）、问答请求去重与原请求查询、问答与调试共用的检索轨迹（只存元数据）、敏感号码输入拦截、知识库配置的候选/验证/发布/回滚（召回 K、入模证据数、人工渠道、补充提示规则）、管理员授权管理、知识库总览统计、以原文区间为真值的检索评测。

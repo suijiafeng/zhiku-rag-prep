@@ -4,11 +4,13 @@ import static dev.zhiku.auth.KnowledgeBaseAction.MANAGE_DOCUMENTS;
 
 import dev.zhiku.audit.AuditLog;
 import dev.zhiku.document.DocumentRepository;
+import dev.zhiku.embedding.EmbeddingProvider;
 import dev.zhiku.knowledgebase.KnowledgeBaseAccess;
 import dev.zhiku.platform.ApiException;
 import java.io.IOException;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,9 +23,11 @@ public class IngestionService {
   private final IngestionRepository repository;
   private final IngestionSettings settings;
   private final AuditLog audit;
+  private final ObjectProvider<EmbeddingProvider> embeddings;
 
   public IngestionService(KnowledgeBaseAccess access, DocumentRepository documents, IngestionRepository repository,
-      IngestionSettings settings, AuditLog audit) {
+      IngestionSettings settings, AuditLog audit, ObjectProvider<EmbeddingProvider> embeddings) {
+    this.embeddings = embeddings;
     this.access = access;
     this.documents = documents;
     this.repository = repository;
@@ -47,6 +51,7 @@ public class IngestionService {
     if (repository.hasBlob(versionId)) throw ApiException.conflict("Version content already uploaded; create a new version");
     repository.insertBlob(versionId, accepted, bytes, scope.userId());
     var jobId = repository.enqueue(versionId);
+    if (embeddings.getIfAvailable() == null) repository.noteWaitingForEmbedding(versionId);
     audit.record(scope, "CONTENT_UPLOAD", "version:" + versionId, "OK",
         Map.of("mediaType", accepted.mediaType(), "bytes", bytes.length, "sha256", accepted.sha256()));
     return jobId;
@@ -58,6 +63,7 @@ public class IngestionService {
     documents.findVersion(kbId, documentId, versionId).orElseThrow(ApiException::forbidden);
     if (!documents.lockLiveDocument(documentId)) throw ApiException.forbidden();
     if (repository.requeue(versionId) != 1) throw ApiException.conflict("No finished ingestion job to re-run");
+    if (embeddings.getIfAvailable() == null) repository.noteWaitingForEmbedding(versionId);
     audit.record(scope, "CONTENT_REINDEX", "version:" + versionId, "OK", Map.of());
   }
 }
