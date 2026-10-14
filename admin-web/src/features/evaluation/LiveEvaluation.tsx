@@ -69,13 +69,16 @@ export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onAp
   return (
     <ul className="session-list">
       {cases.map((c) => {
-        const missing = missingForApproval(c);
+        const missing = c.status === "candidate" ? missingForApproval(c) : [];
+        // 样本字段加入之前批准的用例已冻结，只做说明不提示补齐。
+        const legacy = c.status === "approved" && c.label === "answerable" && (!c.expectedAnswer || c.requiredFacts.length === 0);
         return (
           <li key={c.id} className="eval-case">
             <div>
               <Tag color={c.status === "approved" ? "green" : "orange"}>{c.status === "approved" ? "已批准" : "候选"}</Tag>
               <Tag>{LABEL[c.label]}</Tag>
               {missing.length > 0 && <Tag color="red">待补齐：{missing.join("、")}</Tag>}
+              {legacy && <Tag>批准时未要求参考答案与必要事实</Tag>}
               <span>{c.question}</span>
             </div>
             {c.expectedAnswer && <div className="card-unit">参考答案：{c.expectedAnswer}</div>}

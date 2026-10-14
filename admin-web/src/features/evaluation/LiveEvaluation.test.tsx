@@ -31,6 +31,15 @@ describe("live evaluation", () => {
     expect(resultTag(r)).toBe("未命中");
   });
 
+  it("does not flag approved cases that predate the sample fields", () => {
+    const legacy: EvalCase = { id: "c4", question: "旧用例", label: "answerable", status: "approved", source: "manual", createdAt: "", originMessageId: null,
+      expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null,
+      evidence: [{ versionId: "v", documentTitle: "手册", versionLabel: "v1", startOffset: 0, endOffset: 4, quote: "摘录", available: true }] };
+    const html = renderToStaticMarkup(<CaseList cases={[legacy]} onApprove={() => {}} onEdit={() => {}} />);
+    expect(html).not.toContain("待补齐");
+    expect(html).toContain("批准时未要求参考答案与必要事实");
+  });
+
   it("lists what an answerable case still needs before approval", () => {
     const base = { id: "c", question: "q", status: "candidate", source: "manual", createdAt: "", originMessageId: null, appliesTo: null, queryAt: null } as const;
     expect(missingForApproval({ ...base, label: "answerable", evidence: [], expectedAnswer: null, requiredFacts: [] })).toEqual(["证据", "参考答案", "必要事实"]);
