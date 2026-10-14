@@ -1,0 +1,4 @@
+body { margin: 0; background: #f4f7f8; color: #17313b; }
+.scaffold-page { max-width: 960px; margin: 0 auto; padding: 56px 24px; }
+.scaffold-cards { display: flex; margin-top: 24px; }
+@media (max-width: 600px) { .scaffold-page { padding: 28px 16px; } }
