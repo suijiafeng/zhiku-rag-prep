@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,7 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/knowledge-bases/{kbId}")
 class EvaluationController {
   record CreateCaseRequest(@NotBlank @Size(max = 2000) String question, @NotNull String label,
-      @Size(max = 10) @Valid List<EvaluationService.EvidenceInput> evidence, @Size(max = 100) String source, UUID originMessageId) {}
+      @Size(max = 10) @Valid List<EvaluationService.EvidenceInput> evidence, @Size(max = 100) String source, UUID originMessageId,
+      @Size(max = 2000) String expectedAnswer, List<String> requiredFacts, @Size(max = 200) String appliesTo, Instant queryAt) {}
+
+  record DetailsRequest(@Size(max = 2000) String expectedAnswer, List<String> requiredFacts, @Size(max = 200) String appliesTo, Instant queryAt) {}
 
   record RunRequest(Integer k) {}
 
@@ -43,7 +47,7 @@ class EvaluationController {
   @ResponseStatus(HttpStatus.CREATED)
   Map<String, UUID> create(@PathVariable UUID kbId, @Valid @RequestBody CreateCaseRequest request) {
     return Map.of("id", service.createCase(kbId, request.question().strip(), request.label(), request.evidence(), request.source(),
-        request.originMessageId()));
+        request.originMessageId(), new EvaluationService.Details(request.expectedAnswer(), request.requiredFacts(), request.appliesTo(), request.queryAt())));
   }
 
   @PostMapping("/eval-cases/{caseId}/approve")
@@ -56,6 +60,12 @@ class EvaluationController {
   @ResponseStatus(HttpStatus.NO_CONTENT)
   void evidence(@PathVariable UUID kbId, @PathVariable UUID caseId, @Valid @RequestBody EvidenceRequest request) {
     service.setEvidence(kbId, caseId, request.evidence());
+  }
+
+  @PutMapping("/eval-cases/{caseId}/details")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  void details(@PathVariable UUID kbId, @PathVariable UUID caseId, @Valid @RequestBody DetailsRequest request) {
+    service.setDetails(kbId, caseId, new EvaluationService.Details(request.expectedAnswer(), request.requiredFacts(), request.appliesTo(), request.queryAt()));
   }
 
   @PostMapping("/eval-runs")

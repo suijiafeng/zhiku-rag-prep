@@ -76,8 +76,15 @@ class EvaluationTest extends IntegrationTest {
     return mvc.perform(as(post("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.KB_OPERATOR).contentType("application/json").content(body));
   }
 
+  static final String DETAILS = "\"expectedAnswer\":\"按原文作答\",\"requiredFacts\":[\"原文中的关键事实\"]";
+
   String caseJson(String question, UUID version, String quote) {
-    return "{\"question\":\"" + question + "\",\"label\":\"answerable\",\"evidence\":[{\"versionId\":\"" + version + "\",\"quote\":\"" + quote + "\"}]}";
+    return "{\"question\":\"" + question + "\",\"label\":\"answerable\"," + DETAILS + ",\"evidence\":[{\"versionId\":\"" + version + "\",\"quote\":\"" + quote + "\"}]}";
+  }
+
+  ResultActions details(UUID caseId, String body) throws Exception {
+    return mvc.perform(as(put("/api/knowledge-bases/{kb}/eval-cases/{id}/details", kb, caseId), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content(body));
   }
 
   UUID id(ResultActions r) throws Exception {
@@ -281,10 +288,53 @@ class EvaluationTest extends IntegrationTest {
     mvc.perform(as(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
         .contentType("application/json").content("{\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"10 年以上 15 天\"}]}"))
         .andExpect(status().isNoContent());
+    details(caseId, "{" + DETAILS + "}").andExpect(status().isNoContent());
     approve(caseId);
     mvc.perform(as(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/knowledge-bases/{kb}/eval-cases/{id}/evidence", kb, caseId), operator, Role.KB_OPERATOR)
         .contentType("application/json").content("{\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"年假\"}]}"))
         .andExpect(status().isConflict());
+  }
+
+  @Test
+  void answerableCasesNeedAReferenceAnswerAndRequiredFactsBeforeApproval() throws Exception {
+    var caseId = id(createCase("{\"question\":\"年假有几天?\",\"label\":\"answerable\",\"evidence\":[{\"versionId\":\"" + leave + "\",\"quote\":\"10 年以上 15 天\"}]}"));
+    mvc.perform(as(post("/api/knowledge-bases/{kb}/eval-cases/{id}/approve", kb, caseId), operator, Role.KB_OPERATOR))
+        .andExpect(status().isUnprocessableEntity());
+    details(caseId, "{\"expectedAnswer\":\"按司龄计算\",\"requiredFacts\":[\"\"]}").andExpect(status().isUnprocessableEntity());
+    details(caseId, "{\"expectedAnswer\":\"按司龄计算\",\"requiredFacts\":[" + "\"事实\",".repeat(10) + "\"事实\"]}").andExpect(status().isUnprocessableEntity());
+    details(caseId, "{\"expectedAnswer\":\"按司龄计算，10 年以上 15 天\",\"requiredFacts\":[\"10 年以上 15 天\",\"按司龄计算\"],"
+        + "\"appliesTo\":\"正式员工\",\"queryAt\":\"2026-03-01T00:00:00Z\"}").andExpect(status().isNoContent());
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.KB_OPERATOR))
+        .andExpect(jsonPath("$[0].expectedAnswer").value("按司龄计算，10 年以上 15 天"))
+        .andExpect(jsonPath("$[0].requiredFacts.length()").value(2))
+        .andExpect(jsonPath("$[0].appliesTo").value("正式员工"))
+        .andExpect(jsonPath("$[0].queryAt").value("2026-03-01T00:00:00Z"));
+    approve(caseId);
+    details(caseId, "{" + DETAILS + "}").andExpect(status().isConflict());
+  }
+
+  @Test
+  void aCaseIsEvaluatedAsOfItsQueryTime() throws Exception {
+    var future = UUID.randomUUID();
+    var doc = UUID.randomUUID();
+    jdbc.update("INSERT INTO document (id, kb_id, title, created_by) VALUES (?, ?, '新制度', ?)", doc, kb, operator);
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, created_by, approved_at, published_at) "
+        + "VALUES (?, ?, 'v2', '2099-01-01T00:00:00Z', ?, now(), now())", future, doc, operator);
+    var req = multipart("/api/knowledge-bases/{kb}/documents/{doc}/versions/{v}/content", kb, doc, future)
+        .file(new MockMultipartFile("file", "doc.md", "text/markdown", "# 新年假\n\n2099 年起年假统一为 20 天。".getBytes(StandardCharsets.UTF_8)));
+    req.with(r -> { r.setMethod("PUT"); return r; });
+    mvc.perform(as(req, operator, Role.KB_OPERATOR)).andExpect(status().isAccepted());
+    assertThat(worker.processNext()).isTrue();
+
+    var now = id(createCase(caseJson("2099 年年假几天", future, "年假统一为 20 天")));
+    approve(now);
+    var later = id(createCase(caseJson("2099 年年假几天?", future, "年假统一为 20 天")));
+    details(later, "{" + DETAILS + ",\"queryAt\":\"2099-06-01T00:00:00Z\"}").andExpect(status().isNoContent());
+    approve(later);
+    run(5).andExpect(status().isOk())
+        .andExpect(jsonPath("$.results[?(@.caseId == '" + now + "')].sourceUnavailable").value(org.hamcrest.Matchers.contains(true)))
+        .andExpect(jsonPath("$.results[?(@.caseId == '" + later + "')].sourceUnavailable").value(org.hamcrest.Matchers.contains(false)))
+        .andExpect(jsonPath("$.results[?(@.caseId == '" + later + "')].hit").value(org.hamcrest.Matchers.contains(true)));
   }
 
   @Test

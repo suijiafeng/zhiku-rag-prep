@@ -493,15 +493,42 @@ paths:
                   maxItems: 10
                   items: {type: object, required: [versionId, quote], properties: {versionId: {type: string, format: uuid}, quote: {type: string, maxLength: 2000}, occurrence: {type: integer, minimum: 1, description: 'Which match to use (1-based); required when the quote occurs more than once (422 otherwise)'}}}
                 originMessageId: {type: string, format: uuid, description: Feedback message the case was made from; must be in this knowledge base (422)}
+                expectedAnswer: {type: string, maxLength: 2000}
+                requiredFacts: {type: array, maxItems: 10, items: {type: string, minLength: 1, maxLength: 200}}
+                appliesTo: {type: string, maxLength: 200}
+                queryAt: {type: string, format: date-time, description: Effectivity time the case is evaluated at; default the run time}
       responses:
         '201': {description: Created}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eval-cases/{caseId}/details:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
+    put:
+      operationId: setEvalCaseDetails
+      description: >-
+        DEBUG_AND_EVALUATE. Sets the reference answer, required facts (at most 10, 1–200 characters), applicable audience
+        and query time of a candidate. Approved cases are frozen (409). Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expectedAnswer: {type: string, maxLength: 2000}
+                requiredFacts: {type: array, maxItems: 10, items: {type: string}}
+                appliesTo: {type: string, maxLength: 200}
+                queryAt: {type: string, format: date-time}
+      responses:
+        '204': {description: Updated}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/eval-cases/{caseId}/approve:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: caseId, in: path, required: true, schema: {type: string, format: uuid}}]
     post:
       operationId: approveEvalCase
-      description: Candidate -> approved; answerable cases need evidence first (422). Only approved cases are evaluated. Audited.
+      description: Candidate -> approved; answerable cases need evidence, a reference answer and at least one required fact first (422). Only approved cases are evaluated. Audited.
       responses:
         '204': {description: Approved}
         '409': {$ref: '#/components/responses/Error'}

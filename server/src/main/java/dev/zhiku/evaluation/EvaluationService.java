@@ -45,7 +45,28 @@ class EvaluationService {
   record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote, boolean available) {}
 
   record CaseView(UUID id, String question, String label, String status, String source, Instant createdAt, List<EvidenceView> evidence,
-      UUID originMessageId) {}
+      UUID originMessageId, String expectedAnswer, List<String> requiredFacts, String appliesTo, Instant queryAt) {}
+
+  /** PRD E01 的样本字段；queryAt 为空表示按评测运行时刻判断效力。 */
+  record Details(String expectedAnswer, List<String> requiredFacts, String appliesTo, Instant queryAt) {
+
+    List<String> facts() {
+      var facts = requiredFacts == null ? List.<String>of() : requiredFacts;
+      if (facts.size() > 10) throw ApiException.unprocessable("At most 10 required facts");
+      if (facts.stream().anyMatch(f -> f == null || f.isBlank() || f.strip().length() > 200)) {
+        throw ApiException.unprocessable("Required facts must be 1 to 200 characters");
+      }
+      return facts.stream().map(String::strip).toList();
+    }
+
+    String answer() {
+      return expectedAnswer == null || expectedAnswer.isBlank() ? null : expectedAnswer.strip();
+    }
+
+    String audience() {
+      return appliesTo == null || appliesTo.isBlank() ? null : appliesTo.strip();
+    }
+  }
 
   record Ratio(int num, int den) {}
 
@@ -80,9 +101,10 @@ class EvaluationService {
   }
 
   @Transactional
-  UUID createCase(UUID kbId, String question, String label, List<EvidenceInput> evidence, String source, UUID originMessageId) {
+  UUID createCase(UUID kbId, String question, String label, List<EvidenceInput> evidence, String source, UUID originMessageId, Details details) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     if (!LABELS.contains(label)) throw ApiException.unprocessable("Unknown label");
+    var facts = details.facts();
     requireEntries(evidence);
     if (originMessageId != null && !Boolean.TRUE.equals(jdbc.queryForObject(
         "SELECT EXISTS (SELECT 1 FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE m.id = ? AND c.kb_id = ?)",
@@ -92,9 +114,11 @@ class EvaluationService {
     var inputs = evidence == null ? List.<EvidenceInput>of() : evidence;
     var id = UUID.randomUUID();
     jdbc.update("""
-        INSERT INTO eval_case (id, kb_id, question, label, source, created_by, origin_message_id, origin_feedback_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT version FROM feedback WHERE message_id = ?))
-        """, id, kbId, question, label, source == null ? "manual" : source, scope.userId(), originMessageId, originMessageId);
+        INSERT INTO eval_case (id, kb_id, question, label, source, created_by, origin_message_id, origin_feedback_version,
+                               expected_answer, required_facts, applies_to, query_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT version FROM feedback WHERE message_id = ?), ?, ?, ?, ?)
+        """, id, kbId, question, label, source == null ? "manual" : source, scope.userId(), originMessageId, originMessageId,
+        details.answer(), facts.toArray(String[]::new), details.audience(), details.queryAt() == null ? null : java.sql.Timestamp.from(details.queryAt()));
     insertEvidence(kbId, id, inputs);
     audit.record(scope, "EVAL_CASE_CREATE", "eval-case:" + id, "OK", Map.of("label", label, "evidence", inputs.size()));
     return id;
@@ -156,15 +180,29 @@ class EvaluationService {
     return TextChunker.normalize(new String(bytes.getFirst(), StandardCharsets.UTF_8).replaceFirst("^﻿", ""));
   }
 
+  /** 只有候选用例可以补齐或修改样本字段；已批准的用例冻结。 */
+  @Transactional
+  void setDetails(UUID kbId, UUID caseId, Details details) {
+    var scope = access.require(kbId, DEBUG_AND_EVALUATE);
+    var facts = details.facts();
+    var status = jdbc.queryForList("SELECT status FROM eval_case WHERE id = ? AND kb_id = ? FOR UPDATE", String.class, caseId, kbId);
+    if (status.isEmpty()) throw ApiException.notFound();
+    if (!"candidate".equals(status.getFirst())) throw ApiException.conflict("Approved cases cannot change");
+    jdbc.update("UPDATE eval_case SET expected_answer = ?, required_facts = ?, applies_to = ?, query_at = ? WHERE id = ?",
+        details.answer(), facts.toArray(String[]::new), details.audience(), details.queryAt() == null ? null : java.sql.Timestamp.from(details.queryAt()), caseId);
+    audit.record(scope, "EVAL_CASE_DETAILS", "eval-case:" + caseId, "OK", Map.of("facts", facts.size()));
+  }
+
   @Transactional
   void approve(UUID kbId, UUID caseId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     // 与证据编辑使用相同的行锁，因此此处检查的证据就是被冻结的证据。
     jdbc.queryForList("SELECT 1 FROM eval_case WHERE id = ? AND kb_id = ? FOR UPDATE", Integer.class, caseId, kbId);
-    var needsEvidence = jdbc.queryForList(
-        "SELECT 1 FROM eval_case c WHERE c.id = ? AND c.kb_id = ? AND c.label = 'answerable' AND NOT EXISTS (SELECT 1 FROM eval_evidence e WHERE e.case_id = c.id)",
-        Integer.class, caseId, kbId);
-    if (!needsEvidence.isEmpty()) throw ApiException.unprocessable("Answerable cases need evidence before approval");
+    var incomplete = jdbc.queryForList("""
+        SELECT 1 FROM eval_case c WHERE c.id = ? AND c.kb_id = ? AND c.label = 'answerable'
+          AND (NOT EXISTS (SELECT 1 FROM eval_evidence e WHERE e.case_id = c.id) OR c.expected_answer IS NULL OR cardinality(c.required_facts) = 0)
+        """, Integer.class, caseId, kbId);
+    if (!incomplete.isEmpty()) throw ApiException.unprocessable("Answerable cases need evidence, a reference answer and required facts before approval");
     if (jdbc.update("UPDATE eval_case SET status = 'approved', approved_by = ? WHERE id = ? AND kb_id = ? AND status = 'candidate'",
         scope.userId(), caseId, kbId) != 1) {
       throw ApiException.conflict("Case is not a candidate in this knowledge base");
@@ -187,11 +225,16 @@ class EvaluationService {
               rs.getInt("start_offset"), rs.getInt("end_offset"), rs.getBoolean("available") ? rs.getString("quote") : null,
               rs.getBoolean("available")));
         }, kbId);
-    return jdbc.query("SELECT id, question, label, status, source, created_at, origin_message_id FROM eval_case WHERE kb_id = ? ORDER BY created_at DESC, id",
+    return jdbc.query("""
+        SELECT id, question, label, status, source, created_at, origin_message_id, expected_answer, required_facts, applies_to, query_at
+        FROM eval_case WHERE kb_id = ? ORDER BY created_at DESC, id
+        """,
         (rs, i) -> {
           var id = rs.getObject("id", UUID.class);
           return new CaseView(id, rs.getString("question"), rs.getString("label"), rs.getString("status"), rs.getString("source"),
-              rs.getTimestamp("created_at").toInstant(), evidence.getOrDefault(id, List.of()), rs.getObject("origin_message_id", UUID.class));
+              rs.getTimestamp("created_at").toInstant(), evidence.getOrDefault(id, List.of()), rs.getObject("origin_message_id", UUID.class),
+              rs.getString("expected_answer"), List.of((String[]) rs.getArray("required_facts").getArray()), rs.getString("applies_to"),
+              rs.getTimestamp("query_at") == null ? null : rs.getTimestamp("query_at").toInstant());
         }, kbId);
   }
 
@@ -200,12 +243,15 @@ class EvaluationService {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     int k = requestedK == null ? 5 : requestedK;
     if (k < 1 || k > 30) throw ApiException.unprocessable("k must be between 1 and 30");
-    var cases = jdbc.query("SELECT id, question, label FROM eval_case WHERE kb_id = ? AND status = 'approved' ORDER BY created_at, id",
-        (rs, i) -> new String[] {rs.getString("id"), rs.getString("question"), rs.getString("label")}, kbId);
+    var runAt = Instant.now();
+    var cases = jdbc.query("SELECT id, question, label, query_at FROM eval_case WHERE kb_id = ? AND status = 'approved' ORDER BY created_at, id",
+        (rs, i) -> new String[] {rs.getString("id"), rs.getString("question"), rs.getString("label"),
+            rs.getTimestamp("query_at") == null ? null : rs.getTimestamp("query_at").toInstant().toString()}, kbId);
+    var eligibleAt = new java.util.HashMap<Instant, Set<UUID>>();
     var results = new ArrayList<ResultView>();
     String model = null;
     int notApplicable = 0;
-    var eligible = new HashSet<>(eligibility.eligibleVersionIds(scope, kbId, Instant.now()));
+
     for (var c : cases) {
       var caseId = UUID.fromString(c[0]);
       if (!"answerable".equals(c[2])) {
@@ -214,6 +260,9 @@ class EvaluationService {
       }
       var spans = jdbc.query("SELECT version_id, start_offset, end_offset FROM eval_evidence WHERE case_id = ? ORDER BY ordinal",
           (rs, i) -> new Span(rs.getObject("version_id", UUID.class), rs.getInt("start_offset"), rs.getInt("end_offset")), caseId);
+      // 用例有查询时点时按该时点判断效力并检索，例如对将来生效的新规提问。
+      var at = c[3] == null ? runAt : Instant.parse(c[3]);
+      var eligible = eligibleAt.computeIfAbsent(at, t -> new HashSet<>(eligibility.eligibleVersionIds(scope, kbId, t)));
       if (!spans.stream().allMatch(sp -> eligible.contains(sp.versionId()))) {
         results.add(new ResultView(caseId, c[1], c[2], false, false, 0, spans.size(), 0, true));
         continue;
@@ -232,7 +281,7 @@ class EvaluationService {
         continue;
       }
       long started = System.nanoTime();
-      var trace = retrieval.searchAuthorized(scope, kbId, c[1], k, Instant.now(), "evaluation", UUID.randomUUID());
+      var trace = retrieval.searchAuthorized(scope, kbId, c[1], k, at, "evaluation", UUID.randomUUID());
       int latency = (int) ((System.nanoTime() - started) / 1_000_000);
       model = trace.embeddingModel();
       var retrieved = new HashSet<UUID>();
