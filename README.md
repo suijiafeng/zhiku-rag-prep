@@ -7,7 +7,7 @@
 3. 从 `TASKS.md` 只选一个任务，套用 `docs/ai-task-template.md`，明确路径和验收。
 
 ## 目录
-- server：Java 21 / Spring Boot 模块化单体。JWT 身份、知识库授权、文档版本与效力、持久摄取任务、精确向量检索、SSE 问答、历史依赖重查、挂件短期令牌、追加式审计；Flyway V1–V22。
+- server：Java 21 / Spring Boot 模块化单体。JWT 身份、知识库授权、文档版本与效力、持久摄取任务、精确向量检索、SSE 问答、历史依赖重查、挂件短期令牌、追加式审计；Flyway V1–V23。
 - admin-web：React + TypeScript + antd 管理端，覆盖设计稿 12 页。登录页为入口；登录后所有页面使用真实接口；未登录时可"以示例数据浏览"。
 - widget：独立 React 问答挂件（悬浮按钮、展开面板、引用展开、赞踩、主题色、手机全屏）、SSE 分帧器、streamChat 与 rateMessage。
 - contracts/openapi.yaml：已实现接口与 SSE 协议。
