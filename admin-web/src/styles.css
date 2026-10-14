@@ -208,3 +208,4 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .ant-popconfirm { max-width: 360px; }
 .eval-occurrence { width: 100%; }
 .trace-stages { margin: 12px 0; }
+.close-form .ant-input-textarea-show-count { margin-bottom: 18px; }

@@ -1,7 +1,7 @@
 import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, type ApiClient, type ConfigCandidateBody, type ConfigOverview, type KnowledgeBaseConfig } from "../../api/client";
-import { LoadingList } from "../../components/StateViews";
+import { LoadingList, errorTitle } from "../../components/StateViews";
 
 export interface ConfigForm {
   retrievalK: number;
@@ -99,7 +99,11 @@ export function ConfigHistory({ history, onRollback }: { history: KnowledgeBaseC
   );
 }
 
-const failure = (e: unknown) => (e instanceof ApiError ? `${e.message}（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）` : "请求失败");
+const failure = (e: unknown) => {
+  if (!(e instanceof ApiError)) return "请求失败";
+  const title = errorTitle(e.code);
+  return `${title === "请求失败" ? e.message : `${title}：${e.message}`}（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）`;
+};
 
 /** PRD C01：保存候选 → 验证 → 发布；他人改过就提示重新加载再确认，不覆盖。 */
 export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }) {
