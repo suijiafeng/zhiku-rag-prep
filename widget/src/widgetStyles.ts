@@ -1,4 +1,4 @@
-/** Every selector is prefixed with .zhiku- so nothing leaks into the host page. */
+/** 所有选择器均以 .zhiku- 为前缀，避免样式泄漏到宿主页面。 */
 export const WIDGET_CSS = `
 .zhiku-root{position:fixed;right:24px;bottom:24px;z-index:2147483000;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#1d2433}
 .zhiku-launcher{width:52px;height:52px;border-radius:50%;border:0;background:var(--zhiku-primary);color:#fff;font-size:22px;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.18)}

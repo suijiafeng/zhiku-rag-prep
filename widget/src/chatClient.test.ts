@@ -28,7 +28,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 describe("streamChat", () => {
   it("completes after draft, validated and done, reassembling split UTF-8", async () => {
     const bytes = enc.encode(happy.join(""));
-    const cut = bytes.indexOf(0xe5) + 1; // split inside the first multi-byte character
+    const cut = bytes.indexOf(0xe5) + 1; // 在第一个多字节字符内部切分
     const fetchImpl = vi.fn(async () => streamResponse([bytes.slice(0, cut), bytes.slice(cut)]));
     const drafts: string[] = [];
     const out = await streamChat({ ...base, fetchImpl, onEvent: (e) => e.event === "draft" && drafts.push(e.data.text) });

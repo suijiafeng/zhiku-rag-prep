@@ -2,11 +2,11 @@ import type { AccessTokenGetter, ChatEvent, ChatRequest, Citation } from "./cont
 import { createSseParser, type SseFrame } from "./sse.js";
 
 /**
- * fetch-based client for the draft SSE contract (contracts/openapi.yaml, x-sse-draft).
- * - Fetches a short-lived token per request; never stores or logs it; sends no ambient cookies.
- * - Never retries: a repeated POST could duplicate model cost.
- * - Only `done` after `validated` completes. Error, cancel, protocol violations and early stream end
- *   all discard the answer. `onEvent` drafts are provisional and must be dropped unless the outcome is complete.
+ * 基于 fetch 的草案 SSE 契约客户端（contracts/openapi.yaml，x-sse-draft）。
+ * - 每次请求获取短期 token；从不存储或记录；不自动携带 Cookie。
+ * - 从不重试：重复 POST 可能造成重复的模型费用。
+ * - 只有 `validated` 之后的 `done` 才算完成。错误、取消、协议违规和流提前结束
+ *   都会丢弃回答。`onEvent` 草稿是临时的，除非结果为完成，否则必须丢弃。
  */
 export interface ChatError {
   code: string;
@@ -20,7 +20,7 @@ export type ChatOutcome =
   | { status: "cancelled" };
 
 export interface StreamChatOptions {
-  /** Trusted backend URL; never a model provider URL. */
+  /** 可信的后端 URL；绝不是模型提供方 URL。 */
   endpoint: string;
   request: ChatRequest;
   getAccessToken?: AccessTokenGetter;
@@ -32,7 +32,7 @@ export interface StreamChatOptions {
 
 const MAX_ERROR_BODY_CHARS = 65_536;
 
-/** v4 UUID; randomUUID needs a secure context, getRandomValues works everywhere. */
+/** v4 UUID；randomUUID 需要安全上下文，getRandomValues 在任何环境都可用。 */
 export function newRequestId(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -56,7 +56,7 @@ const isCitation = (v: unknown): v is Citation =>
 const isErrorBody = (v: unknown): v is Required<ChatError> =>
   isObj(v) && isStr(v.code) && isStr(v.message) && isStr(v.requestId);
 
-/** Validates one frame against the contract. Returns null for unknown event names. */
+/** 按契约校验单个帧。未知事件名返回 null。 */
 function toEvent(frame: SseFrame): ChatEvent | null {
   if (!["draft", "validated", "done", "error"].includes(frame.event)) return null;
   let data: unknown;
@@ -92,8 +92,8 @@ function toEvent(frame: SseFrame): ChatEvent | null {
 }
 
 /**
- * Error bodies are untrusted: read at most MAX_ERROR_BODY_CHARS (then give up and cancel the rest), honour
- * cancellation while reading, and always release the body.
+ * 错误响应体不可信：最多读取 MAX_ERROR_BODY_CHARS（超出则放弃并取消剩余部分），读取期间
+ * 响应取消，并且始终释放响应体。
  */
 async function httpError(response: Response, signal?: AbortSignal): Promise<ChatOutcome> {
   const generic = failed(`HTTP_${response.status}`, "请求失败");
@@ -120,7 +120,7 @@ async function httpError(response: Response, signal?: AbortSignal): Promise<Chat
     if (isErrorBody(body)) return { status: "failed", error: { code: body.code, message: body.message, requestId: body.requestId } };
   } catch {
     if (signal?.aborted) return { status: "cancelled" };
-    // fall through to a generic error; the body is untrusted
+    // 回退为通用错误；响应体不可信
   } finally {
     signal?.removeEventListener("abort", onAbort);
     reader.cancel().catch(() => undefined);
@@ -133,7 +133,7 @@ const isAbort = (e: unknown, signal?: AbortSignal) => signal?.aborted === true |
 export async function streamChat(options: StreamChatOptions): Promise<ChatOutcome> {
   const { endpoint, request, getAccessToken, signal, onEvent } = options;
   const fetchImpl = options.fetchImpl ?? ((url: string, init: RequestInit) => fetch(url, init));
-  // Invalid options throw here, before a token is fetched or a request is sent, so no resource is left open.
+  // 无效参数在此处抛出，早于获取 token 或发送请求，因此不会遗留未释放的资源。
   const parser = createSseParser(options.maxEventChars);
   if (signal?.aborted) return { status: "cancelled" };
 
@@ -224,7 +224,7 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
 export type FeedbackReason = "WRONG" | "MISSING" | "BAD_CITATION" | "SHOULD_REFUSE" | "OUTDATED";
 
 export interface RateOptions {
-  /** The chat endpoint; feedback goes to the sibling /messages/{id}/feedback path. */
+  /** 问答端点；反馈发往同级的 /messages/{id}/feedback 路径。 */
   endpoint: string;
   messageId: string;
   rating: "up" | "down";
@@ -233,7 +233,7 @@ export interface RateOptions {
   fetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
-/** Rates the asker's own answer. One attempt, no retry, no storage. */
+/** 提问者为自己的回答评分。仅尝试一次，不重试，不存储。 */
 export async function rateMessage(options: RateOptions): Promise<{ ok: true } | { ok: false; error: ChatError }> {
   const fetchImpl = options.fetchImpl ?? ((url: string, init: RequestInit) => fetch(url, init));
   let token: string | undefined;

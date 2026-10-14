@@ -1,13 +1,13 @@
-/** Transport frames only. JSON data is untrusted until separately validated. */
+/** 仅为传输帧。JSON 数据在单独校验前均不可信。 */
 export interface SseFrame {
   event: string;
   data: string;
 }
 
 /**
- * Minimal incremental SSE parser: event/data fields, comments, LF/CRLF/CR.
- * id/retry fields are intentionally ignored: reconnection is not implemented.
- * Feed text from one persistent TextDecoder using { stream: true }.
+ * 最小化的增量 SSE 解析器：支持 event/data 字段、注释及 LF/CRLF/CR 换行。
+ * 有意忽略 id/retry 字段：未实现重连。
+ * 应传入同一个持久 TextDecoder 以 { stream: true } 解码出的文本。
  */
 export function createSseParser(maxEventChars = 1_048_576) {
   if (!Number.isSafeInteger(maxEventChars) || maxEventChars <= 0) {
@@ -62,7 +62,7 @@ export function createSseParser(maxEventChars = 1_048_576) {
       if (ended) return [];
       ended = true;
       const frames = drain(true);
-      // The SSE specification discards records not terminated by a blank line.
+      // SSE 规范会丢弃未以空行结束的记录。
       buffer = "";
       data = [];
       return frames;

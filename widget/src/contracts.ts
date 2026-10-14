@@ -1,4 +1,4 @@
-/** Provisional future contract; synchronize with the root API spec before implementation. */
+/** 暂定的未来契约；实现前需与根目录 API 规范同步。 */
 export interface Citation {
   documentId: string;
   versionId: string;
@@ -15,11 +15,11 @@ export type ChatEvent =
 export interface ChatRequest {
   question: string;
   kbId: string;
-  /** Continue an own conversation in the same knowledge base. */
+  /** 在同一知识库中继续自己的会话。 */
   conversationId?: string;
-  /** One id per question; generated when omitted. The server accepts it once and never answers a repeat again. */
+  /** 每个问题一个 id；省略时自动生成。服务端只受理一次，重复提交不再回答。 */
   clientRequestId?: string;
 }
 
-/** Resolve per request in a future adapter. Do not persist or log returned tokens. */
+/** 由未来的适配器按请求获取。不得持久化或记录返回的 token。 */
 export type AccessTokenGetter = () => Promise<string | undefined>;

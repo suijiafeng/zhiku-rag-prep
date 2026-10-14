@@ -4,16 +4,16 @@ import type { AccessTokenGetter, Citation } from "./contracts.js";
 import { WIDGET_CSS } from "./widgetStyles.js";
 
 export interface ZhikuWidgetProps {
-  /** Same-origin or allow-listed backend chat URL (…/api/chat); never a model provider URL. */
+  /** 同源或白名单内的后端问答 URL（…/api/chat）；绝不是模型提供方 URL。 */
   endpoint: string;
   knowledgeBaseId: string;
-  /** Short-lived widget token per request (host backend calls POST /api/widget-tokens). Never stored here. */
+  /** 每次请求获取的短期 widget token（由宿主后端调用 POST /api/widget-tokens）。此处从不存储。 */
   getAccessToken?: AccessTokenGetter;
   title?: string;
   subtitle?: string;
   greeting?: string;
   quickQuestions?: string[];
-  /** Brand colour as #rgb or #rrggbb; anything else falls back to the default blue. */
+  /** 品牌色，格式为 #rgb 或 #rrggbb；其他值回退为默认蓝色。 */
   themeColor?: string;
   defaultOpen?: boolean;
 }
@@ -42,7 +42,7 @@ type Turn = {
   picking?: boolean;
 };
 
-/** Renders untrusted answer text; only [n] markers with a matching citation become toggles. */
+/** 渲染不可信的回答文本；只有存在对应引用的 [n] 标记才会变成可展开开关。 */
 function AnswerBody({ turn, open, onToggle }: { turn: Turn; open: number | undefined; onToggle: (n: number) => void }) {
   const parts = turn.text.split(/(\[\d+\])/u);
   const source = open === undefined ? undefined : turn.citations[open - 1];
@@ -68,8 +68,8 @@ function AnswerBody({ turn, open, onToggle }: { turn: Turn; open: number | undef
 }
 
 /**
- * Embeddable Q&A (design page 12). Drafts show while streaming but only answers that reach validated + done are
- * kept; errors and cancellation discard them. Conversation lives in component memory only.
+ * 可嵌入的问答组件（设计稿第 12 页）。流式输出时显示草稿，但只保留到达 validated + done 的回答；
+ * 错误和取消会丢弃回答。会话只保存在组件内存中。
  */
 export function ZhikuWidget({
   endpoint, knowledgeBaseId, getAccessToken, title = "知库问答", subtitle = "知识库助手", themeColor,
