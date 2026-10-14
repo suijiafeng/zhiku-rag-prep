@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 class FeedbackController {
   record RateRequest(@NotNull @Pattern(regexp = "up|down") String rating, String reason, @Size(max = 500) String comment) {}
 
-  record StatusRequest(@NotNull String status, String rootCause) {}
+  record StatusRequest(@NotNull String status, String rootCause, @Size(max = 1000) String resolution, UUID verificationCaseId) {}
 
   private final FeedbackService feedback;
   private final KnowledgeBaseService knowledgeBases;
@@ -43,6 +43,11 @@ class FeedbackController {
   @PatchMapping("/api/knowledge-bases/{kbId}/feedback/{messageId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   void updateStatus(@PathVariable UUID kbId, @PathVariable UUID messageId, @Valid @RequestBody StatusRequest request) {
-    feedback.updateStatus(kbId, messageId, request.status(), request.rootCause());
+    feedback.updateStatus(kbId, messageId, request.status(), request.rootCause(), request.resolution(), request.verificationCaseId());
+  }
+
+  @GetMapping("/api/knowledge-bases/{kbId}/feedback/{messageId}/history")
+  java.util.List<FeedbackRepository.HandlingView> handlingHistory(@PathVariable UUID kbId, @PathVariable UUID messageId) {
+    return feedback.handlingHistory(kbId, messageId);
   }
 }

@@ -18,7 +18,9 @@ class FeedbackRepository {
   record OwnedMessage(UUID messageId, UUID userId, UUID enterpriseId, UUID kbId, String status) {}
 
   record RecordRow(UUID messageId, Instant createdAt, UUID userId, String question, int citationCount, String rating,
-      String reason, String comment, String status, String rootCause, String outcome) {}
+      String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome) {}
+
+  record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt) {}
 
   private final JdbcTemplate jdbc;
 
@@ -68,12 +70,13 @@ class FeedbackRepository {
     return jdbc.query("""
         SELECT m.id, m.created_at, c.user_id, m.question,
                (SELECT count(*) FROM message_source s WHERE s.message_id = m.id) AS citations,
-               f.rating, f.reason, f.comment, f.status, f.root_cause, m.status AS outcome
+               f.rating, f.reason, f.comment, f.status, f.root_cause, f.resolution, f.verification_case_id, m.status AS outcome
         FROM message m JOIN conversation c ON c.id = m.conversation_id LEFT JOIN feedback f ON f.message_id = m.id
         WHERE c.kb_id = ?""" + where + " ORDER BY m.created_at DESC, m.id LIMIT 200",
         (rs, i) -> new RecordRow(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant(), rs.getObject("user_id", UUID.class),
             rs.getString("question"), rs.getInt("citations"), rs.getString("rating"), rs.getString("reason"), rs.getString("comment"),
-            rs.getString("status"), rs.getString("root_cause"), rs.getString("outcome")), kbId);
+            rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"), rs.getObject("verification_case_id", UUID.class),
+            rs.getString("outcome")), kbId);
   }
 
   Map<String, Integer> stats(UUID kbId, Instant since) {
@@ -90,11 +93,31 @@ class FeedbackRepository {
     return out;
   }
 
-  int updateStatus(UUID kbId, UUID messageId, String status, String rootCause, UUID handledBy) {
-    return jdbc.update("""
-        UPDATE feedback f SET status = ?, root_cause = ?, handled_by = ?, updated_at = now()
+  boolean feedbackInKnowledgeBase(UUID kbId, UUID messageId) {
+    return Boolean.TRUE.equals(jdbc.queryForObject("""
+        SELECT EXISTS (SELECT 1 FROM feedback f JOIN message m ON m.id = f.message_id JOIN conversation c ON c.id = m.conversation_id
+                       WHERE f.message_id = ? AND c.kb_id = ?)
+        """, Boolean.class, messageId, kbId));
+  }
+
+  void updateStatus(UUID kbId, UUID messageId, String status, String rootCause, String resolution, UUID verificationCaseId, UUID handledBy) {
+    jdbc.update("""
+        UPDATE feedback f SET status = ?, root_cause = ?, resolution = ?, verification_case_id = ?, handled_by = ?, updated_at = now()
         FROM message m JOIN conversation c ON c.id = m.conversation_id
         WHERE f.message_id = ? AND m.id = f.message_id AND c.kb_id = ?
-        """, status, rootCause, handledBy, messageId, kbId);
+        """, status, rootCause, resolution, verificationCaseId, handledBy, messageId, kbId);
+    jdbc.update("INSERT INTO feedback_handling (message_id, status, root_cause, resolution, verification_case_id, changed_by) VALUES (?, ?, ?, ?, ?, ?)",
+        messageId, status, rootCause, resolution, verificationCaseId, handledBy);
+  }
+
+  /** Handling changes of feedback in this knowledge base only; another knowledge base's id yields nothing. */
+  List<HandlingView> handlingHistory(UUID kbId, UUID messageId) {
+    return jdbc.query("""
+        SELECT h.status, h.root_cause, h.resolution, h.verification_case_id, h.changed_by, h.changed_at
+        FROM feedback_handling h JOIN message m ON m.id = h.message_id JOIN conversation c ON c.id = m.conversation_id
+        WHERE h.message_id = ? AND c.kb_id = ? ORDER BY h.id
+        """, (rs, i) -> new HandlingView(rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"),
+            rs.getObject("verification_case_id", UUID.class), rs.getObject("changed_by", UUID.class), rs.getTimestamp("changed_at").toInstant()),
+        messageId, kbId);
   }
 }

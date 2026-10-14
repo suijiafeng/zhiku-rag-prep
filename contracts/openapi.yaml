@@ -110,17 +110,51 @@ paths:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: messageId, in: path, required: true, schema: {type: string, format: uuid}}]
     patch:
       operationId: updateFeedbackStatus
-      description: DEBUG_AND_EVALUATE. status open | in_progress | to_verify | resolved | wont_fix; rootCause must be a PRD chapter 11 category. Audited.
+      description: >-
+        DEBUG_AND_EVALUATE. status open | in_progress | to_verify | resolved | wont_fix; rootCause must be a PRD chapter 11
+        category. Closing needs a basis: resolved requires rootCause, resolution and verificationCaseId of an approved case
+        in this knowledge base whose evidence spans were all retrieved in the latest evaluation run (a retrieval check, not
+        proof that the answer is correct); wont_fix requires resolution as the reason. Every change is kept in the handling
+        history. Audited.
       requestBody:
         required: true
         content:
           application/json:
-            schema: {type: object, required: [status], properties: {status: {type: string}, rootCause: {type: string}}}
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: {type: string}
+                rootCause: {type: string}
+                resolution: {type: string, maxLength: 1000}
+                verificationCaseId: {type: string, format: uuid}
       responses:
         '204': {description: Updated}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/feedback/{messageId}/history:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: messageId, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      operationId: feedbackHandlingHistory
+      description: DEBUG_AND_EVALUATE. Handling changes in order; empty when the message is not in this knowledge base.
+      responses:
+        '200':
+          description: Handling history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    status: {type: string}
+                    rootCause: {type: string}
+                    resolution: {type: string}
+                    verificationCaseId: {type: string, format: uuid}
+                    changedBy: {type: string, format: uuid}
+                    changedAt: {type: string, format: date-time}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /api/widget-tokens:
     post:
       operationId: issueWidgetToken

@@ -135,6 +135,91 @@ class FeedbackTest extends IntegrationTest {
         .contentType("application/json").content("{\"status\":\"resolved\"}")).andExpect(status().isNotFound());
   }
 
+  ResultActions handle(UUID messageId, String body) throws Exception {
+    return mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, messageId), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content(body));
+  }
+
+  UUID evalCase(String status) {
+    var id = UUID.randomUUID();
+    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, status, created_by) VALUES (?, ?, '年假有几天?', 'answerable', ?, ?)", id, kb, status, operator);
+    return id;
+  }
+
+  void run(UUID caseId, boolean hit, int minutesAgo) {
+    var runId = UUID.randomUUID();
+    jdbc.update("INSERT INTO eval_run (id, kb_id, k, created_by, created_at, summary) VALUES (?, ?, 5, ?, now() - make_interval(mins => ?), '{}')",
+        runId, kb, operator, minutesAgo);
+    jdbc.update("INSERT INTO eval_result (run_id, case_id, mapping_failed, hit, evidence_hit, evidence_total, latency_ms) VALUES (?, ?, false, ?, ?, 1, 10)",
+        runId, caseId, hit, hit ? 1 : 0);
+  }
+
+  static String resolve(UUID caseId) {
+    return "{\"status\":\"resolved\",\"rootCause\":\"文档未就绪或版本错误\",\"resolution\":\"发布新版本并重建索引\",\"verificationCaseId\":\"" + caseId + "\"}";
+  }
+
+  @Test
+  void resolvingRequiresAFixAndAnApprovedCaseThatPassedTheLatestRun() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"OUTDATED\"}").andExpect(status().isOk());
+    var passing = evalCase("approved");
+    handle(askerMessage, "{\"status\":\"resolved\",\"rootCause\":\"文档未就绪或版本错误\",\"verificationCaseId\":\"" + passing + "\"}")
+        .andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, "{\"status\":\"resolved\",\"resolution\":\"已修复\",\"verificationCaseId\":\"" + passing + "\"}")
+        .andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, "{\"status\":\"resolved\",\"rootCause\":\"文档未就绪或版本错误\",\"resolution\":\"已修复\"}")
+        .andExpect(status().isUnprocessableEntity());
+
+    handle(askerMessage, resolve(evalCase("candidate"))).andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
+    run(passing, true, 10);
+    run(passing, false, 1);
+    handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
+    run(passing, true, 0);
+
+    var otherKb = UUID.randomUUID();
+    var foreign = UUID.randomUUID();
+    jdbc.update("INSERT INTO knowledge_base (id, enterprise_id, name) VALUES (?, ?, ?)", otherKb, enterprise, "其他-" + otherKb);
+    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, status, created_by) VALUES (?, ?, 'x', 'answerable', 'approved', ?)", foreign, otherKb, operator);
+    handle(askerMessage, resolve(foreign)).andExpect(status().isUnprocessableEntity());
+    assertThat(jdbc.queryForObject("SELECT status FROM feedback WHERE message_id = ?", String.class, askerMessage)).isEqualTo("open");
+
+    handle(askerMessage, resolve(passing)).andExpect(status().isNoContent());
+    records("down")
+        .andExpect(jsonPath("$.items[0].status").value("resolved"))
+        .andExpect(jsonPath("$.items[0].resolution").value("发布新版本并重建索引"))
+        .andExpect(jsonPath("$.items[0].verificationCaseId").value(passing.toString()));
+  }
+
+  @Test
+  void closingWithoutFixNeedsAReason() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"WRONG\"}").andExpect(status().isOk());
+    handle(askerMessage, "{\"status\":\"wont_fix\"}").andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"  \"}").andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"" + "长".repeat(1001) + "\"}").andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"问题超出试点范围，已转人工渠道\"}").andExpect(status().isNoContent());
+  }
+
+  @Test
+  void everyHandlingChangeIsKeptInHistory() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"MISSING\"}").andExpect(status().isOk());
+    handle(askerMessage, "{\"status\":\"in_progress\",\"rootCause\":\"解析/切块遗漏\"}").andExpect(status().isNoContent());
+    handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"资料本身未覆盖\"}").andExpect(status().isNoContent());
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/feedback/{id}/history", kb, askerMessage), operator, Role.KB_OPERATOR))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(2))
+        .andExpect(jsonPath("$[0].status").value("in_progress"))
+        .andExpect(jsonPath("$[0].rootCause").value("解析/切块遗漏"))
+        .andExpect(jsonPath("$[0].changedBy").value(operator.toString()))
+        .andExpect(jsonPath("$[1].status").value("wont_fix"))
+        .andExpect(jsonPath("$[1].resolution").value("资料本身未覆盖"));
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/feedback/{id}/history", kb, askerMessage), asker, Role.EMPLOYEE)).andExpect(status().isForbidden());
+    var otherKb = UUID.randomUUID();
+    jdbc.update("INSERT INTO knowledge_base (id, enterprise_id, name) VALUES (?, ?, ?)", otherKb, enterprise, "其他-" + otherKb);
+    jdbc.update("INSERT INTO kb_grant (kb_id, user_id) VALUES (?, ?)", otherKb, operator);
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/feedback/{id}/history", otherKb, askerMessage), operator, Role.KB_OPERATOR))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+  }
+
   @Test
   void historyShowsTheAskersOwnFeedback() throws Exception {
     rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"MISSING\"}").andExpect(status().isOk());
