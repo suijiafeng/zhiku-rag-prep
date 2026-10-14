@@ -1,0 +1,8 @@
+server:
+  address: 127.0.0.1
+  port: 8080
+spring:
+  application:
+    name: zhiku-scaffold
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
