@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.zhiku.audit.AuditLog;
 import dev.zhiku.document.DocumentRepository;
+import dev.zhiku.document.DocumentService;
 import dev.zhiku.ingestion.TextChunker;
 import dev.zhiku.knowledgebase.KnowledgeBaseAccess;
 import dev.zhiku.platform.ApiException;
@@ -48,9 +49,12 @@ class EvaluationService {
 
   record Ratio(int num, int den) {}
 
-  record Summary(int cases, int evaluated, int prepFailed, int notApplicable, Ratio hit, Ratio recall, Double recallMacro, Long p95Ms) {}
+  record Summary(int cases, int evaluated, int prepFailed, int notApplicable, Ratio hit, Ratio recall, Double recallMacro, Long p95Ms,
+      int sourceUnavailable) {}
 
-  record ResultView(UUID caseId, String question, String label, boolean mappingFailed, boolean hit, int evidenceHit, int evidenceTotal, int latencyMs) {}
+  /** sourceUnavailable: an evidence version is not eligible now; such cases are reported but left out of the scores. */
+  record ResultView(UUID caseId, String question, String label, boolean mappingFailed, boolean hit, int evidenceHit, int evidenceTotal, int latencyMs,
+      boolean sourceUnavailable) {}
 
   record RunView(UUID id, int k, String model, Instant createdAt, Summary summary, List<ResultView> results) {}
 
@@ -58,13 +62,15 @@ class EvaluationService {
 
   private final KnowledgeBaseAccess access;
   private final DocumentRepository documents;
+  private final DocumentService eligibility;
   private final RetrievalService retrieval;
   private final JdbcTemplate jdbc;
   private final ObjectMapper json;
   private final AuditLog audit;
 
-  EvaluationService(KnowledgeBaseAccess access, DocumentRepository documents, RetrievalService retrieval, JdbcTemplate jdbc,
-      ObjectMapper json, AuditLog audit) {
+  EvaluationService(KnowledgeBaseAccess access, DocumentRepository documents, DocumentService eligibility, RetrievalService retrieval,
+      JdbcTemplate jdbc, ObjectMapper json, AuditLog audit) {
+    this.eligibility = eligibility;
     this.access = access;
     this.documents = documents;
     this.retrieval = retrieval;
@@ -197,6 +203,7 @@ class EvaluationService {
     var results = new ArrayList<ResultView>();
     String model = null;
     int notApplicable = 0;
+    var eligible = new HashSet<>(eligibility.eligibleVersionIds(scope, kbId, Instant.now()));
     for (var c : cases) {
       var caseId = UUID.fromString(c[0]);
       if (!"answerable".equals(c[2])) {
@@ -205,13 +212,21 @@ class EvaluationService {
       }
       var spans = jdbc.query("SELECT version_id, start_offset, end_offset FROM eval_evidence WHERE case_id = ? ORDER BY ordinal",
           (rs, i) -> new Span(rs.getObject("version_id", UUID.class), rs.getInt("start_offset"), rs.getInt("end_offset")), caseId);
-      var mapped = new ArrayList<Set<UUID>>();
-      for (var s : spans) {
-        mapped.add(new HashSet<>(jdbc.queryForList(
-            "SELECT id FROM chunk WHERE version_id = ? AND start_offset < ? AND end_offset > ?", UUID.class, s.versionId(), s.end(), s.start())));
+      if (!spans.stream().allMatch(sp -> eligible.contains(sp.versionId()))) {
+        results.add(new ResultView(caseId, c[1], c[2], false, false, 0, spans.size(), 0, true));
+        continue;
       }
-      if (mapped.stream().anyMatch(Set::isEmpty)) {
-        results.add(new ResultView(caseId, c[1], c[2], true, false, 0, spans.size(), 0));
+      var mapped = new ArrayList<Map<UUID, int[]>>();
+      for (var sp : spans) {
+        var overlapping = new LinkedHashMap<UUID, int[]>();
+        jdbc.query("SELECT id, start_offset, end_offset FROM chunk WHERE version_id = ? AND start_offset < ? AND end_offset > ?",
+            rs -> {
+              overlapping.put(rs.getObject("id", UUID.class), new int[] {rs.getInt("start_offset"), rs.getInt("end_offset")});
+            }, sp.versionId(), sp.end(), sp.start());
+        mapped.add(overlapping);
+      }
+      if (mapped.stream().anyMatch(Map::isEmpty)) {
+        results.add(new ResultView(caseId, c[1], c[2], true, false, 0, spans.size(), 0, false));
         continue;
       }
       long started = System.nanoTime();
@@ -220,8 +235,13 @@ class EvaluationService {
       model = trace.embeddingModel();
       var retrieved = new HashSet<UUID>();
       trace.candidates().stream().map(Candidate::chunkId).forEach(retrieved::add);
-      int covered = (int) mapped.stream().filter(set -> set.stream().anyMatch(retrieved::contains)).count();
-      results.add(new ResultView(caseId, c[1], c[2], false, covered > 0, covered, spans.size(), latency));
+      // A span is retrieved only when the retrieved chunks together cover all of it, not when one character overlaps.
+      int covered = 0;
+      for (int i = 0; i < spans.size(); i++) {
+        var pieces = mapped.get(i).entrySet().stream().filter(en -> retrieved.contains(en.getKey())).map(Map.Entry::getValue).toList();
+        if (covers(spans.get(i).start(), spans.get(i).end(), pieces)) covered++;
+      }
+      results.add(new ResultView(caseId, c[1], c[2], false, covered > 0, covered, spans.size(), latency, false));
     }
     var summary = summarize(cases.size(), notApplicable, results);
     var runId = UUID.randomUUID();
@@ -232,15 +252,29 @@ class EvaluationService {
       throw new IllegalStateException(e);
     }
     for (var r : results) {
-      jdbc.update("INSERT INTO eval_result (run_id, case_id, mapping_failed, hit, evidence_hit, evidence_total, latency_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          runId, r.caseId(), r.mappingFailed(), r.hit(), r.evidenceHit(), r.evidenceTotal(), r.latencyMs());
+      jdbc.update("INSERT INTO eval_result (run_id, case_id, mapping_failed, hit, evidence_hit, evidence_total, latency_ms, source_unavailable) "
+          + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", runId, r.caseId(), r.mappingFailed(), r.hit(), r.evidenceHit(), r.evidenceTotal(), r.latencyMs(),
+          r.sourceUnavailable());
     }
     audit.record(scope, "EVAL_RUN", "eval-run:" + runId, "OK", Map.of("k", k, "cases", cases.size()));
     return new RunView(runId, k, model, Instant.now(), summary, results);
   }
 
+  /** Whether the intervals [from, to) together cover [start, end) without a gap. */
+  static boolean covers(int start, int end, List<int[]> intervals) {
+    var sorted = intervals.stream().sorted(java.util.Comparator.comparingInt(iv -> iv[0])).toList();
+    int reached = start;
+    for (var iv : sorted) {
+      if (iv[0] > reached) break;
+      reached = Math.max(reached, iv[1]);
+      if (reached >= end) return true;
+    }
+    return false;
+  }
+
   static Summary summarize(int cases, int notApplicable, List<ResultView> results) {
-    var evaluated = results.stream().filter(r -> !r.mappingFailed()).toList();
+    var evaluated = results.stream().filter(r -> !r.mappingFailed() && !r.sourceUnavailable()).toList();
+    int unavailable = (int) results.stream().filter(ResultView::sourceUnavailable).count();
     int hits = (int) evaluated.stream().filter(ResultView::hit).count();
     int covered = evaluated.stream().mapToInt(ResultView::evidenceHit).sum();
     int spans = evaluated.stream().mapToInt(ResultView::evidenceTotal).sum();
@@ -248,8 +282,8 @@ class EvaluationService {
         : evaluated.stream().mapToDouble(r -> (double) r.evidenceHit() / r.evidenceTotal()).average().orElse(0);
     var latencies = evaluated.stream().mapToLong(ResultView::latencyMs).sorted().toArray();
     Long p95 = latencies.length == 0 ? null : latencies[(int) Math.ceil(0.95 * latencies.length) - 1];
-    return new Summary(cases, evaluated.size(), results.size() - evaluated.size(), notApplicable, new Ratio(hits, evaluated.size()),
-        new Ratio(covered, spans), macro, p95);
+    return new Summary(cases, evaluated.size(), results.size() - evaluated.size() - unavailable, notApplicable, new Ratio(hits, evaluated.size()),
+        new Ratio(covered, spans), macro, p95, unavailable);
   }
 
   @Transactional(readOnly = true)
@@ -260,10 +294,11 @@ class EvaluationService {
     if (runs.isEmpty()) return null;
     var r = runs.getFirst();
     var results = jdbc.query("""
-        SELECT r.case_id, c.question, c.label, r.mapping_failed, r.hit, r.evidence_hit, r.evidence_total, r.latency_ms
+        SELECT r.case_id, c.question, c.label, r.mapping_failed, r.hit, r.evidence_hit, r.evidence_total, r.latency_ms, r.source_unavailable
         FROM eval_result r JOIN eval_case c ON c.id = r.case_id WHERE r.run_id = ? ORDER BY c.created_at, c.id
         """, (rs, i) -> new ResultView(rs.getObject("case_id", UUID.class), rs.getString("question"), rs.getString("label"),
-            rs.getBoolean("mapping_failed"), rs.getBoolean("hit"), rs.getInt("evidence_hit"), rs.getInt("evidence_total"), rs.getInt("latency_ms")), r[0]);
+            rs.getBoolean("mapping_failed"), rs.getBoolean("hit"), rs.getInt("evidence_hit"), rs.getInt("evidence_total"), rs.getInt("latency_ms"),
+            rs.getBoolean("source_unavailable")), r[0]);
     try {
       return new RunView((UUID) r[0], (Integer) r[1], (String) r[2], (Instant) r[3], json.readValue((String) r[4], Summary.class), results);
     } catch (JsonProcessingException e) {

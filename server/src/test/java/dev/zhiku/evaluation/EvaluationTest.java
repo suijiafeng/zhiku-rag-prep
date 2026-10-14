@@ -15,6 +15,7 @@ import dev.zhiku.ingestion.IngestionWorker;
 import dev.zhiku.support.IntegrationTest;
 import dev.zhiku.support.TestJwt;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -203,6 +204,36 @@ class EvaluationTest extends IntegrationTest {
     approval.get(5, java.util.concurrent.TimeUnit.SECONDS);
     assertThat(edit.get(5, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(409);
     assertThat(jdbc.queryForObject("SELECT quote FROM eval_evidence WHERE case_id = ?", String.class, caseId)).isEqualTo("10 年以上 15 天");
+  }
+
+  @Test
+  void aSpanCountsAsRetrievedOnlyWhenRetrievedChunksCoverAllOfIt() {
+    assertThat(EvaluationService.covers(10, 20, List.of(new int[] {0, 11}))).isFalse();
+    assertThat(EvaluationService.covers(10, 20, List.of(new int[] {0, 15}, new int[] {15, 30}))).isTrue();
+    assertThat(EvaluationService.covers(10, 20, List.of(new int[] {0, 14}, new int[] {16, 30}))).isFalse();
+    assertThat(EvaluationService.covers(10, 20, List.of(new int[] {12, 25}, new int[] {5, 13}, new int[] {5, 13}))).isTrue();
+    assertThat(EvaluationService.covers(10, 20, List.of())).isFalse();
+  }
+
+  @Test
+  void evidenceFromWithdrawnOrDeletedSourcesIsReportedSeparatelyBeforeAndAfterCleanup() throws Exception {
+    approve(id(createCase(caseJson("年假有几天", leave, "10 年以上 15 天"))));
+    approve(id(createCase(caseJson("住宿标准是什么", travel, "出差住宿按城市分级执行标准"))));
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", travel);
+    run(5).andExpect(status().isOk())
+        .andExpect(jsonPath("$.summary.evaluated").value(1))
+        .andExpect(jsonPath("$.summary.sourceUnavailable").value(1))
+        .andExpect(jsonPath("$.summary.prepFailed").value(0))
+        .andExpect(jsonPath("$.summary.hit.den").value(1))
+        .andExpect(jsonPath("$.results[?(@.sourceUnavailable == true)].question").value(org.hamcrest.Matchers.contains("住宿标准是什么")));
+
+    jdbc.update("UPDATE content_version SET withdrawn_at = NULL WHERE id = ?", travel);
+    jdbc.update("UPDATE document SET deleted_at = now(), cleanup_status = 'pending' WHERE id = (SELECT document_id FROM content_version WHERE id = ?)", travel);
+    run(5).andExpect(jsonPath("$.summary.sourceUnavailable").value(1)).andExpect(jsonPath("$.summary.prepFailed").value(0));
+    jdbc.update("DELETE FROM chunk WHERE version_id = ?", travel);
+    run(5).andExpect(jsonPath("$.summary.sourceUnavailable").value(1)).andExpect(jsonPath("$.summary.prepFailed").value(0));
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-runs/latest", kb), operator, Role.KB_OPERATOR))
+        .andExpect(jsonPath("$.results[?(@.sourceUnavailable == true)].question").value(org.hamcrest.Matchers.contains("住宿标准是什么")));
   }
 
   @Test

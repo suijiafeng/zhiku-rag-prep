@@ -482,8 +482,10 @@ paths:
       operationId: runEvaluation
       description: >-
         Retrieval evaluation of approved answerable cases with the caller's authorized scope; no model call.
-        Spans are mapped onto current chunks; unmappable cases are preparation failures excluded from denominators.
-        Reports Hit@K, evidence recall (spans and macro), P95 retrieval latency. Answer correctness is not measured here.
+        Cases whose evidence version is not eligible now (withdrawn, deleted, expired) are counted as sourceUnavailable,
+        before and after deletion cleanup alike. Spans are mapped onto current chunks; unmappable cases are preparation
+        failures. Both are excluded from denominators. A span counts as retrieved only when the retrieved chunks cover all
+        of it. Reports Hit@K, evidence recall (spans and macro), P95 retrieval latency. Answer correctness is not measured here.
       requestBody: {content: {application/json: {schema: {type: object, properties: {k: {type: integer, minimum: 1, maximum: 30, default: 5}}}}}}
       responses:
         '200': {description: Run with results}
