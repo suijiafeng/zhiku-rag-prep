@@ -191,9 +191,9 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
           <Space wrap>
             <Button loading={busy} onClick={() => void act(() => client.saveConfigCandidate(kbId, candidateBody(form, revision)), "候选已保存，验证后才能发布")}>保存候选</Button>
             <Button loading={busy} disabled={!candidate || dirty} title={dirty ? blockers.join("；") : undefined}
-              onClick={() => candidate && !dirty && void act(() => client.configAction(kbId, "validate", candidate.revision), "验证完成")}>验证</Button>
+              onClick={() => candidate && !dirty && void act(() => client.configAction(kbId, "validate", candidate.id, candidate.revision), "验证完成")}>验证</Button>
             <Button type="primary" loading={busy} disabled={blockers.length > 0} title={blockers.join("；")}
-              onClick={() => candidate && blockers.length === 0 && void act(() => client.configAction(kbId, "publish", candidate.revision), "已发布，新问答请求立即使用")}>发布</Button>
+              onClick={() => candidate && blockers.length === 0 && void act(() => client.configAction(kbId, "publish", candidate.id, candidate.revision), "已发布，新问答请求立即使用")}>发布</Button>
             {blockers.length > 0 && <span className="card-unit">{blockers.join("；")}</span>}
           </Space>
         </Space>

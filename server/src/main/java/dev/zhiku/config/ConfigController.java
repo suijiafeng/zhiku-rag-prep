@@ -18,7 +18,8 @@ class ConfigController {
   record CandidateRequest(@NotNull Integer retrievalK, @NotNull Integer contextChunks, @Size(max = 200) String handoffChannel,
       @Size(max = 1000) String promptAddendum, @Size(max = 500) String note, Integer expectedRevision) {}
 
-  record RevisionRequest(@NotNull Integer expectedRevision) {}
+  /** 候选身份与修订号一起校验：候选被发布后新建的候选修订号从 1 重新计数，只比修订号会把旧操作用到新候选上。 */
+  record RevisionRequest(@NotNull UUID candidateId, @NotNull Integer expectedRevision) {}
 
   private final ConfigService service;
 
@@ -39,12 +40,12 @@ class ConfigController {
 
   @PostMapping("/candidate/validate")
   ConfigService.View validate(@PathVariable UUID kbId, @Valid @RequestBody RevisionRequest request) {
-    return service.validate(kbId, request.expectedRevision());
+    return service.validate(kbId, request.candidateId(), request.expectedRevision());
   }
 
   @PostMapping("/candidate/publish")
   ConfigService.View publish(@PathVariable UUID kbId, @Valid @RequestBody RevisionRequest request) {
-    return service.publish(kbId, request.expectedRevision());
+    return service.publish(kbId, request.candidateId(), request.expectedRevision());
   }
 
   @PostMapping("/versions/{version}/rollback")

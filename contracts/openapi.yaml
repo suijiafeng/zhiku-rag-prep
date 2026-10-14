@@ -451,7 +451,7 @@ paths:
         one retrieval evaluation run, recorded as the basis; humanQualityChecked is always false (not measured here).
         publish needs a validation of the current revision (else 409) and makes the candidate the next published version;
         the previous one becomes superseded. New chat requests use it; requests in flight keep theirs. Audited.
-      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expectedRevision], properties: {expectedRevision: {type: integer}}}}}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [candidateId, expectedRevision], properties: {candidateId: {type: string, format: uuid, description: id of the candidate the operator saw; a different current candidate (the old one was published or rebuilt) returns 409 CONFIG_CONFLICT}, expectedRevision: {type: integer}}}}}}
       responses:
         '200': {description: Updated config, content: {application/json: {schema: {$ref: '#/components/schemas/KnowledgeBaseConfig'}}}}
         '409': {$ref: '#/components/responses/Error'}

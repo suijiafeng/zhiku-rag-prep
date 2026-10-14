@@ -438,8 +438,8 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     config: (kbId: string) => request<ConfigOverview>(`${kb(kbId)}/config`),
     saveConfigCandidate: (kbId: string, body: ConfigCandidateBody) =>
       request<KnowledgeBaseConfig>(`${kb(kbId)}/config/candidate`, { ...post(body), method: "PUT" }),
-    configAction: (kbId: string, action: "validate" | "publish", expectedRevision: number) =>
-      request<KnowledgeBaseConfig>(`${kb(kbId)}/config/candidate/${action}`, post({ expectedRevision })),
+    configAction: (kbId: string, action: "validate" | "publish", candidateId: string, expectedRevision: number) =>
+      request<KnowledgeBaseConfig>(`${kb(kbId)}/config/candidate/${action}`, post({ candidateId, expectedRevision })),
     rollbackConfig: (kbId: string, version: number) =>
       request<KnowledgeBaseConfig>(`${kb(kbId)}/config/versions/${version}/rollback`, { method: "POST" }),
     trace: (kbId: string, traceId: string) => request<StoredTrace>(`${kb(kbId)}/traces/${e(traceId)}`),

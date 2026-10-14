@@ -85,9 +85,30 @@ class ConfigTest extends IntegrationTest {
         .contentType("application/json").content(body));
   }
 
+  /** 以当前候选的身份发起操作；测试旧候选身份时用带 candidateId 的重载。 */
   ResultActions action(String name, int expectedRevision) throws Exception {
+    var ids = jdbc.queryForList("SELECT id FROM kb_config WHERE kb_id = ? AND status = 'candidate'", UUID.class, kb);
+    return action(name, ids.isEmpty() ? UUID.randomUUID() : ids.getFirst(), expectedRevision);
+  }
+
+  ResultActions action(String name, UUID candidateId, int expectedRevision) throws Exception {
     return mvc.perform(post("/api/knowledge-bases/{kb}/config/candidate/{action}", kb, name).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR))
-        .contentType("application/json").content("{\"expectedRevision\":" + expectedRevision + "}"));
+        .contentType("application/json").content("{\"candidateId\":\"" + candidateId + "\",\"expectedRevision\":" + expectedRevision + "}"));
+  }
+
+  /** C52：候选 A 发布后新建的候选 B 修订号也是 1，A 的旧操作不能作用于 B。 */
+  @Test
+  void anOperationForAPublishedCandidateDoesNotApplyToTheNextCandidate() throws Exception {
+    int rev = revision(save(candidate(10, 4, "", "", "A", null)).andExpect(status().isOk()));
+    var a = repository.candidate(kb, false).orElseThrow().id();
+    action("validate", a, rev).andExpect(status().isOk());
+    action("publish", a, rev).andExpect(status().isOk());
+    int revB = revision(save(candidate(12, 4, "", "", "B", null)).andExpect(status().isOk()));
+    assertThat(revB).isEqualTo(rev);
+    action("validate", a, rev).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFIG_CONFLICT"));
+    action("publish", a, rev).andExpect(status().isConflict());
+    getConfig().andExpect(jsonPath("$.candidate.note").value("B")).andExpect(jsonPath("$.candidate.validatedAt").doesNotExist())
+        .andExpect(jsonPath("$.published.version").value(1));
   }
 
   static String candidate(int k, int contextChunks, String channel, String addendum, String note, Integer expectedRevision) {

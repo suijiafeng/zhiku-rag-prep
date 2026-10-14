@@ -98,9 +98,9 @@ public class ConfigService {
    * 再运行检索评测，作为发布依据记录。
    */
   @Transactional
-  public View validate(UUID kbId, int expectedRevision) {
+  public View validate(UUID kbId, UUID candidateId, int expectedRevision) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
-    var candidate = current(kbId, expectedRevision);
+    var candidate = current(kbId, candidateId, expectedRevision);
     search.searchAuthorized(scope, kbId, "配置验证", candidate.retrievalK(), Instant.now(), "evaluation", UUID.randomUUID(), 0);
     var run = evaluation.run(kbId, candidate.retrievalK());
     repository.markValidated(candidate.id(), candidate.revision(), run.id(), run.summary().cases());
@@ -109,9 +109,9 @@ public class ConfigService {
   }
 
   @Transactional
-  public View publish(UUID kbId, int expectedRevision) {
+  public View publish(UUID kbId, UUID candidateId, int expectedRevision) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
-    var candidate = current(kbId, expectedRevision);
+    var candidate = current(kbId, candidateId, expectedRevision);
     if (candidate.validatedRevision() == null || candidate.validatedRevision() != candidate.revision()) {
       throw conflict("候选配置尚未验证，或验证后又被修改");
     }
@@ -130,8 +130,10 @@ public class ConfigService {
     return view(repository.published(kbId).orElseThrow());
   }
 
-  private ConfigRepository.Row current(UUID kbId, int expectedRevision) {
+  /** 乐观锁同时绑定候选身份与修订号：候选被发布后新建的候选从修订 1 重新计数，旧页面的操作不能落到它身上。 */
+  private ConfigRepository.Row current(UUID kbId, UUID candidateId, int expectedRevision) {
     var candidate = repository.candidate(kbId, true).orElseThrow(() -> conflict("没有候选配置"));
+    if (!candidate.id().equals(candidateId)) throw conflict("候选配置已更换（原候选已发布或被重建），请重新加载后再确认");
     if (candidate.revision() != expectedRevision) throw conflict("候选配置已被他人修改，请重新加载后再确认");
     return candidate;
   }
