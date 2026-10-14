@@ -97,6 +97,34 @@ describe("streamAnswer", () => {
     expect(conversation).toBeUndefined();
   });
 
+  it("asks the server about a stream that broke off and loads a saved answer from history", async () => {
+    const citation = { documentId: "d", versionId: "v", title: "手册", excerpt: "…" };
+    const urls: string[] = [];
+    const client = createClient("tok", async (url) => {
+      urls.push(url);
+      if (url === "/api/chat") return stream(sse("draft", { text: "年假[1]" }) + sse("validated", { citations: [citation], validation: "metadata-only" }));
+      return json({ status: "complete", conversationId: "c9", messageId: "m9", acceptedAt: "2026-10-14T00:00:00Z" });
+    });
+    const actions: ChatAction[] = [{ type: "start", question: "年假?" }];
+    let conversation: string | undefined;
+    await streamAnswer(client, { kbId: "kb", question: "年假?" }, (a) => actions.push(a), { onConversation: (id) => (conversation = id) });
+    const state = actions.reduce(chatReducer, initialChatState);
+    expect(urls[1]).toMatch(/^\/api\/chat\/requests\/[0-9a-f-]{36}$/);
+    expect(conversation).toBe("c9");
+    expect(state).toMatchObject({ status: "failed", text: "", error: { code: "ANSWER_SAVED" } });
+  });
+
+  it("keeps the original failure when the server has no completed answer for it", async () => {
+    const client = createClient("tok", async (url) => url === "/api/chat"
+      ? stream(sse("draft", { text: "年假" }))
+      : json({ status: "running", acceptedAt: "2026-10-14T00:00:00Z" }));
+    const actions: ChatAction[] = [{ type: "start", question: "年假?" }];
+    let conversation: string | undefined;
+    await streamAnswer(client, { kbId: "kb", question: "年假?" }, (a) => actions.push(a), { onConversation: (id) => (conversation = id) });
+    expect(actions.reduce(chatReducer, initialChatState)).toMatchObject({ status: "failed", error: { code: "STREAM_INCOMPLETE" } });
+    expect(conversation).toBeUndefined();
+  });
+
   it("turns HTTP errors into a failed state", async () => {
     const { state } = await run(json({ code: "DEPENDENCY_UNAVAILABLE", message: "x", requestId: "r" }, 503));
     expect(state).toMatchObject({ status: "failed", error: { code: "DEPENDENCY_UNAVAILABLE" } });

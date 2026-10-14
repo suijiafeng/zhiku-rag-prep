@@ -54,12 +54,13 @@ export async function streamAnswer(
 ): Promise<void> {
   const { signal, onConversation } = options;
   const emit = (event: ChatEvent) => dispatch({ type: "event", event });
+  const clientRequestId = newRequestId();
   let res: Response;
   try {
     res = await client.raw("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ ...request, clientRequestId: newRequestId() }),
+      body: JSON.stringify({ ...request, clientRequestId }),
       ...(signal ? { signal } : {}),
     });
   } catch {
@@ -82,6 +83,7 @@ export async function streamAnswer(
   let buffer = "";
   let terminal = false;
   let validated = false;
+  let broken: ChatEvent | undefined;
   const handle = (block: string) => {
     let name = "message";
     const data: string[] = [];
@@ -113,11 +115,26 @@ export async function streamAnswer(
         buffer = buffer.slice(cut.index + cut[0].length);
       }
     }
-    if (!terminal) emit(fail("STREAM_INCOMPLETE", "回答未完整结束"));
+    if (!terminal) broken = fail("STREAM_INCOMPLETE", "回答未完整结束");
   } catch {
     if (signal?.aborted) dispatch({ type: "cancel" });
-    else emit(fail("NETWORK", "连接中断"));
+    else broken = fail("NETWORK", "连接中断");
   } finally {
     reader.cancel().catch(() => undefined);
   }
+  if (broken) emit(await reconcile(client, clientRequestId, broken, onConversation));
+}
+
+/** 流在结束事件前中断时，以服务端结果为准：回答已保存就从历史载入，不重新提问。 */
+async function reconcile(client: ApiClient, clientRequestId: string, broken: ChatEvent, onConversation?: (id: string) => void): Promise<ChatEvent> {
+  try {
+    const outcome = await client.chatRequest(clientRequestId);
+    if (outcome.status === "complete" && outcome.conversationId) {
+      onConversation?.(outcome.conversationId);
+      return fail("ANSWER_SAVED", "连接中断，但回答已在服务端完成，已从历史记录载入");
+    }
+  } catch {
+    // 查询失败时保留原错误
+  }
+  return broken;
 }

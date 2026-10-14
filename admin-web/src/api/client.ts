@@ -349,6 +349,8 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       request<{ items: RecordItem[]; stats: RecordStats; canReadOthers: boolean }>(`${kb(kbId)}/records?filter=${filter}`),
     updateFeedback: (kbId: string, messageId: string, body: FeedbackUpdate) =>
       request<void>(`${kb(kbId)}/feedback/${e(messageId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    chatRequest: (clientRequestId: string) =>
+      request<{ status: string; conversationId?: string; messageId?: string; acceptedAt: string }>(`/api/chat/requests/${e(clientRequestId)}`),
     feedbackHistory: (kbId: string, messageId: string) => request<HandlingEntry[]>(`${kb(kbId)}/feedback/${e(messageId)}/history`),
     conversations: () => request<Conversation[]>("/api/conversations"),
     messages: (id: string) => request<HistoryMessage[]>(`/api/conversations/${e(id)}/messages`),

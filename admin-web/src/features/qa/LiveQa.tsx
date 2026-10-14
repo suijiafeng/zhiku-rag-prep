@@ -173,7 +173,8 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                   </>
                 )}
                 {stream.status === "cancelled" && <Alert type="info" showIcon title="已停止生成，未完成的回答已丢弃" />}
-                {stream.status === "failed" && (
+                {stream.status === "failed" && stream.error?.code === "ANSWER_SAVED" && <Alert type="info" showIcon title={stream.error.message} />}
+                {stream.status === "failed" && stream.error?.code !== "ANSWER_SAVED" && (
                   <ErrorState code={stream.error?.code ?? "UNKNOWN"} message={stream.error?.message ?? "生成失败"}
                     requestId={stream.error?.requestId || undefined} onRetry={() => void send(stream.question)} />
                 )}
