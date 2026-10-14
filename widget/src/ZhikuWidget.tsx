@@ -85,7 +85,17 @@ export function ZhikuWidget({
   const running = turns.some((t) => t.state === "running");
   const tokenOpts = getAccessToken ? { getAccessToken } : {};
 
-  useEffect(() => () => controller.current?.abort(), []);
+  // 宿主切换知识库或接口地址后：中止在途请求、清空对话并作废迟到回调，不把旧会话带到新库。
+  const context = useRef(0);
+  useEffect(() => {
+    context.current++;
+    controller.current?.abort();
+    controller.current = null;
+    conversation.current = undefined;
+    setTurns([]);
+    setExpanded(undefined);
+    return () => controller.current?.abort();
+  }, [endpoint, knowledgeBaseId]);
   useEffect(() => {
     body.current?.scrollTo?.({ top: body.current.scrollHeight });
   }, [turns]);
@@ -97,6 +107,7 @@ export function ZhikuWidget({
     const q = text.trim();
     if (!q || running) return;
     const id = Date.now();
+    const key = context.current;
     const abort = new AbortController();
     controller.current = abort;
     setQuestion("");
@@ -110,6 +121,8 @@ export function ZhikuWidget({
         if (e.event === "draft") update(id, (t) => ({ text: t.text + e.data.text }));
       },
     });
+    // 等待期间宿主已切换上下文：这条结果属于旧对话，丢弃。
+    if (key !== context.current) return;
     if (outcome.status === "complete") {
       if (outcome.conversationId) conversation.current = outcome.conversationId;
       update(id, { state: "complete", text: outcome.text, citations: outcome.citations, ...(outcome.messageId ? { messageId: outcome.messageId } : {}) });
