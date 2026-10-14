@@ -60,6 +60,14 @@ describe("records page", () => {
     expect(candidateBody(items[0]!)).toEqual({ question: "年假有几天?", label: "answerable", source: "feedback", originMessageId: "m1" });
   });
 
+  it("offers the trace of an answer when one was recorded", () => {
+    const traced: RecordItem = { ...items[0]!, traceId: "t1" };
+    const withTrace = renderToStaticMarkup(<RecordsTable items={[traced]} onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} onTrace={() => {}} />);
+    expect(withTrace).toContain("查看轨迹");
+    const without = renderToStaticMarkup(<RecordsTable items={[items[0]!]} onStatus={() => {}} onClose={() => {}} onHistory={() => {}} onCandidate={() => {}} onTrace={() => {}} />);
+    expect(without).not.toContain("查看轨迹");
+  });
+
   it("asks to connect instead of showing invented records", () => {
     const html = renderToStaticMarkup(<RecordsPage client={undefined} kbId={undefined} />);
     expect(html).toContain("连接本地服务");

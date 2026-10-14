@@ -52,13 +52,37 @@ export interface DocumentInfo {
   deletion?: DeletionInfo | null;
 }
 
+export interface TraceStage {
+  key: string;
+  name: string;
+  status: "success" | "failed" | "skipped" | "cancelled";
+  startedAt?: string | null;
+  endedAt?: string | null;
+  elapsedMs: number | null;
+  summary: string;
+}
+
+/** 服务端存档的轨迹：只有元数据，没有问题和片段正文。 */
+export interface StoredTrace {
+  traceId: string;
+  origin: "chat" | "debug" | "evaluation";
+  at: string;
+  k: number;
+  embeddingModel: string | null;
+  dimension: number | null;
+  messageId: string | null;
+  createdAt: string;
+  stages: TraceStage[];
+  candidates: { rank: number; chunkId: string; versionId: string; documentTitle: string | null; score: number }[];
+}
+
 export interface TraceResult {
   traceId: string;
   question: string;
   at: string;
   embeddingModel: string;
   dimension: number;
-  stages: { key: string; name: string; status: "success" | "failed" | "skipped" | "cancelled"; elapsedMs: number | null; summary: string }[];
+  stages: TraceStage[];
   candidates: {
     chunkId: string; documentId: string; title: string; versionId: string; versionLabel: string; seq: number;
     heading: string | null; startOffset: number; endOffset: number; text: string; score: number; rank: number;
@@ -109,6 +133,7 @@ export interface RecordItem {
   outcome: TurnOutcome;
   /** 回答（或其所依据的更早轮次）的某个来源不可用后为 false；非回答为 null。 */
   sourceAvailable: boolean | null;
+  traceId?: string | null;
 }
 
 export interface HandlingEntry {
@@ -349,6 +374,7 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       request<{ items: RecordItem[]; stats: RecordStats; canReadOthers: boolean }>(`${kb(kbId)}/records?filter=${filter}`),
     updateFeedback: (kbId: string, messageId: string, body: FeedbackUpdate) =>
       request<void>(`${kb(kbId)}/feedback/${e(messageId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    trace: (kbId: string, traceId: string) => request<StoredTrace>(`${kb(kbId)}/traces/${e(traceId)}`),
     chatRequest: (clientRequestId: string) =>
       request<{ status: string; conversationId?: string; messageId?: string; acceptedAt: string }>(`/api/chat/requests/${e(clientRequestId)}`),
     feedbackHistory: (kbId: string, messageId: string) => request<HandlingEntry[]>(`${kb(kbId)}/feedback/${e(messageId)}/history`),

@@ -1,7 +1,8 @@
 import { Alert, Button, Card, Col, Modal, Progress, Row, Segmented, Select, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, type ApiClient, type EvalCase, type FeedbackReason, type FeedbackStatus, type FeedbackUpdate, type HandlingEntry, type RecordItem, type RecordStats } from "../../api/client";
+import { ApiError, type ApiClient, type EvalCase, type FeedbackReason, type FeedbackStatus, type FeedbackUpdate, type HandlingEntry, type RecordItem, type RecordStats, type StoredTrace } from "../../api/client";
 import { CloseFeedbackModal, HandlingList, STATUS_LABEL, type ClosingStatus } from "./CloseFeedback";
+import { StoredTraceView } from "../debug/StoredTrace";
 import { ROOT_CAUSES } from "../evaluation/fixtures";
 import { REASON_LABEL } from "../qa/FeedbackBar";
 import { OUTCOME_LABEL } from "../qa/outcome";
@@ -34,12 +35,13 @@ export function candidateBody(item: RecordItem) {
 
 const isClosing = (s: FeedbackStatus): s is ClosingStatus => s === "resolved" || s === "wont_fix";
 
-export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate }: {
+export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate, onTrace }: {
   items: RecordItem[];
   onStatus: (messageId: string, status: FeedbackStatus, rootCause: string | undefined) => void;
   onClose: (item: RecordItem, status: ClosingStatus) => void;
   onHistory: (item: RecordItem) => void;
   onCandidate: (item: RecordItem) => void;
+  onTrace?: (item: RecordItem) => void;
 }) {
   return (
     <Table<RecordItem>
@@ -104,10 +106,15 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate 
           title: "操作",
           key: "op",
           width: 130,
-          render: (_, r) => r.rating === "down"
-            ? <Button size="small" disabled={!r.question} title={r.question ? "创建评测候选，到评测中心补齐证据后批准" : "无权查看他人问答正文"}
-                onClick={() => onCandidate(r)}>加入评测候选</Button>
-            : null,
+          render: (_, r) => (
+            <>
+              {r.rating === "down" && (
+                <Button size="small" disabled={!r.question} title={r.question ? "创建评测候选，到评测中心补齐证据后批准" : "无权查看他人问答正文"}
+                  onClick={() => onCandidate(r)}>加入评测候选</Button>
+              )}
+              {r.traceId && onTrace && <Button type="link" size="small" onClick={() => onTrace(r)}>查看轨迹</Button>}
+            </>
+          ),
         },
       ]}
     />
@@ -186,8 +193,21 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
     }
   };
 
+  const [trace, setTrace] = useState<StoredTrace>();
+  const onTrace = async (item: RecordItem) => {
+    if (!client || !kbId || !item.traceId) return;
+    try {
+      setTrace(await client.trace(kbId, item.traceId));
+    } catch (e) {
+      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "读取轨迹失败");
+    }
+  };
+
   return (
     <div className="page">
+      <Modal open={trace !== undefined} title="检索与生成轨迹" footer={null} width={760} onCancel={() => setTrace(undefined)}>
+        {trace && <StoredTraceView trace={trace} />}
+      </Modal>
       <CloseFeedbackModal status={closing?.status} messageId={closing?.item.messageId} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
         onSubmit={submitClose} onCancel={() => setClosing(undefined)} />
       <Modal open={history !== undefined} title="处理记录" footer={null} onCancel={() => setHistory(undefined)}>
@@ -211,7 +231,8 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
               {!data && !error && <div className="state-pad"><LoadingList /></div>}
               {data?.items.length === 0 && <EmptyState icon="chat" title="暂无问答记录" description="员工在问答工作台或挂件中提问后，记录会出现在这里。" />}
               {data && data.items.length > 0 && <RecordsTable items={data.items} onStatus={(m, s, c) => void onStatus(m, s, c)}
-                onClose={(r, s) => void onClose(r, s)} onHistory={(r) => void onHistory(r)} onCandidate={(r) => void onCandidate(r)} />}
+                onClose={(r, s) => void onClose(r, s)} onHistory={(r) => void onHistory(r)} onCandidate={(r) => void onCandidate(r)}
+                onTrace={(r) => void onTrace(r)} />}
             </Card>
           </Col>
           <Col xs={24} xl={7}>

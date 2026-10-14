@@ -207,3 +207,4 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .eval-form { display: grid; gap: 8px; }
 .ant-popconfirm { max-width: 360px; }
 .eval-occurrence { width: 100%; }
+.trace-stages { margin: 12px 0; }
