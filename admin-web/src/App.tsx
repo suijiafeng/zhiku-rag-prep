@@ -8,6 +8,7 @@ import { LiveDebug } from "./features/debug/LiveDebug";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { UsersPage } from "./features/users/UsersPage";
 import { RecordsPage } from "./features/records/RecordsPage";
+import { IntegrationPage } from "./features/integration/IntegrationPage";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
 import { QaWorkbench } from "./features/qa/QaWorkbench";
@@ -26,6 +27,7 @@ const NAV = [
   { key: "records", label: "问答记录" },
   { key: "debug", label: "检索调试" },
   { key: "evaluation", label: "评测中心" },
+  { key: "integration", label: "API 与集成" },
   { key: "users", label: "用户与权限" },
   { key: "settings", label: "系统设置" },
 ] as const;
@@ -50,6 +52,7 @@ export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   if (key === "evaluation") return <EvaluationPage data={evaluationFixture} />;
   if (key === "users") return <UsersPage client={ctx.client} />;
   if (key === "records") return <RecordsPage client={ctx.client} kbId={ctx.kbId} />;
+  if (key === "integration") return <IntegrationPage kbId={ctx.kbId} kbName={ctx.kbName} />;
   return <SettingsPage status={ctx.status} error={ctx.statusError} />;
 }
 
