@@ -23,9 +23,17 @@ export function candidateBody(form: ConfigForm, revision: number | undefined): C
   };
 }
 
-export function publishBlockers(candidate: KnowledgeBaseConfig | undefined): string[] {
+export function publishBlockers(candidate: KnowledgeBaseConfig | undefined, dirty = false): string[] {
   if (!candidate) return ["尚无候选配置"];
+  if (dirty) return ["有未保存的修改，请先保存并重新验证"];
   return candidate.validatedAt ? [] : ["尚未验证"];
+}
+
+/** 编辑中的表单是否与已保存的候选不同：有差异时验证和发布作用的是旧内容，必须先保存。 */
+export function isDirty(form: ConfigForm, saved: ConfigForm): boolean {
+  return form.retrievalK !== saved.retrievalK || form.contextChunks !== saved.contextChunks
+    || form.handoffChannel.trim() !== saved.handoffChannel.trim() || form.promptAddendum.trim() !== saved.promptAddendum.trim()
+    || form.note.trim() !== saved.note.trim();
 }
 
 /** 验证只证明检索可用并记录一次检索评测；回答质量需要人工评测，这里不替它背书。 */
@@ -110,6 +118,7 @@ const failure = (e: unknown) => {
 export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }) {
   const [overview, setOverview] = useState<ConfigOverview>();
   const [form, setForm] = useState<ConfigForm>();
+  const [loadError, setLoadError] = useState<string>();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -117,13 +126,15 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
   const gate = useRef(createRequestGate());
   const load = useCallback(async () => {
     const g = gate.current.next();
+    setLoadError(undefined);
     try {
       const o = await client.config(kbId);
       if (!gate.current.isCurrent(g)) return;
       setOverview(o);
       setForm(formOf(o.candidate ?? o.published ?? undefined, o.defaults));
     } catch (e) {
-      setError(failure(e));
+      if (!gate.current.isCurrent(g)) return;
+      setLoadError(failure(e));
     }
   }, [client, kbId]);
   useEffect(() => void load(), [load]);
@@ -144,16 +155,24 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
     await load();
   };
 
-  if (!overview || !form) return <div className="state-pad"><LoadingList /></div>;
+  if (!overview || !form) {
+    // 首次加载失败要显示原因和重试入口，而不是一直显示加载占位。
+    if (loadError) return <Alert type="error" showIcon className="scaffold-alert" title="配置加载失败" description={loadError}
+      action={<Button size="small" onClick={() => void load()}>重试</Button>} />;
+    return <div className="state-pad"><LoadingList /></div>;
+  }
   const candidate = overview.candidate ?? undefined;
   const revision = candidate?.revision;
-  const blockers = publishBlockers(candidate);
+  const dirty = isDirty(form, formOf(candidate ?? overview.published ?? undefined, overview.defaults));
+  const blockers = publishBlockers(candidate, dirty);
   return (
     <>
+      {loadError && <Alert type="error" showIcon closable className="scaffold-alert" title={`刷新失败：${loadError}`} onClose={() => setLoadError(undefined)} />}
       {error && <Alert type="error" showIcon closable className="scaffold-alert" title={error} onClose={() => setError(undefined)} />}
       {notice && <Alert type="success" showIcon closable className="scaffold-alert" title={notice} onClose={() => setNotice(undefined)} />}
       <PublishedCard published={overview.published} history={overview.history} defaults={overview.defaults} />
-      <Card size="small" className="debug-card" title={candidate ? `候选配置 · 修订 ${candidate.revision}` : "候选配置"}>
+      <Card size="small" className="debug-card" title={candidate ? `候选配置 · 修订 ${candidate.revision}` : "候选配置"}
+        extra={dirty && <Tag color="orange">未保存</Tag>}>
         <Space orientation="vertical" className="close-form">
           <Space wrap>
             <InputNumber min={1} max={30} addonBefore="召回 K" value={form.retrievalK} aria-label="召回 K"
@@ -171,9 +190,10 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
           </div>
           <Space wrap>
             <Button loading={busy} onClick={() => void act(() => client.saveConfigCandidate(kbId, candidateBody(form, revision)), "候选已保存，验证后才能发布")}>保存候选</Button>
-            <Button loading={busy} disabled={!candidate} onClick={() => candidate && void act(() => client.configAction(kbId, "validate", candidate.revision), "验证完成")}>验证</Button>
+            <Button loading={busy} disabled={!candidate || dirty} title={dirty ? blockers.join("；") : undefined}
+              onClick={() => candidate && !dirty && void act(() => client.configAction(kbId, "validate", candidate.revision), "验证完成")}>验证</Button>
             <Button type="primary" loading={busy} disabled={blockers.length > 0} title={blockers.join("；")}
-              onClick={() => candidate && void act(() => client.configAction(kbId, "publish", candidate.revision), "已发布，新问答请求立即使用")}>发布</Button>
+              onClick={() => candidate && blockers.length === 0 && void act(() => client.configAction(kbId, "publish", candidate.revision), "已发布，新问答请求立即使用")}>发布</Button>
             {blockers.length > 0 && <span className="card-unit">{blockers.join("；")}</span>}
           </Space>
         </Space>
