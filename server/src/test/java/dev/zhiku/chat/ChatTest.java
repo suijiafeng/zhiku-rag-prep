@@ -265,6 +265,35 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void aRequestCancelledBeforeItStartsNeverEmbedsTheQuestion() {
+    var scope = new AccessScope(enterprise, employee, Set.of(kb), Set.of(Role.EMPLOYEE));
+    var embedded = new java.util.concurrent.atomic.AtomicInteger();
+    embeddings.beforeEmbed = embedded::incrementAndGet;
+    model.script = m -> { throw new AssertionError("cancelled requests must not reach the model"); };
+    var sent = new ArrayList<String>();
+    chat.stream(scope, kb, "年假有几天?", null, null, new ChatSink() {
+      @Override public void send(String event, Object data) { sent.add(event); }
+      @Override public boolean cancelled() { return true; }
+    }, "test-request");
+    assertThat(embedded.get()).isZero();
+    assertThat(sent).isEmpty();
+    assertThat(lastStatus()).isEqualTo("cancelled::true");
+  }
+
+  @Test
+  void aRequestCancelledDuringRetrievalNeverReachesTheModel() {
+    var scope = new AccessScope(enterprise, employee, Set.of(kb), Set.of(Role.EMPLOYEE));
+    var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+    embeddings.beforeEmbed = () -> cancelled.set(true);
+    model.script = m -> { throw new AssertionError("cancelled requests must not reach the model"); };
+    chat.stream(scope, kb, "年假有几天?", null, null, new ChatSink() {
+      @Override public void send(String event, Object data) { }
+      @Override public boolean cancelled() { return cancelled.get(); }
+    }, "test-request");
+    assertThat(lastStatus()).isEqualTo("cancelled::true");
+  }
+
+  @Test
   void rejectsUnauthorizedRequestsBeforeStreaming() throws Exception {
     mvc.perform(post("/api/chat").header(HttpHeaders.AUTHORIZATION, token(UUID.randomUUID(), Role.EMPLOYEE))
             .contentType("application/json").content("{\"kbId\":\"" + kb + "\",\"question\":\"年假?\"}"))

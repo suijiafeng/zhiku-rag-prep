@@ -131,6 +131,11 @@ public class ChatService {
       throws IOException {
     var model = requireModel();
     var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId);
+    // 排队期间已取消的请求不再做向量化，也不调用模型。
+    if (sink.cancelled()) {
+      record(turn, "cancelled", null);
+      return;
+    }
     var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
     // 追问与上一个可见问题一起检索，使“那试用期呢”这类指代能够解析。
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
@@ -139,6 +144,10 @@ public class ChatService {
       sources = retrieval.searchAuthorized(scope, kbId, searchQuery, settings.contextChunks(), Instant.now()).candidates();
     } catch (ApiException e) {
       fail(turn, sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
+      return;
+    }
+    if (sink.cancelled()) {
+      record(turn, "cancelled", null);
       return;
     }
     if (sources.isEmpty()) {
