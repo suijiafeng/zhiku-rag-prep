@@ -51,10 +51,15 @@ public class IngestionWorker {
   /** 最多处理一个任务；返回是否认领到任务。 */
   public boolean processNext() {
     if (!canProcess()) return false;
-    repository.failExhausted(settings.maxAttempts());
+    reapExpired();
     var job = claim();
     job.ifPresent(this::process);
     return job.isPresent();
+  }
+
+  /** 把租约过期且次数用尽的任务标为失败。 */
+  public void reapExpired() {
+    repository.failExhausted(settings.maxAttempts());
   }
 
   /**

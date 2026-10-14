@@ -41,6 +41,8 @@ zhiku:
     max-attempts: 3
     worker-enabled: true
     poll-interval: PT2S
+    # 同时处理的摄取任务数：一个卡住的任务只占一个槽，其他文档照常完成。
+    concurrency: 4
   embedding:
     # none | ollama。为 none 时，导入会保存 chunk 但将版本标记为失败：没有向量就无法被检索。
     provider: ${ZHIKU_EMBEDDING_PROVIDER:none}
