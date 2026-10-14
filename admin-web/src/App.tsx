@@ -61,7 +61,7 @@ export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   if (key === "users") return <UsersPage client={ctx.client} />;
   if (key === "records") return <RecordsPage client={ctx.client} kbId={ctx.kbId} />;
   if (key === "integration") return <IntegrationPage kbId={ctx.kbId} kbName={ctx.kbName} />;
-  return <SettingsPage status={ctx.status} error={ctx.statusError} />;
+  return <SettingsPage status={ctx.status} error={ctx.statusError} {...(live ? { live } : {})} />;
 }
 
 type Mode = "login" | "sample";

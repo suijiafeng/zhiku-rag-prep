@@ -1,6 +1,7 @@
 import { Alert, Card, Col, Row, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
-import type { Status } from "../../api/client";
+import type { ApiClient, Status } from "../../api/client";
+import { LiveConfig } from "./LiveConfig";
 
 const effectRules = [
   { title: "对话模型与生成参数", body: "新请求使用新版本，进行中的请求保持原版本。" },
@@ -18,19 +19,20 @@ function Row2({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** 实时服务端配置的只读视图（GET /api/status）。编辑需要 candidate/verify/publish 流程，尚未实现。 */
-export function SettingsPage({ status, error }: { status: Status | undefined; error: string | undefined }) {
+/** 已连接并选中知识库时在上方提供该库的配置流程；下方是部署配置的只读视图（GET /api/status）。 */
+export function SettingsPage({ status, error, live }: { status: Status | undefined; error: string | undefined; live?: { client: ApiClient; kbId: string } }) {
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <Typography.Title level={3} className="page-title">系统设置</Typography.Title>
-          <Typography.Text type="secondary" className="page-sub">模型 · 切块 · 检索参数 · 当前为只读视图</Typography.Text>
+          <Typography.Text type="secondary" className="page-sub">{live ? "知识库配置可保存候选、验证后发布；模型与切块为部署配置，只读" : "模型 · 切块 · 检索参数 · 当前为只读视图"}</Typography.Text>
         </div>
       </div>
       {error && <Alert type="error" showIcon className="scaffold-alert" title="无法读取服务状态" description={`请确认本地服务已启动（${error}）。`} />}
       {status && (
         <Row gutter={[16, 16]}>
+          {live && <Col xs={24} xl={16}><LiveConfig client={live.client} kbId={live.kbId} /></Col>}
           <Col xs={24} xl={16}>
             <Card size="small" className="debug-card" title="模型配置">
               <dl className="param-grid">
@@ -68,8 +70,8 @@ export function SettingsPage({ status, error }: { status: Status | undefined; er
             <Alert
               type="info"
               showIcon
-              title="当前页面只读"
-              description="配置修改需经过保存候选 → 评测验证 → 发布，并对重建索引单独确认；该流程尚未实现。不提供清空向量数据或批量重建的危险操作。"
+              title={live ? "模型与切块参数只读" : "当前页面只读"}
+              description="Embedding 模型、维度与切块参数改动需要全量重建索引，必须单独确认，本页不提供；也不提供清空向量数据或批量重建的危险操作。"
             />
           </Col>
         </Row>

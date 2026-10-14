@@ -52,6 +52,42 @@ export interface DocumentInfo {
   deletion?: DeletionInfo | null;
 }
 
+export interface KnowledgeBaseConfig {
+  id: string;
+  /** 候选为 null。 */
+  version: number | null;
+  status: "candidate" | "published" | "superseded";
+  revision: number;
+  retrievalK: number;
+  contextChunks: number;
+  handoffChannel: string | null;
+  promptAddendum: string | null;
+  note: string | null;
+  createdBy: string;
+  createdAt: string;
+  validatedAt: string | null;
+  validation: { evaluationRunId: string; cases: number; humanQualityChecked: boolean } | null;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  rolledBackFrom: number | null;
+}
+
+export interface ConfigOverview {
+  published: KnowledgeBaseConfig | null;
+  candidate: KnowledgeBaseConfig | null;
+  history: KnowledgeBaseConfig[];
+  defaults: { retrievalK: number; contextChunks: number; handoffChannel: string };
+}
+
+export interface ConfigCandidateBody {
+  retrievalK: number;
+  contextChunks: number;
+  handoffChannel?: string;
+  promptAddendum?: string;
+  note?: string;
+  expectedRevision?: number;
+}
+
 export interface TraceStage {
   key: string;
   name: string;
@@ -388,6 +424,13 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
       request<{ items: RecordItem[]; stats: RecordStats; canReadOthers: boolean }>(`${kb(kbId)}/records?filter=${filter}`),
     updateFeedback: (kbId: string, messageId: string, body: FeedbackUpdate) =>
       request<void>(`${kb(kbId)}/feedback/${e(messageId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    config: (kbId: string) => request<ConfigOverview>(`${kb(kbId)}/config`),
+    saveConfigCandidate: (kbId: string, body: ConfigCandidateBody) =>
+      request<KnowledgeBaseConfig>(`${kb(kbId)}/config/candidate`, { ...post(body), method: "PUT" }),
+    configAction: (kbId: string, action: "validate" | "publish", expectedRevision: number) =>
+      request<KnowledgeBaseConfig>(`${kb(kbId)}/config/candidate/${action}`, post({ expectedRevision })),
+    rollbackConfig: (kbId: string, version: number) =>
+      request<KnowledgeBaseConfig>(`${kb(kbId)}/config/versions/${version}/rollback`, { method: "POST" }),
     trace: (kbId: string, traceId: string) => request<StoredTrace>(`${kb(kbId)}/traces/${e(traceId)}`),
     chatRequest: (clientRequestId: string) =>
       request<{ status: string; conversationId?: string; messageId?: string; acceptedAt: string }>(`/api/chat/requests/${e(clientRequestId)}`),
