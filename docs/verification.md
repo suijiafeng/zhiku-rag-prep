@@ -101,3 +101,12 @@ Python yaml.safe_load 成功解析 compose.yaml、contracts/openapi.yaml、.gith
 - Flyway V16–V18 在本机已有数据的库上升级成功。
 - 未处理：C01–C04（仅示例数据模式的指标口径）。未验证：本批改动的浏览器联调。
 
+## 风险台账第三批与需求补齐 · 2026-10-14（本机）
+- 风险台账：C36 已取消的请求不再向量化或调用模型（在途的 embedding 调用仍只能等超时）；C30/C35 验证用例须对应当前反馈版本，运行后证据来源被撤回、删除、未就绪或重建则旧通过结果失效；C37 摄取任务处理期间按租约三分之一周期续租（1 秒租约、双 worker、慢 embedding 验证）。
+- T01：问答、调试与评测共用检索链路并按 traceId 保存阶段（起止时间、耗时、状态、摘要）与候选（编号、版本、得分），不存问题与正文；问答追加"上下文与生成"阶段并关联消息；GET /traces/{traceId}；问答记录可打开轨迹。未做：配置对比与再运行（依赖配置版本）。
+- Q04：start 事件（requestId、traceId）、草稿 seq、done 的 finishReason 与 latencyMs、error 的 retryable 与 discardDraft、等待期间的 :keepalive 注释；客户端按序号去重，不可重试的错误不提供重试。未报告：token 用量、config_version、start 中的 message_id。联调中发现提前发送事件与 MockMvc 响应头并发冲突，改为在请求线程发送 start。
+- E01：评测样本增加参考答案、必要事实（≤10 条）、适用对象与查询时点；可回答用例批准前须齐备；运行按查询时点判断效力（覆盖将来生效新规）。未做：权限画像、人工评分（E02）。
+- Q01（部分）：问题含身份证号、银行卡号或手机号时不检索不调用模型，以隐藏号码后的问题保存为拒答；拒答指向 zhiku.chat.handoff-channel（未配置时如实说明）；提示词要求说明适用条件、先澄清缺失条件、资料冲突时不下结论。澄清与冲突处理依赖模型，未用真实模型验证。
+- server：`mvn -B clean verify` 193 项通过；Flyway V19–V21 在已有数据的本地库上升级成功。admin-web 124 项、widget 36 项通过，均构建成功。
+- 未验证：本批改动的浏览器联调；真实 Ollama 下的心跳与提示词效果。
+
