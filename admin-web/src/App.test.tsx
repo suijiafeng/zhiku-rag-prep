@@ -28,6 +28,8 @@ describe("admin shell", () => {
     expect(renderToStaticMarkup(pageFor("documents"))).toContain("文档管理");
     expect(renderToStaticMarkup(pageFor("documents"))).not.toContain("待实现");
     expect(renderToStaticMarkup(pageFor("qa"))).toContain("问答工作台");
-    expect(renderToStaticMarkup(pageFor("debug"))).toContain("待实现");
+    expect(renderToStaticMarkup(pageFor("debug"))).toContain("检索调试");
+    expect(renderToStaticMarkup(pageFor("debug"))).not.toContain("待实现");
+    expect(renderToStaticMarkup(pageFor("evaluation"))).toContain("待实现");
   });
 });

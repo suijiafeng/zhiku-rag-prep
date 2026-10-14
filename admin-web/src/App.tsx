@@ -3,6 +3,8 @@ import { useState, type ReactNode } from "react";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
 import { QaWorkbench } from "./features/qa/QaWorkbench";
+import { RetrievalDebugPage } from "./features/debug/RetrievalDebugPage";
+import { debugFixture } from "./features/debug/fixtures";
 import { qaFixture } from "./features/qa/fixtures";
 import { OverviewPage } from "./features/overview/OverviewPage";
 import { overviewFixture } from "./features/overview/fixtures";
@@ -22,6 +24,7 @@ export function pageFor(key: NavKey): ReactNode {
   if (key === "overview") return <OverviewPage data={overviewFixture} />;
   if (key === "documents") return <DocumentsPage data={documentsFixture} />;
   if (key === "qa") return <QaWorkbench data={qaFixture} />;
+  if (key === "debug") return <RetrievalDebugPage trace={debugFixture} />;
   const label = NAV.find((n) => n.key === key)?.label ?? key;
   return <Result status="info" title={`${label}：待实现`} subTitle="该页面已在设计稿中，按任务顺序后续接入。" />;
 }
