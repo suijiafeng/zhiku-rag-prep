@@ -80,9 +80,12 @@ public class ChatService {
 
   private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, ChatSink sink, String requestId) throws IOException {
     var model = requireModel();
+    var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
+    // Follow-ups are retrieved together with the previous visible question so references like "那试用期呢" resolve.
+    var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
     List<Candidate> sources;
     try {
-      sources = retrieval.searchAuthorized(scope, kbId, question, settings.contextChunks(), Instant.now()).candidates();
+      sources = retrieval.searchAuthorized(scope, kbId, searchQuery, settings.contextChunks(), Instant.now()).candidates();
     } catch (ApiException e) {
       error(sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
       return;
@@ -94,7 +97,7 @@ public class ChatService {
 
     var answer = new StringBuilder();
     try {
-      model.stream(prompt(question, sources), token -> {
+      model.stream(prompt(question, sources, context), token -> {
         answer.append(token);
         try {
           sink.send("draft", Map.of("text", token));
@@ -149,8 +152,26 @@ public class ChatService {
     sink.send("done", Map.of("status", "complete", "conversationId", stored[0].toString(), "messageId", stored[1].toString()));
   }
 
-  private List<Message> prompt(String question, List<Candidate> sources) {
-    var sb = new StringBuilder("资料：\n");
+  /**
+   * Prior turns usable as conversational context (PRD Q03): turns whose sources are unavailable are dropped entirely;
+   * answers based on versions that are no longer current keep only the question. At most the last three turns.
+   */
+  private List<MessageView> priorContext(AccessScope scope, UUID conversationId) {
+    var visible = messages(scope, conversationId).stream().filter(m -> !m.hidden()).toList();
+    return visible.subList(Math.max(0, visible.size() - 3), visible.size());
+  }
+
+  private List<Message> prompt(String question, List<Candidate> sources, List<MessageView> context) {
+    var sb = new StringBuilder();
+    if (!context.isEmpty()) {
+      sb.append("此前对话（仅帮助理解指代，不是事实依据，不得引用）：\n");
+      for (var m : context) {
+        sb.append("问：").append(m.question()).append('\n');
+        if (!m.stale() && m.answer() != null) sb.append("答：").append(m.answer().replaceAll("\\[\\d+\\]", "")).append('\n');
+      }
+      sb.append('\n');
+    }
+    sb.append("资料：\n");
     for (int i = 0; i < sources.size(); i++) {
       var s = sources.get(i);
       var body = s.text().length() > settings.maxChunkChars() ? s.text().substring(0, settings.maxChunkChars()) : s.text();

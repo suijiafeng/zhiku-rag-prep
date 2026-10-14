@@ -241,6 +241,33 @@ class ChatTest extends IntegrationTest {
         .andExpect(jsonPath("$.length()").value(0));
   }
 
+  String continueBody(String conversation, String question) {
+    return "{\"kbId\":\"" + kb + "\",\"question\":\"" + question + "\",\"conversationId\":\"" + conversation + "\"}";
+  }
+
+  @Test
+  void followUpsSeePriorTurnsOnlyAsNonEvidenceContext() throws Exception {
+    var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();
+    model.script = m -> "试用期同样按司龄计算[1]。";
+    var frames = ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "那试用期呢?"));
+    assertThat(names(frames)).contains("done");
+    var user = model.lastPrompt.getLast().content();
+    assertThat(user).contains("此前对话").contains("不是事实依据").contains("年假有几天?").contains("年假按司龄计算。");
+    assertThat(user.substring(user.indexOf("此前对话"), user.indexOf("资料："))).doesNotContain("[1]");
+    assertThat(user).endsWith("问题：那试用期呢?");
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM message WHERE conversation_id = CAST(? AS uuid)", Integer.class, conversation)).isEqualTo(2);
+  }
+
+  @Test
+  void turnsWithUnavailableSourcesAreExcludedFromContext() throws Exception {
+    var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();
+    jdbc.update("UPDATE message_source SET chunk_id = ? WHERE message_id IN (SELECT id FROM message WHERE conversation_id = CAST(? AS uuid))",
+        UUID.randomUUID(), conversation);
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "那试用期呢?"));
+    var user = model.lastPrompt.getLast().content();
+    assertThat(user).doesNotContain("此前对话").doesNotContain("年假有几天?");
+  }
+
   @Test
   void cannotContinueSomeoneElsesConversation() throws Exception {
     var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();

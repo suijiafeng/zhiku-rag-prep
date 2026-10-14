@@ -575,6 +575,7 @@ x-sse:
     - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1].
     - done.data includes conversationId (to continue) and messageId (for feedback).
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
+    - Follow-ups (conversationId) use at most the last three prior turns as non-evidence context; turns with unavailable sources are excluded entirely, answers based on non-current versions keep only the question. Retrieval uses the previous visible question plus the new one; facts still come only from freshly retrieved eligible sources.
   errorCodes: [NO_EVIDENCE, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE]
 x-auth:
   status: implemented (local HS256 issuer; OIDC provider replaceable)
