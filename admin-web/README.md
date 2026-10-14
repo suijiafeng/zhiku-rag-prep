@@ -28,12 +28,13 @@ npm run check
 - src/App.tsx：静态工程状态及边界说明
 - src/main.tsx：React 入口
 - src/App.test.tsx：服务端静态渲染 smoke test，不是浏览器交互测试
+- src/features/settings/LiveConfig.dom.test.tsx：happy-dom + Testing Library 的交互测试；文件首行 `// @vitest-environment happy-dom` 启用 DOM，其余测试仍在 node 环境
 - 仓库根 AGENTS.md 与 docs/conventions.md：唯一编码、安全与验收约定
 
 KnowledgeBase、Document/Version、IngestionJob、Query/Citations 只标记为待实现。后续接入以根目录 API 契约为准；当前服务端只实现 GET /api/status，没有聊天路由。`validated: metadata-only` 不能证明回答内容正确。
 
 ## 依赖基线
 
-2026-10-14 通过官方 npm registry 核对：React/React DOM 19.3.0、Ant Design 6.6.6、Vite 8.3.4、@vitejs/plugin-react 6.1.2、Vitest 5.0.4、@types/react 与 @types/react-dom 19.3.0。TypeScript 固定经核对的 5.9.3 兼容基线，不追随新主版本。package.json 使用精确版本，package-lock.json 锁定依赖树。
+2026-10-14 通过官方 npm registry 核对：React/React DOM 19.3.0、Ant Design 6.6.6、Vite 8.3.4、@vitejs/plugin-react 6.1.2、Vitest 5.0.4、@types/react 与 @types/react-dom 19.3.0。TypeScript 固定经核对的 5.9.3 兼容基线，不追随新主版本。2026-10-15 新增仅测试用的 happy-dom 21.0.1 与 @testing-library/react 16.3.3（交互测试环境，不进入构建产物）。package.json 使用精确版本，package-lock.json 锁定依赖树。
 
 查证：<https://registry.npmjs.org/react>、<https://registry.npmjs.org/antd>、<https://registry.npmjs.org/vite>、<https://registry.npmjs.org/typescript>。依赖版本核对不等同于安全审计；上线前另行审查依赖及生产鉴权。
