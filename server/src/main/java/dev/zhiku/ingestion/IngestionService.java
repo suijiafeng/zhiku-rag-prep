@@ -42,6 +42,8 @@ public class IngestionService {
     }
     var bytes = file.getBytes();
     var accepted = UploadValidator.validate(file.getOriginalFilename(), bytes);
+    // Validation above may take a while; a deletion committed meanwhile must win (no content written after cleanup).
+    if (!documents.lockLiveDocument(documentId)) throw ApiException.forbidden();
     if (repository.hasBlob(versionId)) throw ApiException.conflict("Version content already uploaded; create a new version");
     repository.insertBlob(versionId, accepted, bytes, scope.userId());
     var jobId = repository.enqueue(versionId);
@@ -54,6 +56,7 @@ public class IngestionService {
   public void reindex(UUID kbId, UUID documentId, UUID versionId) {
     var scope = access.require(kbId, MANAGE_DOCUMENTS);
     documents.findVersion(kbId, documentId, versionId).orElseThrow(ApiException::forbidden);
+    if (!documents.lockLiveDocument(documentId)) throw ApiException.forbidden();
     if (repository.requeue(versionId) != 1) throw ApiException.conflict("No finished ingestion job to re-run");
     audit.record(scope, "CONTENT_REINDEX", "version:" + versionId, "OK", Map.of());
   }

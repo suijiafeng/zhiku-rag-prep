@@ -97,6 +97,15 @@ public class DocumentRepository {
     return jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ? AND withdrawn_at IS NULL", versionId);
   }
 
+  /**
+   * Share-locks the document row for the rest of the transaction; false when it is deleted. Writers of content call this
+   * right before writing: a deletion then waits for them to commit (so cleanup sees their rows), and once a deletion
+   * has committed every later writer is refused.
+   */
+  public boolean lockLiveDocument(UUID documentId) {
+    return !jdbc.queryForList("SELECT 1 FROM document WHERE id = ? AND deleted_at IS NULL FOR SHARE", Integer.class, documentId).isEmpty();
+  }
+
   /** Marks the document deleted and queues cleanup; returns 0 when it is already deleted. */
   public int markDeleted(UUID documentId, UUID by) {
     return jdbc.update("UPDATE document SET deleted_at = now(), deleted_by = ?, cleanup_status = 'pending' WHERE id = ? AND deleted_at IS NULL",
@@ -119,33 +128,41 @@ public class DocumentRepository {
         + "WHERE cleanup_status = 'running' AND cleanup_lease_until < now() AND cleanup_attempts >= ?", maxAttempts);
   }
 
-  public Optional<UUID> claimCleanup(int leaseSeconds, int maxAttempts) {
+  /** One claim of a deleted document's cleanup; the token identifies this attempt. */
+  public record CleanupClaim(UUID documentId, UUID token, int attempts) {}
+
+  public Optional<CleanupClaim> claimCleanup(int leaseSeconds, int maxAttempts) {
     return jdbc.query("""
         UPDATE document d SET cleanup_status = 'running', cleanup_lease_until = now() + make_interval(secs => ?),
-               cleanup_attempts = d.cleanup_attempts + 1
+               cleanup_attempts = d.cleanup_attempts + 1, cleanup_token = ?
         WHERE d.id = (SELECT id FROM document
                       WHERE (cleanup_status = 'pending' OR (cleanup_status = 'running' AND cleanup_lease_until < now())) AND cleanup_attempts < ?
                       ORDER BY deleted_at FOR UPDATE SKIP LOCKED LIMIT 1)
-        RETURNING d.id
-        """, (rs, i) -> rs.getObject("id", UUID.class), leaseSeconds, maxAttempts).stream().findFirst();
+        RETURNING d.id, d.cleanup_token, d.cleanup_attempts
+        """, (rs, i) -> new CleanupClaim(rs.getObject("id", UUID.class), rs.getObject("cleanup_token", UUID.class), rs.getInt("cleanup_attempts")),
+        leaseSeconds, UUID.randomUUID(), maxAttempts).stream().findFirst();
   }
 
-  /** Removes jobs first: deleting a job row waits for a worker that still holds it, so its chunks are removed afterwards. */
-  public void purgeContent(UUID documentId) {
+  /**
+   * Removes jobs first: deleting a job row waits for a worker that still holds it, so its chunks are removed afterwards.
+   * Does nothing and returns false unless this claim still owns the running cleanup (row locked for the transaction).
+   */
+  public boolean purgeContent(UUID documentId, UUID token) {
+    if (jdbc.queryForList("SELECT 1 FROM document WHERE id = ? AND cleanup_token = ? AND cleanup_status = 'running' FOR UPDATE",
+        Integer.class, documentId, token).isEmpty()) {
+      return false;
+    }
     var versions = "(SELECT id FROM content_version WHERE document_id = ?)";
     jdbc.update("DELETE FROM ingestion_job WHERE version_id IN " + versions, documentId);
     jdbc.update("DELETE FROM chunk WHERE version_id IN " + versions, documentId);
     jdbc.update("DELETE FROM content_blob WHERE version_id IN " + versions, documentId);
     jdbc.update("UPDATE document SET cleanup_status = 'done', cleanup_error = NULL, cleanup_lease_until = NULL WHERE id = ?", documentId);
+    return true;
   }
 
-  public int cleanupAttempts(UUID documentId) {
-    return jdbc.queryForObject("SELECT cleanup_attempts FROM document WHERE id = ?", Integer.class, documentId);
-  }
-
-  public void releaseCleanupAfterFailure(UUID documentId, boolean exhausted, String reason) {
-    jdbc.update("UPDATE document SET cleanup_status = ?, cleanup_error = ?, cleanup_lease_until = NULL WHERE id = ? AND cleanup_status = 'running'",
-        exhausted ? "failed" : "pending", reason, documentId);
+  public void releaseCleanupAfterFailure(UUID documentId, UUID token, boolean exhausted, String reason) {
+    jdbc.update("UPDATE document SET cleanup_status = ?, cleanup_error = ?, cleanup_lease_until = NULL "
+        + "WHERE id = ? AND cleanup_token = ? AND cleanup_status = 'running'", exhausted ? "failed" : "pending", reason, documentId, token);
   }
 
   public List<DocumentView> documentsIn(UUID kbId) {

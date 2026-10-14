@@ -1,7 +1,7 @@
 package dev.zhiku.document;
 
+import dev.zhiku.document.DocumentRepository.CleanupClaim;
 import java.util.Optional;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -33,18 +33,23 @@ public class DocumentCleanupWorker {
   /** Cleans at most one document; returns whether one was claimed. */
   public boolean processNext() {
     repository.failExhaustedCleanups(MAX_ATTEMPTS);
-    Optional<UUID> claimed = repository.claimCleanup(LEASE_SECONDS, MAX_ATTEMPTS);
+    var claimed = claim();
     claimed.ifPresent(this::clean);
     return claimed.isPresent();
   }
 
-  private void clean(UUID documentId) {
+  public Optional<CleanupClaim> claim() {
+    return repository.claimCleanup(LEASE_SECONDS, MAX_ATTEMPTS);
+  }
+
+  /** Cleans under this claim; a claim whose lease was taken over changes nothing. */
+  public void clean(CleanupClaim claim) {
     try {
-      tx.executeWithoutResult(status -> repository.purgeContent(documentId));
+      var done = Boolean.TRUE.equals(tx.execute(status -> repository.purgeContent(claim.documentId(), claim.token())));
+      if (!done) log.warn("Cleanup of deleted document {} lost its claim; nothing changed", claim.documentId());
     } catch (RuntimeException e) {
-      var attempts = repository.cleanupAttempts(documentId);
-      log.error("Cleanup of deleted document {} attempt {} failed: {}", documentId, attempts, e.getClass().getSimpleName());
-      repository.releaseCleanupAfterFailure(documentId, attempts >= MAX_ATTEMPTS, "清理失败，稍后重试");
+      log.error("Cleanup of deleted document {} attempt {} failed: {}", claim.documentId(), claim.attempts(), e.getClass().getSimpleName());
+      repository.releaseCleanupAfterFailure(claim.documentId(), claim.token(), claim.attempts() >= MAX_ATTEMPTS, "清理失败，稍后重试");
     }
   }
 

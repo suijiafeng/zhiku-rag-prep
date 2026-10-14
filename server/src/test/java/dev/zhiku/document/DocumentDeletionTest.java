@@ -36,6 +36,8 @@ class DocumentDeletionTest extends IntegrationTest {
   @Autowired IngestionWorker worker;
   @Autowired DocumentCleanupWorker cleanup;
   @Autowired TestChatModel model;
+  @Autowired DocumentRepository documents;
+  @Autowired org.springframework.transaction.support.TransactionTemplate tx;
   @Autowired dev.zhiku.support.TestEmbeddingProvider embeddings;
 
   final UUID enterprise = UUID.randomUUID();
@@ -160,6 +162,39 @@ class DocumentDeletionTest extends IntegrationTest {
   }
 
   @Test
+  void aDeletionWaitsForAnUploadThatAlreadyPassedItsChecksAndCleanupThenRemovesIt() throws Exception {
+    var next = UUID.randomUUID();
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, created_by) VALUES (?, ?, 'v2', now(), ?)", next, doc, operator);
+    var locked = new java.util.concurrent.CountDownLatch(1);
+    var release = new java.util.concurrent.CountDownLatch(1);
+    java.util.concurrent.CompletableFuture<Boolean> upload = java.util.concurrent.CompletableFuture.supplyAsync(() -> tx.<Boolean>execute(status -> {
+      if (!documents.lockLiveDocument(doc)) return false;
+      locked.countDown();
+      try {
+        release.await();
+      } catch (InterruptedException e) {
+        throw new IllegalStateException(e);
+      }
+      jdbc.update("INSERT INTO content_blob (version_id, media_type, file_name, byte_size, sha256, content, uploaded_by) "
+          + "VALUES (?, 'text/plain', 'late.txt', 1, repeat('a', 64), 'x', ?)", next, operator);
+      return true;
+    }));
+    locked.await();
+    java.util.concurrent.CompletableFuture<Void> deletion = java.util.concurrent.CompletableFuture.runAsync(() -> tx.executeWithoutResult(status -> documents.markDeleted(doc, operator)));
+    Thread.sleep(200);
+    assertThat(deletion.isDone()).isFalse();
+    release.countDown();
+    boolean uploaded = upload.get(5, java.util.concurrent.TimeUnit.SECONDS);
+    assertThat(uploaded).isTrue();
+    deletion.get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+    assertThat(cleanup.processNext()).isTrue();
+    assertThat(jdbc.queryForObject("SELECT count(*) FROM content_blob WHERE version_id = ?", Integer.class, next)).isZero();
+    Boolean live = tx.execute(status -> documents.lockLiveDocument(doc));
+    assertThat(live).isFalse();
+  }
+
+  @Test
   void cleanupRemovesContentChunksVectorsAndJobs() throws Exception {
     deleteDocument().andExpect(status().isAccepted());
     assertThat(cleanup.processNext()).isTrue();
@@ -203,6 +238,25 @@ class DocumentDeletionTest extends IntegrationTest {
     jdbc.update("UPDATE document SET cleanup_status = 'running', cleanup_lease_until = ?, cleanup_attempts = 1 WHERE id = ?",
         Timestamp.from(Instant.now().minusSeconds(60)), doc);
     assertThat(cleanup.processNext()).isTrue();
+    assertThat(cleanupStatus()).isEqualTo("done");
+    assertThat(count("SELECT count(*) FROM chunk WHERE version_id = ?")).isZero();
+  }
+
+  @Test
+  void aStaleCleanupClaimCannotChangeTheStateOfTheNewClaim() throws Exception {
+    deleteDocument().andExpect(status().isAccepted());
+    var stale = cleanup.claim().orElseThrow();
+    jdbc.update("UPDATE document SET cleanup_lease_until = now() - interval '1 minute' WHERE id = ?", doc);
+    var current = cleanup.claim().orElseThrow();
+    assertThat(current.token()).isNotEqualTo(stale.token());
+    assertThat(current.attempts()).isEqualTo(2);
+
+    documents.releaseCleanupAfterFailure(doc, stale.token(), true, "旧领取失败");
+    cleanup.clean(stale);
+    assertThat(cleanupStatus()).isEqualTo("running");
+    assertThat(count("SELECT count(*) FROM chunk WHERE version_id = ?")).isGreaterThan(0);
+
+    cleanup.clean(current);
     assertThat(cleanupStatus()).isEqualTo("done");
     assertThat(count("SELECT count(*) FROM chunk WHERE version_id = ?")).isZero();
   }
