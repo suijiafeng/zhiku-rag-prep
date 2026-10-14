@@ -18,7 +18,7 @@ function Row2({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** Read-only view of the live server configuration (GET /api/status). Editing needs candidate/verify/publish, not built yet. */
+/** 实时服务端配置的只读视图（GET /api/status）。编辑需要 candidate/verify/publish 流程，尚未实现。 */
 export function SettingsPage({ status, error }: { status: Status | undefined; error: string | undefined }) {
   return (
     <div className="page">

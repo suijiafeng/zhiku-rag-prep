@@ -6,7 +6,7 @@ import { RetrievalDebugPage } from "./RetrievalDebugPage";
 import type { DebugTrace } from "./fixtures";
 import { EmptyState } from "../../components/StateViews";
 
-/** Runs the real authorized retrieval for one question; no model call, nothing stored. */
+/** 针对单个问题执行真实的授权检索；不调用模型，不存储任何内容。 */
 export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: string; kbName: string }) {
   const [query, setQuery] = useState("");
   const [k, setK] = useState("8");

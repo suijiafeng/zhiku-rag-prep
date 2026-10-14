@@ -10,8 +10,8 @@ export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
 const cleaning = (d: DocumentInfo) => d.deletion?.status === "pending" || d.deletion?.status === "running";
 
 /**
- * "pending" also covers versions that never got content, so it is only polled right after an upload or reindex.
- * Deletion cleanup is polled only right after a deletion, so a stopped cleanup worker cannot cause endless polling.
+ * "pending" 也包括从未获得内容的版本，因此只在上传或重建索引后立即轮询。
+ * 删除清理只在删除后立即轮询，这样清理 worker 停止时不会导致无限轮询。
  */
 export function shouldPoll(docs: DocumentInfo[] | undefined, watchBudget: number) {
   const states = docs?.flatMap((d) => d.versions.map((v) => v.indexStatus)) ?? [];
@@ -64,7 +64,7 @@ function NewVersionForm({ onCreate }: { onCreate: (label: string, from: string, 
   );
 }
 
-/** Documents of the selected knowledge base from the server: business state and index state shown separately. */
+/** 来自服务端的所选知识库文档：业务状态与索引状态分开显示。 */
 export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbId: string; status: Status | undefined }) {
   const zone = status?.businessTimeZone ?? "Asia/Shanghai";
   const [docs, setDocs] = useState<DocumentInfo[]>();

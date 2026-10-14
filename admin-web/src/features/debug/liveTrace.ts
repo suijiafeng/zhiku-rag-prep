@@ -4,7 +4,7 @@ import type { DebugTrace, Stage, StageKey } from "./fixtures";
 const KEYS: readonly StageKey[] = ["rewrite", "vector", "lexical", "fusion", "rerank", "generation"];
 const isKey = (k: string): k is StageKey => (KEYS as readonly string[]).includes(k);
 
-/** Maps a server trace onto the page model. Only scores the server produced are shown; others stay null. */
+/** 将服务端 trace 映射为页面模型。只显示服务端实际给出的分数；其余保持 null。 */
 export function traceFromResult(result: TraceResult, knowledgeBase: string, scopeVersion: string): DebugTrace {
   const stages: Stage[] = result.stages
     .filter((s) => isKey(s.key))

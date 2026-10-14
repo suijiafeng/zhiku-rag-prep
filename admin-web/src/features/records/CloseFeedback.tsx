@@ -15,12 +15,12 @@ export interface ClosingForm {
   caseId: string | undefined;
 }
 
-/** Only approved cases made from this feedback can verify its fix (the server checks the latest run as well). */
+/** 只有由此反馈生成且已批准的用例才能验证其修复（服务端还会检查最近一次运行）。 */
 export function verificationCandidates(cases: EvalCase[], messageId: string) {
   return cases.filter((c) => c.status === "approved" && c.originMessageId === messageId);
 }
 
-/** Mirrors the server rule so the form explains what is missing; the server still decides (latest-run check). */
+/** 与服务端规则一致，以便表单说明缺少什么；最终仍由服务端判定（最近运行检查）。 */
 export function closingBody(status: ClosingStatus, form: ClosingForm): { body: FeedbackUpdate } | { error: string } {
   const resolution = form.resolution.trim();
   if (status === "wont_fix") {

@@ -1,7 +1,7 @@
 import { Alert, Button, Skeleton } from "antd";
 import type { ReactNode } from "react";
 
-/** Shared in-page states (design page 07). Retry repeats the user's own action; there is no "upgrade" path. */
+/** 共用的页内状态（设计稿第 07 页）。重试即重复用户自己的操作；没有“升级”路径。 */
 const ICONS = { doc: "📄", chat: "💬", search: "🔍", chart: "📊" } as const;
 
 export function EmptyState({ icon, title, description, action }: {

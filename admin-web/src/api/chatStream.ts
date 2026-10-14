@@ -2,9 +2,9 @@ import type { ChatAction, ChatEvent, Citation } from "../features/qa/chatState";
 import { toApiError, type ApiClient } from "./client";
 
 /**
- * Feeds POST /api/chat into the chat reducer. Frames are parsed and shape-checked here; the reducer enforces
- * ordering (done only after validated). Early end, malformed frames and HTTP errors become error events.
- * Never retries.
+ * 将 POST /api/chat 的结果送入 chat reducer。帧在此处解析并做结构检查；reducer 负责保证
+ * 顺序（done 只在 validated 之后）。提前结束、格式错误的帧和 HTTP 错误都转为 error 事件。
+ * 从不重试。
  */
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === "string";
@@ -33,7 +33,7 @@ function toEvent(name: string, raw: string): ChatEvent | null {
   return protocol();
 }
 
-/** v4 UUID; randomUUID needs a secure context, getRandomValues works everywhere. */
+/** v4 UUID；randomUUID 需要安全上下文，getRandomValues 在任何环境都可用。 */
 export function newRequestId(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -96,7 +96,7 @@ export async function streamAnswer(
     if (!event) return;
     emit(event);
     if (event.event === "validated") validated = true;
-    // Same rule as the reducer: done counts only after validated, so a rejected stream has no side effects.
+    // 与 reducer 规则一致：done 只在 validated 之后才算数，因此被拒绝的流不产生副作用。
     if (event.event === "done" && validated && event.data.conversationId) onConversation?.(event.data.conversationId);
     if (event.event === "done" || event.event === "error") terminal = true;
   };

@@ -1,6 +1,6 @@
 import type { ChatEvent, Citation } from "./chatState";
 
-/** Neutral, fictional sample data for the scaffold. Not produced by any model or retriever. */
+/** 脚手架用的中性、虚构示例数据。并非由任何模型或检索器产生。 */
 export interface Source extends Citation {
   chunk: string;
   similarity: number;

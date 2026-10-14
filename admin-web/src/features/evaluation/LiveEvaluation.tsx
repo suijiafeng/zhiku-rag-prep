@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews
 const LABEL: Record<EvalCase["label"], string> = { answerable: "可回答", clarify: "应澄清", handoff: "应转人工" };
 const pct = (n: number, d: number) => (d ? ` · ${((n / d) * 100).toFixed(1)}%` : "");
 
-/** Only retrieval metrics that a run actually measured; answer accuracy needs human review and is not shown. */
+/** 只显示某次运行实际测得的检索指标；回答准确率需要人工评审，不在此显示。 */
 export function metricCards(summary: EvalSummary | undefined, k: number) {
   if (!summary) {
     return [`Hit@${k}（证据位置覆盖）`, "证据 Recall", "P95 检索延迟", "未计入分母"].map((title) => ({ title, value: "—", sub: "尚未运行" }));

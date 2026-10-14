@@ -8,8 +8,8 @@ const FACTS = [
 ];
 
 /**
- * Entry screen. Only login paths that exist are offered: a locally issued dev token now, enterprise SSO later.
- * No password form, no "remember me" (tokens live only in page memory), no password recovery.
+ * 入口页面。只提供真实存在的登录方式：目前是本地签发的开发 token，之后是企业 SSO。
+ * 没有密码表单，没有“记住我”（token 只保存在页面内存中），没有找回密码。
  */
 export function LoginPage({ onLogin, onBrowseSamples }: {
   onLogin: (token: string) => Promise<string | undefined>;

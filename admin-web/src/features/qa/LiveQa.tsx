@@ -27,7 +27,7 @@ function Sources({ citations, active }: { citations: Citation[]; active: number 
   );
 }
 
-/** Real Q&A against POST /api/chat. Partial drafts are discarded unless the stream reaches validated + done. */
+/** 基于 POST /api/chat 的真实问答。除非流到达 validated + done，否则丢弃未完成的草稿。 */
 export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId: string; modelEnabled: boolean }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string>();
@@ -40,7 +40,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   const abort = useRef<AbortController>(undefined);
   const gate = useRef(createRequestGate());
 
-  /** Leaves the current request behind: aborts it, ignores its late events and clears the draft. */
+  /** 放弃当前请求：中止它，忽略其迟到的事件并清空草稿。 */
   const leave = useCallback(() => {
     abort.current?.abort();
     gate.current.invalidate();

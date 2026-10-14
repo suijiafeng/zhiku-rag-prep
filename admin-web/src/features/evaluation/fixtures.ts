@@ -1,6 +1,6 @@
-/** Neutral, fictional seed-pilot sample. Not produced by any evaluation run. */
+/** 中性、虚构的试点示例数据，并非任何评测运行的结果。 */
 
-/** PRD v0.3 chapter 11 root-cause categories, in investigation order. "Model problem" is not a category. */
+/** PRD v0.3 第 11 章的根因分类，按排查顺序排列。“模型问题”不是一个分类。 */
 export const ROOT_CAUSES = [
   "文档未就绪或版本错误",
   "解析/切块遗漏",
@@ -16,7 +16,7 @@ export type RootCause = (typeof ROOT_CAUSES)[number];
 export interface EvalRow {
   id: string;
   question: string;
-  /** Source document version and position; ground truth is independent of chunk ids. */
+  /** 来源文档版本及位置；真值与切块 id 无关。 */
   expectedEvidence: string;
   evidenceHit: number;
   evidenceTotal: number;

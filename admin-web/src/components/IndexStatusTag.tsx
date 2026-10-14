@@ -1,6 +1,6 @@
 import { Tag } from "antd";
 
-/** Parsing/index state only. Business approval, publication and effectivity are separate facts. */
+/** 仅表示解析/索引状态。业务批准、发布和生效是相互独立的事实。 */
 export type IndexStatus = "pending" | "indexed" | "parsing" | "failed";
 
 const tags: Record<IndexStatus, { color: string; label: string }> = {

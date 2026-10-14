@@ -19,7 +19,7 @@ export function topReasons(reasons: RecordStats["reasons"]) {
     .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([key, count]) => ({ key, count }));
 }
 
-/** The server explains in English; the one expected refusal is restated in Chinese, keeping the request id. */
+/** 服务端用英文说明原因；唯一预期的拒绝用中文重述，并保留 request id。 */
 export function closeFailure(e: unknown, status: FeedbackStatus) {
   if (!(e instanceof ApiError)) return "关闭失败";
   const ref = `（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）`;
@@ -27,7 +27,7 @@ export function closeFailure(e: unknown, status: FeedbackStatus) {
   return `${e.message}${ref}`;
 }
 
-/** An evaluation candidate made from a disliked answer keeps the feedback as its origin. */
+/** 由点踩回答生成的评测候选会保留该反馈作为其来源。 */
 export function candidateBody(item: RecordItem) {
   return { question: item.question ?? "", label: "answerable" as const, source: "feedback", originMessageId: item.messageId };
 }
@@ -114,7 +114,7 @@ export function RecordsTable({ items, onStatus, onClose, onHistory, onCandidate 
   );
 }
 
-/** Q&A records and feedback triage (PRD F02) for the selected knowledge base. */
+/** 所选知识库的问答记录与反馈分流（PRD F02）。 */
 export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; kbId: string | undefined }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [data, setData] = useState<{ items: RecordItem[]; stats: RecordStats; canReadOthers: boolean }>();

@@ -1,6 +1,6 @@
 import type { OverviewData } from "./fixtures";
 
-/** Plain CSS bar chart; the latest day is highlighted as in the design. */
+/** 纯 CSS 柱状图；按设计稿高亮最近一天。 */
 export function DailyQuestionsChart({ data }: { data: OverviewData["dailyQuestions"] }) {
   const max = Math.max(1, ...data.map((d) => d.count));
   return (

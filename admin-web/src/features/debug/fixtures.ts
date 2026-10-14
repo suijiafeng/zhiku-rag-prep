@@ -1,6 +1,6 @@
 /**
- * Neutral, fictional sample trace. It follows the PRD v0.3 first-version baseline:
- * exact vector retrieval inside the authorized scope; lexical, fusion and rerank not enabled.
+ * 中性、虚构的示例 trace。遵循 PRD v0.3 首版基线：
+ * 在授权范围内做精确向量检索；未启用词法检索、融合与重排。
  */
 export type StageStatus = "success" | "failed" | "skipped" | "cancelled";
 export type StageKey = "rewrite" | "vector" | "lexical" | "fusion" | "rerank" | "generation";

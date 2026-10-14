@@ -46,7 +46,7 @@ export interface PageContext {
   navigate?: ((key: NavKey) => void) | undefined;
 }
 
-/** Live pages need a connected session and a selected knowledge base; otherwise sample pages are shown and labelled. */
+/** 实时页面需要已连接的会话并选中知识库；否则显示示例页面并加以标注。 */
 export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   const live = ctx.client && ctx.kbId ? { client: ctx.client, kbId: ctx.kbId } : undefined;
   if (key === "overview") {
@@ -76,7 +76,7 @@ export function App({ initialMode = "login" }: { initialMode?: Mode }) {
   );
 }
 
-/** Login first; the console shows once a session is connected or the user chooses sample data. */
+/** 先登录；会话连接后或用户选择示例数据时才显示控制台。 */
 function Entry({ initialMode }: { initialMode: Mode }) {
   const session = useSession();
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -86,7 +86,7 @@ function Entry({ initialMode }: { initialMode: Mode }) {
   return <Shell onLogin={() => setMode("login")} />;
 }
 
-/** Admin shell following the Figma frames. Sample data until a local session is connected. */
+/** 按 Figma 画板实现的管理端外壳。连接本地会话前使用示例数据。 */
 function Shell({ onLogin }: { onLogin: () => void }) {
   const session = useSession();
   const [active, setActive] = useState<NavKey>("overview");

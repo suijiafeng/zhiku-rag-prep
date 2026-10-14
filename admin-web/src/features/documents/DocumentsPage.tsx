@@ -16,7 +16,7 @@ export function filterDocuments(docs: DocumentRow[], filter: Filter) {
   return filter === "all" ? docs : docs.filter((d) => d.status === filter);
 }
 
-/** The preview always follows a visible row: a filtered-out selection falls back to the first row. */
+/** 预览始终对应一行可见记录：选中项被筛掉时回退到第一行。 */
 export function visibleSelection(rows: DocumentRow[], selectedId: string | undefined) {
   return rows.find((d) => d.id === selectedId) ?? rows[0];
 }

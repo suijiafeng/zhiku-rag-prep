@@ -24,7 +24,7 @@ export const useSession = () => useContext(SessionContext);
 const describe = (e: unknown) =>
   e instanceof ApiError ? (e.status === 401 ? "令牌无效或已过期" : `${e.code}${e.requestId ? ` · ${e.requestId}` : ""}`) : "无法连接本地服务";
 
-/** Holds the bearer token in React state only: it is gone after a reload and never written to storage. */
+/** 仅在 React state 中保存 bearer token：刷新后即消失，从不写入存储。 */
 export function SessionProvider({ children, fetchImpl }: { children: ReactNode; fetchImpl?: Fetch }) {
   const [client, setClient] = useState<ApiClient>();
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);

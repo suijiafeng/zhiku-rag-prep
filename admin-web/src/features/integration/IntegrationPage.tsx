@@ -37,7 +37,7 @@ function CodeBlock({ code }: { code: string }) {
   );
 }
 
-/** Integration guide limited to access that really exists: short-lived widget tokens. No long-lived keys. */
+/** 接入指南仅限真实存在的访问方式：短期 widget token。没有长期密钥。 */
 export function IntegrationPage({ kbId, kbName }: { kbId: string | undefined; kbName: string | undefined }) {
   const [theme, setTheme] = useState("#1D5BBF");
   return (

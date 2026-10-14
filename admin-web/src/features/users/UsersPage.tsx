@@ -15,7 +15,7 @@ export const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
 
 const failure = (e: unknown) => (e instanceof ApiError ? `${e.message}（${e.code}${e.requestId ? ` · ${e.requestId}` : ""}）` : "请求失败");
 
-/** Rendered from GET /api/policy/roles so the page can never drift from the server's RolePolicy. */
+/** 由 GET /api/policy/roles 渲染，因此页面永远不会与服务端的 RolePolicy 脱节。 */
 export function RoleMatrix({ policy }: { policy: RolePolicy }) {
   return (
     <table className="role-matrix">
@@ -117,7 +117,7 @@ function Members({ client, kb, onChanged }: { client: ApiClient; kb: AdminKnowle
   );
 }
 
-/** Knowledge-base grants for IT administrators, plus the live role matrix. */
+/** 面向 IT 管理员的知识库授权，以及实时角色矩阵。 */
 export function UsersPage({ client }: { client: ApiClient | undefined }) {
   const [me, setMe] = useState<Me>();
   const [policy, setPolicy] = useState<RolePolicy>();

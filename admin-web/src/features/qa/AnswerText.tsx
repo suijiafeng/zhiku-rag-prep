@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 
-/** Renders untrusted answer text as plain text; only [n] markers with a matching citation become buttons. */
+/** 将不可信的回答文本按纯文本渲染；只有存在对应引用的 [n] 标记才渲染为按钮。 */
 export function AnswerText({
   text,
   citationCount,

@@ -1,6 +1,6 @@
 /**
- * Adapter for the server API (contracts/openapi.yaml). The bearer token lives only in memory for the
- * page session; nothing is written to localStorage, sessionStorage or cookies.
+ * 服务端 API 适配层（contracts/openapi.yaml）。bearer token 只在页面会话期间保存在内存中；
+ * 不写入 localStorage、sessionStorage 或 cookie。
  */
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -37,7 +37,7 @@ export interface VersionInfo {
   indexError: string | null;
 }
 
-/** Present only for deleted documents: access already stopped; status is the background content cleanup. */
+/** 仅对已删除文档存在：访问已停止；status 表示后台内容清理状态。 */
 export interface DeletionInfo {
   status: "pending" | "running" | "done" | "failed";
   deletedAt: string;
@@ -107,7 +107,7 @@ export interface RecordItem {
   resolution: string | null;
   verificationCaseId: string | null;
   outcome: TurnOutcome;
-  /** False once a source of the answer (or of an earlier turn it built on) is unavailable; null for non-answers. */
+  /** 回答（或其所依据的更早轮次）的某个来源不可用后为 false；非回答为 null。 */
   sourceAvailable: boolean | null;
 }
 
@@ -198,7 +198,7 @@ export interface OverviewApi {
 export interface EvidenceInput {
   versionId: string;
   quote: string;
-  /** 1-based; needed when the quote occurs more than once in the version. */
+  /** 从 1 开始；引文在该版本中出现不止一次时需要。 */
   occurrence?: number;
 }
 
@@ -208,7 +208,7 @@ export interface EvalEvidence {
   versionLabel: string;
   startOffset: number;
   endOffset: number;
-  /** Null once the source version is withdrawn or its document deleted. */
+  /** 来源版本被撤回或其文档被删除后为 null。 */
   quote: string | null;
   available: boolean;
 }
@@ -221,7 +221,7 @@ export interface EvalCase {
   source: string;
   createdAt: string;
   evidence: EvalEvidence[];
-  /** Feedback message the case was made from; only such cases can verify that feedback's fix. */
+  /** 生成该用例的反馈消息；只有此类用例才能验证该反馈的修复。 */
   originMessageId: string | null;
 }
 
@@ -234,7 +234,7 @@ export interface EvalSummary {
   recall: { num: number; den: number };
   recallMacro: number | null;
   p95Ms: number | null;
-  /** Cases whose evidence version is not eligible now; absent in runs stored before this was reported. */
+  /** 证据版本当前不符合条件的用例；在开始上报此项之前保存的运行中不存在。 */
   sourceUnavailable?: number;
 }
 
@@ -274,7 +274,7 @@ export class ApiError extends Error {
 
 const isStr = (v: unknown): v is string => typeof v === "string";
 
-/** Uses the body only when it matches the contract error shape; anything else is untrusted. */
+/** 仅当响应体符合契约错误结构时才使用；其他内容均视为不可信。 */
 export async function toApiError(res: Response): Promise<ApiError> {
   try {
     const body: unknown = JSON.parse((await res.text()).slice(0, 65_536));
@@ -283,7 +283,7 @@ export async function toApiError(res: Response): Promise<ApiError> {
       if (isStr(code) && isStr(message)) return new ApiError(res.status, code, message, isStr(requestId) ? requestId : undefined);
     }
   } catch {
-    // fall through
+    // 回退为下方的通用错误
   }
   return new ApiError(res.status, `HTTP_${res.status}`, "请求失败");
 }

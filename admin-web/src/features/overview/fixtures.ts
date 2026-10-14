@@ -1,4 +1,4 @@
-/** Neutral, fictional sample data for the scaffold. Not loaded from any service. */
+/** 脚手架用的中性、虚构示例数据。不从任何服务加载。 */
 import type { IndexStatus } from "../../components/IndexStatusTag";
 
 export interface OverviewData {

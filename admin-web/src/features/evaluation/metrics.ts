@@ -2,14 +2,14 @@ import type { EvalRow } from "./fixtures";
 
 export type EvalResult = "pass" | "fail" | "pending" | "prep-failed";
 
-/** PRD ch.12: retrieval coverage, human verdict and citation support are judged separately; all must hold to pass. */
+/** PRD 第 12 章：检索覆盖、人工判定和引用支撑分别判断；全部满足才算通过。 */
 export function resultOf(r: EvalRow): EvalResult {
   if (r.mappingFailed) return "prep-failed";
   if (r.verdict === "pending") return "pending";
   return r.evidenceHit > 0 && r.verdict === "correct" && r.citationSupported !== false ? "pass" : "fail";
 }
 
-/** Nearest-rank percentile; null when there is nothing to measure. */
+/** 最近秩百分位数；没有可度量的数据时为 null。 */
 export function p95(values: number[]) {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);

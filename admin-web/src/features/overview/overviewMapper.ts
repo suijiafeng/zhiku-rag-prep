@@ -9,7 +9,7 @@ const stamp = (iso: string | Date, zone: string) =>
 const indexStatus = (s: OverviewApi["recentDocuments"][number]["indexStatus"]): IndexStatus =>
   s === "ready" ? "indexed" : s === "failed" ? "failed" : s === "processing" ? "parsing" : "pending";
 
-/** Maps GET /overview onto the overview page model. Only measured values; nothing is estimated. */
+/** 将 GET /overview 映射为概览页模型。只用实测值；不做任何估算。 */
 export function overviewFromApi(api: OverviewApi, zone: string, now: Date): OverviewData {
   const rated = api.feedback.up + api.feedback.down;
   const space = api.embeddingSpaces[0];

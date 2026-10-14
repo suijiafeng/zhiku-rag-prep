@@ -10,7 +10,7 @@ export const REASON_LABEL: Record<FeedbackReason, string> = {
   OUTDATED: "内容过期",
 };
 
-/** Asker's own feedback (PRD F01). A dislike needs a reason; changes are versioned on the server. */
+/** 提问者本人的反馈（PRD F01）。点踩需要填写原因；修改在服务端保留版本。 */
 export function FeedbackBar({ current, onSubmit }: {
   current: FeedbackInfo | null;
   onSubmit: (body: { rating: "up" | "down"; reason?: FeedbackReason; comment?: string }) => Promise<void>;

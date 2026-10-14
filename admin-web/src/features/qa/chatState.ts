@@ -1,7 +1,7 @@
 /**
- * Client state for the SSE contract in contracts/openapi.yaml (x-sse).
- * Mirrors the widget's provisional types; admin-web does not depend on the widget package.
- * Rules: done counts only after validated; error, cancel and protocol violations discard the answer.
+ * contracts/openapi.yaml（x-sse）中 SSE 契约对应的客户端状态。
+ * 与 widget 的临时类型保持一致；admin-web 不依赖 widget 包。
+ * 规则：done 只在 validated 之后才算数；error、cancel 和协议违规都会丢弃回答。
  */
 export interface Citation {
   documentId: string;
@@ -66,7 +66,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
-/** Each request gets a generation; events and callbacks of a superseded request are ignored (switching context). */
+/** 每个请求分配一个代次；已被取代的请求的事件和回调会被忽略（切换上下文时）。 */
 export function createRequestGate() {
   let current = 0;
   return {
@@ -78,7 +78,7 @@ export function createRequestGate() {
   };
 }
 
-/** Sources of the answer being generated while it runs; afterwards always those of the selected history answer. */
+/** 生成过程中为正在生成的回答的来源；结束后始终为所选历史回答的来源。 */
 export function visibleCitations(running: boolean, streamCitations: Citation[], selected: { citations: Citation[] } | undefined) {
   return running ? streamCitations : selected?.citations ?? [];
 }
