@@ -20,6 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class IngestionWorker {
   private static final Logger log = LoggerFactory.getLogger(IngestionWorker.class);
+  static final long RETRY_BASE_SECONDS = 30;
 
   private final IngestionRepository repository;
   private final IngestionSettings settings;
@@ -61,10 +62,16 @@ public class IngestionWorker {
       int dimension = vectors == null ? 0 : EmbeddingVectors.validate(vectors, chunks.size());
       boolean written = Boolean.TRUE.equals(tx.execute(status -> {
         if (!repository.holdsLease(job.jobId(), owner)) return false;
-        var ids = repository.replaceChunks(job.versionId(), chunks);
         if (provider == null) {
-          repository.failWithoutRetry(job.jobId(), job.versionId(), "未配置 embedding 模型，无法建立检索索引");
+          // 没有向量就不可检索；已就绪的版本保留原索引不动。
+          if (repository.isReady(job.versionId())) {
+            repository.failWithoutRetry(job.jobId(), job.versionId(), IngestionRepository.REBUILD_FAILED, true);
+          } else {
+            repository.replaceChunks(job.versionId(), chunks);
+            repository.failWithoutRetry(job.jobId(), job.versionId(), "未配置 embedding 模型，无法建立检索索引", false);
+          }
         } else {
+          var ids = repository.replaceChunks(job.versionId(), chunks);
           repository.insertEmbeddings(ids, vectors, provider.model(), dimension);
           repository.succeed(job.jobId(), job.versionId());
         }
@@ -73,7 +80,7 @@ public class IngestionWorker {
       if (!written) log.warn("Ingestion job {} lost its lease; result discarded", job.jobId());
     } catch (RuntimeException e) {
       log.warn("Ingestion job {} attempt {} failed: {}", job.jobId(), job.attempts(), e.getClass().getSimpleName());
-      repository.releaseAfterFailure(job.jobId(), job.versionId(), owner, job.attempts() >= settings.maxAttempts(), reason(e));
+      repository.releaseAfterFailure(job.jobId(), owner, job.attempts() >= settings.maxAttempts(), reason(e), RETRY_BASE_SECONDS * job.attempts());
     }
   }
 

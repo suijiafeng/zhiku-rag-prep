@@ -36,11 +36,16 @@ public class IngestionRepository {
     return id;
   }
 
-  /** Re-queues a finished job; returns 0 when the job is queued or running. */
+  static final String REBUILD_FAILED = "重建失败，仍使用原索引";
+
+  /** 已就绪的版本在重建成功前保持可检索，新切块在同一事务中整体替换旧切块。 */
   public int requeue(UUID versionId) {
-    int n = jdbc.update("UPDATE ingestion_job SET status = 'queued', attempts = 0, last_error = NULL, lease_owner = NULL, lease_until = NULL, updated_at = now() "
-        + "WHERE version_id = ? AND status IN ('succeeded', 'failed')", versionId);
-    if (n == 1) jdbc.update("UPDATE content_version SET index_status = 'pending', index_error = NULL WHERE id = ?", versionId);
+    int n = jdbc.update("UPDATE ingestion_job SET status = 'queued', attempts = 0, last_error = NULL, lease_owner = NULL, lease_until = NULL, "
+        + "next_attempt_at = NULL, updated_at = now() WHERE version_id = ? AND status IN ('succeeded', 'failed')", versionId);
+    if (n == 1) {
+      jdbc.update("UPDATE content_version SET index_status = CASE WHEN index_status = 'ready' THEN 'ready' ELSE 'pending' END, index_error = NULL WHERE id = ?",
+          versionId);
+    }
     return n;
   }
 
@@ -50,9 +55,10 @@ public class IngestionRepository {
           UPDATE ingestion_job SET status = 'failed', last_error = 'Attempts exhausted', lease_owner = NULL, lease_until = NULL, updated_at = now()
           WHERE status = 'running' AND lease_until < now() AND attempts >= ?
           RETURNING version_id)
-        UPDATE content_version SET index_status = 'failed', index_error = '多次处理失败或超时，已停止重试'
+        UPDATE content_version SET index_status = CASE WHEN index_status = 'ready' THEN 'ready' ELSE 'failed' END,
+               index_error = CASE WHEN index_status = 'ready' THEN ? ELSE '多次处理失败或超时，已停止重试' END
         WHERE id IN (SELECT version_id FROM failed)
-        """, maxAttempts);
+        """, maxAttempts, REBUILD_FAILED);
   }
 
   public Optional<ClaimedJob> claim(String owner, int leaseSeconds, int maxAttempts) {
@@ -61,6 +67,7 @@ public class IngestionRepository {
                attempts = j.attempts + 1, updated_at = now()
         WHERE j.id = (SELECT id FROM ingestion_job
                       WHERE (status = 'queued' OR (status = 'running' AND lease_until < now())) AND attempts < ?
+                        AND (next_attempt_at IS NULL OR next_attempt_at <= now())
                         AND NOT EXISTS (SELECT 1 FROM content_version v JOIN document d ON d.id = v.document_id
                                         WHERE v.id = ingestion_job.version_id AND d.deleted_at IS NOT NULL)
                       ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
@@ -70,7 +77,11 @@ public class IngestionRepository {
   }
 
   public void markProcessing(UUID versionId) {
-    jdbc.update("UPDATE content_version SET index_status = 'processing', index_error = NULL WHERE id = ?", versionId);
+    jdbc.update("UPDATE content_version SET index_status = 'processing', index_error = NULL WHERE id = ? AND index_status <> 'ready'", versionId);
+  }
+
+  public boolean isReady(UUID versionId) {
+    return "ready".equals(jdbc.queryForObject("SELECT index_status FROM content_version WHERE id = ?", String.class, versionId));
   }
 
   public Blob blob(UUID versionId) {
@@ -113,10 +124,9 @@ public class IngestionRepository {
         });
   }
 
-  /** Chunks are stored for inspection but nothing is searchable: the version is failed with a fixed reason. */
-  public void failWithoutRetry(UUID jobId, UUID versionId, String reason) {
+  public void failWithoutRetry(UUID jobId, UUID versionId, String reason, boolean keepReady) {
     jdbc.update("UPDATE ingestion_job SET status = 'failed', lease_owner = NULL, lease_until = NULL, last_error = ?, updated_at = now() WHERE id = ?", reason, jobId);
-    jdbc.update("UPDATE content_version SET index_status = 'failed', index_error = ? WHERE id = ?", reason, versionId);
+    jdbc.update("UPDATE content_version SET index_status = ?, index_error = ? WHERE id = ?", keepReady ? "ready" : "failed", reason, versionId);
   }
 
   public void succeed(UUID jobId, UUID versionId) {
@@ -124,12 +134,19 @@ public class IngestionRepository {
     jdbc.update("UPDATE content_version SET index_status = 'ready', index_error = NULL WHERE id = ?", versionId);
   }
 
-  /** Releases the lease after a failure: retry later, or fail permanently once attempts are exhausted. */
-  public void releaseAfterFailure(UUID jobId, UUID versionId, String owner, boolean exhausted, String reason) {
-    int n = jdbc.update("UPDATE ingestion_job SET status = ?, lease_owner = NULL, lease_until = NULL, last_error = ?, updated_at = now() "
-        + "WHERE id = ? AND lease_owner = ? AND status = 'running'", exhausted ? "failed" : "queued", reason, jobId, owner);
-    if (n == 1) {
-      jdbc.update("UPDATE content_version SET index_status = ?, index_error = ? WHERE id = ?", exhausted ? "failed" : "pending", exhausted ? reason : null, versionId);
-    }
+  /** 单条语句且要求仍持有租约：过期的执行无法覆盖更新的结果。 */
+  public void releaseAfterFailure(UUID jobId, String owner, boolean exhausted, String reason, long retryAfterSeconds) {
+    jdbc.update("""
+        WITH released AS (
+          UPDATE ingestion_job SET status = ?, lease_owner = NULL, lease_until = NULL, last_error = ?, updated_at = now(),
+                 next_attempt_at = CASE WHEN ? THEN NULL ELSE now() + make_interval(secs => ?) END
+          WHERE id = ? AND lease_owner = ? AND status = 'running'
+          RETURNING version_id)
+        UPDATE content_version v SET
+          index_status = CASE WHEN v.index_status = 'ready' THEN 'ready' WHEN ? THEN 'failed' ELSE 'pending' END,
+          index_error = CASE WHEN v.index_status = 'ready' THEN (CASE WHEN ? THEN ? ELSE v.index_error END) WHEN ? THEN ? ELSE NULL END
+        WHERE v.id IN (SELECT version_id FROM released)
+        """, exhausted ? "failed" : "queued", reason, exhausted, (double) retryAfterSeconds, jobId, owner,
+        exhausted, exhausted, REBUILD_FAILED, exhausted, reason);
   }
 }

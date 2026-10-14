@@ -171,7 +171,9 @@ class RetrievalTest extends IntegrationTest {
     assertThat(jdbc.queryForObject("SELECT index_status FROM content_version WHERE id = ?", String.class, version)).isEqualTo("pending");
     assertThat(jdbc.queryForObject("SELECT count(*) FROM chunk WHERE version_id = ?", Integer.class, version)).isZero();
     embeddings.failing.set(false);
-    worker.processNext();
+    assertThat(worker.processNext()).isFalse();
+    jdbc.update("UPDATE ingestion_job SET next_attempt_at = now() WHERE version_id = ?", version);
+    assertThat(worker.processNext()).isTrue();
     assertThat(jdbc.queryForObject("SELECT index_status FROM content_version WHERE id = ?", String.class, version)).isEqualTo("ready");
   }
 }

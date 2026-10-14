@@ -27,6 +27,7 @@ class IngestionTest extends IntegrationTest {
   @Autowired MockMvc mvc;
   @Autowired JdbcTemplate jdbc;
   @Autowired IngestionWorker worker;
+  @Autowired dev.zhiku.support.TestEmbeddingProvider embeddings;
 
   final UUID enterprise = UUID.randomUUID();
   final UUID operator = UUID.randomUUID();
@@ -35,6 +36,20 @@ class IngestionTest extends IntegrationTest {
   UUID version;
 
   static final String HANDBOOK = "# 员工手册\n\n## 年假\n\n年假按司龄计算：1-3 年 5 天，3-10 年 10 天，10 年以上 15 天。\n\n## 请假流程\n\n申请需提前 3 个工作日提交，经直属上级审批。\n";
+
+  @org.junit.jupiter.api.AfterEach
+  void restore() {
+    embeddings.failing.set(false);
+  }
+
+  int vectors() {
+    return jdbc.queryForObject("SELECT count(*) FROM chunk_embedding e JOIN chunk c ON c.id = e.chunk_id WHERE c.version_id = ?", Integer.class, version);
+  }
+
+  void reindex() throws Exception {
+    mvc.perform(post("/api/knowledge-bases/{kb}/documents/{doc}/versions/{v}/reindex", kb, doc, version)
+        .header(HttpHeaders.AUTHORIZATION, bearer(TestJwt.token(enterprise, operator, Role.KB_OPERATOR)))).andExpect(status().isAccepted());
+  }
 
   @BeforeEach
   void seed() {
@@ -149,6 +164,53 @@ class IngestionTest extends IntegrationTest {
     jdbc.update("UPDATE ingestion_job SET lease_owner = 'thief' WHERE id = ?", claimed.jobId());
     worker.process(claimed);
     assertThat(chunks()).isZero();
+    assertThat(jobStatus()).isEqualTo("running");
+  }
+
+  @Test
+  void aReadyVersionStaysSearchableWhileItIsRebuiltAndWhenTheRebuildFails() throws Exception {
+    upload("handbook.md", HANDBOOK).andExpect(status().isAccepted());
+    worker.processNext();
+    int chunks = chunks();
+    int vectors = vectors();
+    reindex();
+    assertThat(indexStatus()).isEqualTo("ready");
+    var claimed = worker.claim().orElseThrow();
+    assertThat(indexStatus()).isEqualTo("ready");
+    embeddings.failing.set(true);
+    worker.process(claimed);
+    assertThat(indexStatus()).isEqualTo("ready");
+    assertThat(chunks()).isEqualTo(chunks);
+    assertThat(vectors()).isEqualTo(vectors);
+    jdbc.update("UPDATE ingestion_job SET status = 'running', lease_owner = 'x', lease_until = now() - interval '1 minute', attempts = 3 WHERE version_id = ?", version);
+    worker.processNext();
+    assertThat(jobStatus()).isEqualTo("failed");
+    assertThat(indexStatus()).isEqualTo("ready");
+    assertThat(jdbc.queryForObject("SELECT index_error FROM content_version WHERE id = ?", String.class, version)).contains("原索引");
+  }
+
+  @Test
+  void aFailedAttemptWaitsBeforeItIsRetried() throws Exception {
+    upload("handbook.md", HANDBOOK).andExpect(status().isAccepted());
+    embeddings.failing.set(true);
+    assertThat(worker.processNext()).isTrue();
+    assertThat(jobStatus()).isEqualTo("queued");
+    assertThat(worker.processNext()).isFalse();
+    jdbc.update("UPDATE ingestion_job SET next_attempt_at = now() - interval '1 second' WHERE version_id = ?", version);
+    embeddings.failing.set(false);
+    assertThat(worker.processNext()).isTrue();
+    assertThat(jobStatus()).isEqualTo("succeeded");
+  }
+
+  @Test
+  void aStaleWorkersFailureDoesNotTouchTheVersion() throws Exception {
+    upload("handbook.md", HANDBOOK).andExpect(status().isAccepted());
+    var stale = worker.claim().orElseThrow();
+    jdbc.update("UPDATE ingestion_job SET lease_owner = 'other' WHERE id = ?", stale.jobId());
+    jdbc.update("UPDATE content_version SET index_status = 'ready' WHERE id = ?", version);
+    embeddings.failing.set(true);
+    worker.process(stale);
+    assertThat(indexStatus()).isEqualTo("ready");
     assertThat(jobStatus()).isEqualTo("running");
   }
 
