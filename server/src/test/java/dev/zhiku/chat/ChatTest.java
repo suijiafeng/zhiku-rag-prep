@@ -438,6 +438,22 @@ class ChatTest extends IntegrationTest {
     return "{\"kbId\":\"" + kb + "\",\"question\":\"" + question + "\",\"conversationId\":\"" + conversation + "\"}";
   }
 
+  /** C64 评审复现：三个很长的前序回答后续问，实际送出的 prompt 总长不超过预算，省略的轮次记入轨迹。 */
+  @Test
+  void aFollowUpAfterLongAnswersStaysWithinTheContextBudget() throws Exception {
+    var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "试用期呢?"));
+    ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "实习生呢?"));
+    jdbc.update("UPDATE message SET answer = repeat('长', 8000) WHERE conversation_id = ?::uuid", conversation);
+    var frames = ask(token(employee, Role.EMPLOYEE), continueBody(conversation, "那病假呢?"));
+    assertThat(names(frames)).contains("done");
+    assertThat(model.lastPrompt.stream().mapToInt(m -> m.content().length()).sum()).isLessThanOrEqualTo(16000);
+    assertThat(model.lastPrompt.getLast().content()).contains("实习生呢?").doesNotContain("问：年假有几天?").contains("年假按司龄计算");
+    var traceId = last(frames).data().get("traceId").asText();
+    assertThat(jdbc.queryForObject("SELECT summary FROM retrieval_trace_stage WHERE trace_id = ?::uuid AND key = 'generation'", String.class, traceId))
+        .contains("前序对话省略 2 轮");
+  }
+
   @Test
   void followUpsSeePriorTurnsOnlyAsNonEvidenceContext() throws Exception {
     var conversation = last(ask("年假有几天?")).data().get("conversationId").asText();

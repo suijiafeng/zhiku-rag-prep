@@ -400,9 +400,10 @@ paths:
         DEBUG_AND_EVALUATE. Published version (null means deployment defaults apply, reported as defaults), the single
         candidate if any, and the version history. Configurable here: retrievalK (1..max-k), contextChunks (1..defaults.maxContextChunks,
         at most retrievalK; the chunks given to the model; the maximum is the context budget zhiku.chat.max-context-chars divided
-        by max-chunk-chars, never above 20), handoffChannel, promptAddendum (appended to the fixed system prompt). At request time
-        prior turns and chunks share the same budget: chunks that do not fit are left out and the generation stage of the trace
-        says how many. Embedding and chunking are deployment settings: changing them re-indexes everything and is not done here.
+        by max-chunk-chars, never above 20), handoffChannel, promptAddendum (appended to the fixed system prompt). At request time the
+        whole prompt (system prompt, addendum, question, prior turns and chunks with their labels) must fit max-context-chars: the first
+        chunk is reserved first, prior turns are kept newest first, then further chunks; what does not fit is left out and the
+        generation stage of the trace says how many. If not even the first chunk fits, the turn ends with CONTEXT_TOO_LONG. Embedding and chunking are deployment settings: changing them re-indexes everything and is not done here.
       responses:
         '200':
           description: Overview
@@ -847,7 +848,7 @@ x-sse:
     - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
     - A conversation accepts at most zhiku.chat.max-turns turns (default 100); beyond that CONVERSATION_TOO_LONG asks for a new conversation. An answer is stale when its own sources or those of any earlier turn it was generated from are no longer current; a context answer expiring during generation stops the turn.
     - Follow-ups (conversationId) use at most the last three prior turns as non-evidence context; turns with unavailable sources are excluded entirely, answers based on non-current versions keep only the question. Retrieval uses the previous visible question plus the new one; facts still come only from freshly retrieved eligible sources.
-  errorCodes: [NO_EVIDENCE, SENSITIVE_INPUT, CONVERSATION_TOO_LONG, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, ANSWER_TOO_LONG]
+  errorCodes: [NO_EVIDENCE, SENSITIVE_INPUT, CONVERSATION_TOO_LONG, CONTEXT_TOO_LONG, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE, ANSWER_TOO_LONG]
 x-auth:
   status: implemented (local HS256 issuer; OIDC provider replaceable)
   claims:

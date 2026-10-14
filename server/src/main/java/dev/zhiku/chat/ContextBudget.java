@@ -1,31 +1,39 @@
 package dev.zhiku.chat;
 
-import dev.zhiku.retrieval.Retrieval.Candidate;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 入模内容的总字符预算。每块各自有上限不等于合计有上限：按得分顺序纳入证据块，超出预算的块被挤出，
- * 第一块始终保留。挤出数量记入轨迹，便于解释为什么引用少于配置的块数。
+ * 一次送入模型的全部内容的字符上限：系统提示、补充规则、当前问题、前序对话和证据块（含标题、版本与包围标记）都计入。
+ * 先给第一块证据留出位置，再从最近一轮开始纳入前序对话，最后按得分顺序纳入其余证据块；放不下的都不送入。
+ * 没有例外：连第一块都放不下时不纳入任何证据，由调用方停止。字符数不等同于 token 数。
  */
 final class ContextBudget {
-  record Selection(List<Candidate> kept, int squeezedOut) {}
+  /** keptTurnsFrom：从该下标起的前序轮次被纳入（等于轮次数表示一轮也没有）；keptChunks：纳入前几块证据。 */
+  record Plan(int keptTurnsFrom, int droppedTurns, int keptChunks, int squeezedOut, int usedChars) {}
 
   private ContextBudget() {}
 
-  static int chunkChars(Candidate c, int maxChunkChars) {
-    return Math.min(c.text().length(), maxChunkChars);
-  }
-
-  static Selection select(List<Candidate> ranked, int priorChars, int maxChunkChars, int budget) {
-    var kept = new ArrayList<Candidate>();
-    int used = priorChars;
-    for (var c : ranked) {
-      int size = chunkChars(c, maxChunkChars);
-      if (!kept.isEmpty() && used + size > budget) break;
-      kept.add(c);
-      used += size;
+  /**
+   * @param fixedChars 系统提示、补充规则、问题与固定标签的长度
+   * @param turnHeaderChars 至少纳入一轮前序对话时额外出现的说明文字长度
+   * @param turns 按时间从旧到新、已序列化的前序轮次
+   * @param chunks 按得分排序、已序列化的证据块
+   */
+  static Plan plan(int fixedChars, int turnHeaderChars, List<String> turns, List<String> chunks, int budget) {
+    int room = budget - fixedChars;
+    if (chunks.isEmpty() || chunks.getFirst().length() > room) {
+      return new Plan(turns.size(), turns.size(), 0, chunks.size(), fixedChars);
     }
-    return new Selection(kept, ranked.size() - kept.size());
+    int used = chunks.getFirst().length();
+    int from = turns.size();
+    for (int i = turns.size() - 1; i >= 0; i--) {
+      int extra = turns.get(i).length() + (from == turns.size() ? turnHeaderChars : 0);
+      if (used + extra > room) break;
+      used += extra;
+      from = i;
+    }
+    int kept = 1;
+    while (kept < chunks.size() && used + chunks.get(kept).length() <= room) used += chunks.get(kept++).length();
+    return new Plan(from, from, kept, chunks.size() - kept, fixedChars + used);
   }
 }

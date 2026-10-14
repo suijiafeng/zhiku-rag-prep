@@ -167,19 +167,14 @@ public class ChatService {
       fail(turn, sink, "CONVERSATION_TOO_LONG", "本会话轮次已达上限，请新建会话继续提问", requestId);
       return;
     }
-    var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
+    var history = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
     // 追问与上一个可见问题一起检索，使“那试用期呢”这类指代能够解析。
-    var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
-    List<Candidate> sources;
-    int squeezedOut;
+    var searchQuery = history.isEmpty() ? question : history.getLast().question() + "\n" + question;
+    List<Candidate> retrieved;
     try {
-      // 召回 K 条，只把前 contextChunks 条交给模型。
-      var retrieved = retrieval.searchAuthorized(scope, kbId, searchQuery, config.retrievalK(), Instant.now(), "chat", turn.traceId(), config.version()).candidates();
-      // 再按总字符预算挤出放不下的块，前序对话也占预算。
-      var selection = ContextBudget.select(retrieved.subList(0, Math.min(retrieved.size(), config.contextChunks())),
-          priorContextText(context).length(), settings.maxChunkChars(), settings.maxContextChars());
-      sources = selection.kept();
-      squeezedOut = selection.squeezedOut();
+      // 召回 K 条，最多把前 contextChunks 条交给模型。
+      var all = retrieval.searchAuthorized(scope, kbId, searchQuery, config.retrievalK(), Instant.now(), "chat", turn.traceId(), config.version()).candidates();
+      retrieved = all.subList(0, Math.min(all.size(), config.contextChunks()));
     } catch (ApiException e) {
       fail(turn, sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
       return;
@@ -188,8 +183,25 @@ public class ChatService {
       record(turn, "cancelled", null);
       return;
     }
-    if (sources.isEmpty()) {
+    if (retrieved.isEmpty()) {
       fail(turn, sink, "NO_EVIDENCE", "知识库中没有找到可依据的内容，请联系" + handoff(config.handoffChannel()), requestId);
+      return;
+    }
+    // 总预算覆盖全部入模内容：先给第一块证据留位，再从最近一轮起纳入前序对话，最后纳入其余证据。
+    var plan = ContextBudget.plan(fixedChars(question, config), TURN_HEADER.length() + 1, history.stream().map(ChatService::turnText).toList(),
+        java.util.stream.IntStream.range(0, retrieved.size()).mapToObj(i -> chunkText(i, retrieved.get(i))).toList(), settings.maxContextChars());
+    if (plan.keptChunks() == 0) {
+      fail(turn, sink, "CONTEXT_TOO_LONG", "问题或补充规则过长，放不下任何依据，请缩短问题后重试", requestId);
+      return;
+    }
+    var sources = retrieved.subList(0, plan.keptChunks());
+    var context = history.subList(plan.keptTurnsFrom(), history.size());
+    int squeezedOut = plan.squeezedOut();
+    int droppedTurns = plan.droppedTurns();
+    // 最终以实际序列化的 prompt 核对，任何遗漏的计数都不能让超长内容送出。
+    var messages = prompt(question, sources, context, config);
+    if (messages.stream().mapToInt(m -> m.content().length()).sum() > settings.maxContextChars()) {
+      fail(turn, sink, "CONTEXT_TOO_LONG", "入模内容超出上限，已停止", requestId);
       return;
     }
 
@@ -204,7 +216,7 @@ public class ChatService {
     var seq = new int[] {0};
     turn.modelStarted()[0] = Instant.now();
     try {
-      model.stream(prompt(question, sources, context, config), token -> {
+      model.stream(messages, token -> {
         // 披露更多草稿前重新读取授权和效力（每个重新检查间隔内最多一次）。
         if (System.nanoTime() - lastCheck[0] >= settings.recheckInterval().toNanos()) {
           lastCheck[0] = System.nanoTime();
@@ -272,7 +284,8 @@ public class ChatService {
         "title", s.title(), "excerpt", excerpt(s.text()))).toList();
     sink.send("validated", Map.of("citations", citations, "validation", "metadata-only"));
     retrieval.recordGeneration(turn.traceId(), Stage.timed("generation", "上下文与生成", "success", turn.modelStarted()[0],
-        "入模 " + sources.size() + " 块" + (squeezedOut == 0 ? "" : "（预算挤出 " + squeezedOut + " 块）") + " · 模型 " + model.model() + " · 引用元数据检查通过"));
+        "入模 " + sources.size() + " 块" + (squeezedOut == 0 ? "" : "（预算挤出 " + squeezedOut + " 块）")
+            + (droppedTurns == 0 ? "" : "（前序对话省略 " + droppedTurns + " 轮）") + " · 模型 " + model.model() + " · 引用元数据检查通过"));
     retrieval.linkMessage(turn.traceId(), stored[1]);
     var done = new LinkedHashMap<String, Object>();
     done.put("status", "complete");
@@ -305,29 +318,40 @@ public class ChatService {
     return out;
   }
 
-  private static String priorContextText(List<MessageView> context) {
-    if (context.isEmpty()) return "";
-    var sb = new StringBuilder("此前对话（仅帮助理解指代，不是事实依据，不得引用）：\n");
-    for (var m : context) {
-      sb.append("问：").append(m.question()).append('\n');
-      if (!m.stale() && m.answer() != null) sb.append("答：").append(m.answer().replaceAll("\\[\\d+\\]", "")).append('\n');
-    }
-    return sb.append('\n').toString();
+  private static final String TURN_HEADER = "此前对话（仅帮助理解指代，不是事实依据，不得引用）：\n";
+
+  private static String turnText(MessageView m) {
+    var sb = new StringBuilder("问：").append(m.question()).append('\n');
+    if (!m.stale() && m.answer() != null) sb.append("答：").append(m.answer().replaceAll("\\[\\d+\\]", "")).append('\n');
+    return sb.toString();
+  }
+
+  private String chunkText(int i, Candidate s) {
+    var body = s.text().length() > settings.maxChunkChars() ? s.text().substring(0, settings.maxChunkChars()) : s.text();
+    return "[" + (i + 1) + "] " + s.title() + "（" + s.versionLabel() + "）\n<<<\n" + body.replace("<<<", "‹‹‹").replace(">>>", "›››") + "\n>>>\n";
+  }
+
+  private static String system(ConfigService.Effective config) {
+    return config.promptAddendum() == null ? SYSTEM_PROMPT
+        : SYSTEM_PROMPT + "\n补充规则（知识库运营发布，配置版本 " + config.version() + "）：\n" + config.promptAddendum() + "\n";
+  }
+
+  /** 与证据和前序对话无关的固定部分：系统提示、补充规则、资料标签与问题。 */
+  private static int fixedChars(String question, ConfigService.Effective config) {
+    return system(config).length() + "资料：\n".length() + "\n问题：".length() + question.length();
   }
 
   private List<Message> prompt(String question, List<Candidate> sources, List<MessageView> context, ConfigService.Effective config) {
-    var sb = new StringBuilder(priorContextText(context));
-    sb.append("资料：\n");
-    for (int i = 0; i < sources.size(); i++) {
-      var s = sources.get(i);
-      var body = s.text().length() > settings.maxChunkChars() ? s.text().substring(0, settings.maxChunkChars()) : s.text();
-      sb.append('[').append(i + 1).append("] ").append(s.title()).append("（").append(s.versionLabel()).append("）\n<<<\n")
-          .append(body.replace("<<<", "‹‹‹").replace(">>>", "›››")).append("\n>>>\n");
+    var sb = new StringBuilder();
+    if (!context.isEmpty()) {
+      sb.append(TURN_HEADER);
+      context.forEach(m -> sb.append(turnText(m)));
+      sb.append('\n');
     }
+    sb.append("资料：\n");
+    for (int i = 0; i < sources.size(); i++) sb.append(chunkText(i, sources.get(i)));
     sb.append("\n问题：").append(question);
-    var system = config.promptAddendum() == null ? SYSTEM_PROMPT
-        : SYSTEM_PROMPT + "\n补充规则（知识库运营发布，配置版本 " + config.version() + "）：\n" + config.promptAddendum() + "\n";
-    return List.of(new Message("system", system), new Message("user", sb.toString()));
+    return List.of(new Message("system", system(config)), new Message("user", sb.toString()));
   }
 
   /** 人工渠道由业务确认后配置（ADR-002）；未配置时如实说明。 */
@@ -395,7 +419,7 @@ public class ChatService {
       Instant[] modelStarted) {}
 
   /** 依赖暂时不可用时可由用户重试；其余失败重试也不会改变结果。 */
-  private static final java.util.Set<String> REFUSALS = java.util.Set.of("NO_EVIDENCE", "SENSITIVE_INPUT", "CONVERSATION_TOO_LONG");
+  private static final java.util.Set<String> REFUSALS = java.util.Set.of("NO_EVIDENCE", "SENSITIVE_INPUT", "CONVERSATION_TOO_LONG", "CONTEXT_TOO_LONG");
 
   private static final java.util.Set<String> RETRYABLE = java.util.Set.of("MODEL_UNAVAILABLE", "DEPENDENCY_UNAVAILABLE");
 

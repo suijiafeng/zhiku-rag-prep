@@ -2,37 +2,45 @@ package dev.zhiku.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import dev.zhiku.retrieval.Retrieval.Candidate;
 import java.util.List;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ContextBudgetTest {
-  static Candidate chunk(int chars) {
-    return new Candidate(UUID.randomUUID(), UUID.randomUUID(), "手册", UUID.randomUUID(), "v1", 0, null, 0, chars, "字".repeat(chars), 0.9, 1);
+  static String chars(int n) {
+    return "字".repeat(n);
   }
 
   @Test
   void keepsChunksInOrderUntilTheBudgetIsSpent() {
-    var ranked = List.of(chunk(400), chunk(400), chunk(400), chunk(400));
-    var selected = ContextBudget.select(ranked, 0, 1500, 1000);
-    assertThat(selected.kept()).containsExactly(ranked.get(0), ranked.get(1));
-    assertThat(selected.squeezedOut()).isEqualTo(2);
+    var plan = ContextBudget.plan(100, 10, List.of(), List.of(chars(400), chars(400), chars(400), chars(400)), 1000);
+    assertThat(plan.keptChunks()).isEqualTo(2);
+    assertThat(plan.squeezedOut()).isEqualTo(2);
+    assertThat(plan.usedChars()).isEqualTo(900);
+  }
+
+  /** 评审复现：三个 8000 字的前序回答 + 一块证据曾经全部送入 16000 的预算。 */
+  @Test
+  void priorTurnsAreDroppedOldestFirstSoTheWholePromptStaysWithinBudget() {
+    var turns = List.of(chars(8000), chars(8000), chars(8000));
+    var plan = ContextBudget.plan(1500, 40, turns, List.of(chars(800), chars(800)), 16000);
+    assertThat(plan.keptTurnsFrom()).isEqualTo(2);
+    assertThat(plan.droppedTurns()).isEqualTo(2);
+    assertThat(plan.keptChunks()).isEqualTo(2);
+    assertThat(plan.usedChars()).isLessThanOrEqualTo(16000);
   }
 
   @Test
-  void priorTurnsAndTruncationCountAgainstTheBudget() {
-    var ranked = List.of(chunk(5000), chunk(100), chunk(100));
-    var selected = ContextBudget.select(ranked, 300, 1500, 1900);
-    assertThat(selected.kept()).containsExactly(ranked.get(0), ranked.get(1));
-    assertThat(selected.squeezedOut()).isEqualTo(1);
+  void theFirstChunkIsReservedBeforeAnyPriorTurn() {
+    var plan = ContextBudget.plan(1000, 40, List.of(chars(500)), List.of(chars(600)), 2000);
+    assertThat(plan.keptChunks()).isEqualTo(1);
+    assertThat(plan.keptTurnsFrom()).isEqualTo(1);
+    assertThat(plan.usedChars()).isEqualTo(1600);
   }
 
   @Test
-  void theFirstChunkIsAlwaysKept() {
-    var ranked = List.of(chunk(900), chunk(10));
-    var selected = ContextBudget.select(ranked, 500, 1500, 1000);
-    assertThat(selected.kept()).containsExactly(ranked.get(0));
-    assertThat(selected.squeezedOut()).isEqualTo(1);
+  void nothingIsKeptWhenEvenTheFirstChunkDoesNotFit() {
+    var plan = ContextBudget.plan(1500, 40, List.of(chars(10)), List.of(chars(600)), 2000);
+    assertThat(plan.keptChunks()).isZero();
+    assertThat(plan.squeezedOut()).isEqualTo(1);
   }
 }
