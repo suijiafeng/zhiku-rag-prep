@@ -50,7 +50,12 @@ zhiku:
     model: ${ZHIKU_CHAT_MODEL:qwen3.5:latest}
     context-chunks: 5
     max-chunk-chars: 1500
+    # Total time for one model call, from request to the last piece; the browser stream times out later.
     timeout: PT120S
+    # A model stream with no new data for this long is abandoned.
+    idle-timeout: PT30S
+    # Longer answers are stopped and discarded (ANSWER_TOO_LONG), never truncated into a completed answer.
+    max-answer-chars: 8000
     stream-timeout: PT150S
     # Grants and source eligibility are re-read at most this often while drafts stream; a change is detected within it.
     recheck-interval: PT1S

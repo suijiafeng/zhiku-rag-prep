@@ -159,6 +159,7 @@ public class ChatService {
           var code = recheck(scope, kbId, sources);
           if (code != null) throw new Stopped(code);
         }
+        if (answer.length() + token.length() > settings.maxAnswerChars()) throw new Stopped("ANSWER_TOO_LONG");
         answer.append(token);
         try {
           sink.send("draft", Map.of("text", token));
@@ -251,7 +252,8 @@ public class ChatService {
   }
 
   private static final Map<String, String> STOP_MESSAGE = Map.of(
-      "ACCESS_REVOKED", "访问权限已变更，回答已停止", "SOURCE_UNAVAILABLE", "引用的来源已变更，回答已停止");
+      "ACCESS_REVOKED", "访问权限已变更，回答已停止", "SOURCE_UNAVAILABLE", "引用的来源已变更，回答已停止",
+      "ANSWER_TOO_LONG", "回答超出长度上限，已停止并丢弃");
 
   /** Re-reads grants and current eligibility; returns the stop code, or null when the sources may still be disclosed. */
   private String recheck(AccessScope scope, UUID kbId, List<Candidate> sources) {

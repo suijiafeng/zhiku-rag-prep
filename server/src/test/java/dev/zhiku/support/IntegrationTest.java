@@ -11,7 +11,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * developer's ../.env (imported by application.yml) can never change test behaviour; test doubles stand in.
  */
 @SpringBootTest(properties = {"zhiku.chat.provider=none", "zhiku.embedding.provider=none", "zhiku.widget.allowed-origins=",
-    "zhiku.chat.recheck-interval=PT0S"})
+    "zhiku.chat.recheck-interval=PT0S", "zhiku.chat.max-answer-chars=200"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, TestEmbeddingConfiguration.class})
 public abstract class IntegrationTest {

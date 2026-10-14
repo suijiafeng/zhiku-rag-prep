@@ -213,6 +213,16 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void anAnswerLongerThanTheLimitIsStoppedAndNotStored() throws Exception {
+    model.script = m -> "年假".repeat(150) + "[1]";
+    var frames = ask("年假有几天?");
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("ANSWER_TOO_LONG");
+    var shown = frames.stream().filter(f -> f.event().equals("draft")).mapToInt(f -> f.data().get("text").asText().length()).sum();
+    assertThat(shown).isLessThanOrEqualTo(200);
+    assertThat(messages()).isZero();
+  }
+
+  @Test
   void withdrawalDuringGenerationStopsDisclosure() throws Exception {
     model.beforeFinish = () -> jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
     var frames = ask("年假有几天?");
