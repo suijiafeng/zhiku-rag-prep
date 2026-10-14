@@ -1,5 +1,7 @@
 import { Alert, Avatar, Breadcrumb, ConfigProvider, Input, Layout, Menu, Result, Tag } from "antd";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { DocumentsPage } from "./features/documents/DocumentsPage";
+import { documentsFixture } from "./features/documents/fixtures";
 import { OverviewPage } from "./features/overview/OverviewPage";
 import { overviewFixture } from "./features/overview/fixtures";
 
@@ -13,6 +15,13 @@ const NAV = [
 ] as const;
 
 type NavKey = (typeof NAV)[number]["key"];
+
+export function pageFor(key: NavKey): ReactNode {
+  if (key === "overview") return <OverviewPage data={overviewFixture} />;
+  if (key === "documents") return <DocumentsPage data={documentsFixture} />;
+  const label = NAV.find((n) => n.key === key)?.label ?? key;
+  return <Result status="info" title={`${label}：待实现`} subTitle="该页面已在设计稿中，按任务顺序后续接入。" />;
+}
 
 /** Admin shell following the Figma "知识库总览" frame. No fetching, mutation or authentication. */
 export function App() {
@@ -62,11 +71,7 @@ export function App() {
               title="开发骨架，尚未接入生产服务"
               description="页面数字均为虚构示例数据；未实现登录、权限、上传、检索或模型调用。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
             />
-            {active === "overview" ? (
-              <OverviewPage data={overviewFixture} />
-            ) : (
-              <Result status="info" title={`${current.label}：待实现`} subTitle="该页面已在设计稿中，按任务顺序后续接入。" />
-            )}
+            {pageFor(active)}
           </Layout.Content>
         </Layout>
       </Layout>

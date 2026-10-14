@@ -1,5 +1,5 @@
 /** Neutral, fictional sample data for the scaffold. Not loaded from any service. */
-export type IndexStatus = "indexed" | "parsing" | "failed";
+import type { IndexStatus } from "../../components/IndexStatusTag";
 
 export interface OverviewData {
   updatedAt: string;

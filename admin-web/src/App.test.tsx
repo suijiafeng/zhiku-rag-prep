@@ -22,4 +22,11 @@ describe("admin shell", () => {
     expect(html).toMatch(/<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*新建问答/s);
     expect(html).toMatch(/<input[^>]*disabled/);
   });
+
+  it("routes the documents nav item to a real page, not a placeholder", async () => {
+    const { pageFor } = await import("./App");
+    expect(renderToStaticMarkup(pageFor("documents"))).toContain("文档管理");
+    expect(renderToStaticMarkup(pageFor("documents"))).not.toContain("待实现");
+    expect(renderToStaticMarkup(pageFor("qa"))).toContain("待实现");
+  });
 });

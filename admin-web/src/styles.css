@@ -50,3 +50,24 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
   .shell-content { padding: 16px; }
   .bar-chart { gap: 6px; }
 }
+
+.upload-zone { background: #fff; border: 1px dashed #c9d1e0; border-radius: 8px; padding: 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; margin-bottom: 16px; }
+.upload-icon { width: 32px; height: 32px; border-radius: 8px; background: #eef2fb; color: #2f5bd3; display: grid; place-items: center; font-weight: 600; }
+.doc-filter { margin-bottom: 16px; }
+.doc-table .ant-card-body { padding: 0; }
+.doc-table .ant-table-row { cursor: pointer; }
+.doc-table .row-selected > td { background: #f2f5fd; }
+.doc-name { display: inline-flex; align-items: center; gap: 8px; }
+.doc-type { width: 10px; height: 12px; border-radius: 2px; background: #8b93a7; flex: none; }
+.doc-type-pdf { background: #6b7385; }
+.doc-type-md, .doc-type-docx, .doc-type-txt { background: #2f5bd3; }
+.doc-type-xlsx { background: #1f9d55; }
+.doc-type-pptx { background: #d97706; }
+
+.chunk-sub { display: block; font-size: 12px; margin-bottom: 12px; }
+.chunk { background: #f4f6f9; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
+.chunk-head { display: flex; gap: 10px; font-size: 12px; margin-bottom: 4px; }
+.chunk-seq { color: #2f5bd3; font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.chunk-tokens { color: #8b93a7; }
+.chunk-text { font-size: 13px; color: #3a4256; line-height: 1.6; }
+.chunk-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; }

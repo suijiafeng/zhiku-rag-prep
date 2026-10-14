@@ -1,12 +1,7 @@
 import { Button, Card, Col, Row, Table, Tag, Typography } from "antd";
+import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
 import { DailyQuestionsChart } from "./DailyQuestionsChart";
-import type { IndexStatus, OverviewData } from "./fixtures";
-
-const statusTag: Record<IndexStatus, { color: string; label: string }> = {
-  indexed: { color: "success", label: "已索引" },
-  parsing: { color: "warning", label: "解析中" },
-  failed: { color: "error", label: "失败" },
-};
+import type { OverviewData } from "./fixtures";
 
 export function OverviewPage({ data }: { data: OverviewData }) {
   return (
@@ -65,7 +60,7 @@ export function OverviewPage({ data }: { data: OverviewData }) {
                 {
                   title: "状态",
                   dataIndex: "status",
-                  render: (s: IndexStatus) => <Tag color={statusTag[s].color}>{statusTag[s].label}</Tag>,
+                  render: (s: IndexStatus) => <IndexStatusTag status={s} />,
                 },
                 { title: "更新时间", dataIndex: "updatedAt", className: "mono" },
               ]}
