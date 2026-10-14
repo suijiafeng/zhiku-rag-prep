@@ -1,0 +1,69 @@
+openapi: 3.1.0
+info:
+  title: 知库 scaffold API
+  version: 0.1.0-draft
+  description: PRD v0.3 preparation. Only status endpoint implemented. SSE schemas are provisional, no chat route exists.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /api/status:
+    get:
+      operationId: getStatus
+      security: []
+      responses:
+        '200':
+          description: Non-sensitive scaffold status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, stage, prdVersion, modelEnabled]
+                properties:
+                  name: {type: string}
+                  stage: {type: string, const: scaffold}
+                  prdVersion: {type: string, const: '0.3'}
+                  modelEnabled: {type: boolean, const: false}
+components:
+  schemas:
+    Error:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code: {type: string}
+        message: {type: string}
+        requestId: {type: string}
+    Draft:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string}
+    Citation:
+      type: object
+      required: [documentId, versionId, title, excerpt]
+      properties:
+        documentId: {type: string}
+        versionId: {type: string}
+        title: {type: string}
+        excerpt: {type: string}
+    Validated:
+      type: object
+      description: Source metadata checks only; not semantic verification.
+      required: [citations, validation]
+      properties:
+        citations:
+          type: array
+          items: {$ref: '#/components/schemas/Citation'}
+        validation: {type: string, const: metadata-only}
+    Done:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, const: complete}
+x-sse-draft:
+  status: provisional-not-implemented
+  transport: POST with fetch; no route yet
+  events: [draft, validated, error, done]
+  rules:
+    - All events use JSON data. Error is terminal. Done requires preceding validated.
+    - Draft is provisional. Metadata validation does not establish semantic correctness.
+    - Disconnect, cancellation or error must not preserve a usable answer.
