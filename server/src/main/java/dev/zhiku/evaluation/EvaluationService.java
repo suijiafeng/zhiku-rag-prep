@@ -38,7 +38,8 @@ class EvaluationService {
   /** quote is null and available false once the source version is withdrawn or its document deleted; the span stays. */
   record EvidenceView(UUID versionId, String documentTitle, String versionLabel, int startOffset, int endOffset, String quote, boolean available) {}
 
-  record CaseView(UUID id, String question, String label, String status, String source, Instant createdAt, List<EvidenceView> evidence) {}
+  record CaseView(UUID id, String question, String label, String status, String source, Instant createdAt, List<EvidenceView> evidence,
+      UUID originMessageId) {}
 
   record Ratio(int num, int den) {}
 
@@ -68,13 +69,18 @@ class EvaluationService {
   }
 
   @Transactional
-  UUID createCase(UUID kbId, String question, String label, List<EvidenceInput> evidence, String source) {
+  UUID createCase(UUID kbId, String question, String label, List<EvidenceInput> evidence, String source, UUID originMessageId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     if (!LABELS.contains(label)) throw ApiException.unprocessable("Unknown label");
+    if (originMessageId != null && !Boolean.TRUE.equals(jdbc.queryForObject(
+        "SELECT EXISTS (SELECT 1 FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE m.id = ? AND c.kb_id = ?)",
+        Boolean.class, originMessageId, kbId))) {
+      throw ApiException.unprocessable("Origin message is not in this knowledge base");
+    }
     var inputs = evidence == null ? List.<EvidenceInput>of() : evidence;
     var id = UUID.randomUUID();
-    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, source, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-        id, kbId, question, label, source == null ? "manual" : source, scope.userId());
+    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, source, created_by, origin_message_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        id, kbId, question, label, source == null ? "manual" : source, scope.userId(), originMessageId);
     insertEvidence(kbId, id, inputs);
     audit.record(scope, "EVAL_CASE_CREATE", "eval-case:" + id, "OK", Map.of("label", label, "evidence", inputs.size()));
     return id;
@@ -142,11 +148,11 @@ class EvaluationService {
               rs.getInt("start_offset"), rs.getInt("end_offset"), rs.getBoolean("available") ? rs.getString("quote") : null,
               rs.getBoolean("available")));
         }, kbId);
-    return jdbc.query("SELECT id, question, label, status, source, created_at FROM eval_case WHERE kb_id = ? ORDER BY created_at DESC, id",
+    return jdbc.query("SELECT id, question, label, status, source, created_at, origin_message_id FROM eval_case WHERE kb_id = ? ORDER BY created_at DESC, id",
         (rs, i) -> {
           var id = rs.getObject("id", UUID.class);
           return new CaseView(id, rs.getString("question"), rs.getString("label"), rs.getString("status"), rs.getString("source"),
-              rs.getTimestamp("created_at").toInstant(), evidence.getOrDefault(id, List.of()));
+              rs.getTimestamp("created_at").toInstant(), evidence.getOrDefault(id, List.of()), rs.getObject("origin_message_id", UUID.class));
         }, kbId);
   }
 

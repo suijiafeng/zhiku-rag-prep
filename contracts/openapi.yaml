@@ -146,7 +146,7 @@ paths:
       description: >-
         DEBUG_AND_EVALUATE. status open | in_progress | to_verify | resolved | wont_fix; rootCause must be a PRD chapter 11
         category. Closing needs a basis: resolved requires rootCause, resolution and verificationCaseId of an approved case
-        in this knowledge base whose evidence spans were all retrieved in the latest evaluation run (a retrieval check, not
+        in this knowledge base made from this feedback (originMessageId) whose evidence spans were all retrieved in the latest evaluation run (a retrieval check, not
         proof that the answer is correct); wont_fix requires resolution as the reason. Every change is kept in the handling
         history. Audited.
       requestBody:
@@ -187,6 +187,7 @@ paths:
                     verificationCaseId: {type: string, format: uuid}
                     changedBy: {type: string, format: uuid}
                     changedAt: {type: string, format: date-time}
+                    feedbackVersion: {type: integer, description: Feedback version the change was made for}
         '403': {$ref: '#/components/responses/Forbidden'}
   /api/widget-tokens:
     post:
@@ -452,6 +453,7 @@ paths:
                   type: array
                   maxItems: 10
                   items: {type: object, required: [versionId, quote], properties: {versionId: {type: string, format: uuid}, quote: {type: string}}}
+                originMessageId: {type: string, format: uuid, description: Feedback message the case was made from; must be in this knowledge base (422)}
       responses:
         '201': {description: Created}
         '403': {$ref: '#/components/responses/Forbidden'}

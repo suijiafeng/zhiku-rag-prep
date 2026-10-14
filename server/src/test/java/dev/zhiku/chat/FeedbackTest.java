@@ -140,9 +140,15 @@ class FeedbackTest extends IntegrationTest {
         .contentType("application/json").content(body));
   }
 
+  /** A case created from the asker's feedback (its origin), as the records page does. */
   UUID evalCase(String status) {
+    return evalCase(status, askerMessage);
+  }
+
+  UUID evalCase(String status, UUID origin) {
     var id = UUID.randomUUID();
-    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, status, created_by) VALUES (?, ?, '年假有几天?', 'answerable', ?, ?)", id, kb, status, operator);
+    jdbc.update("INSERT INTO eval_case (id, kb_id, question, label, status, created_by, origin_message_id) VALUES (?, ?, '年假有几天?', 'answerable', ?, ?, ?)",
+        id, kb, status, operator, origin);
     return id;
   }
 
@@ -176,6 +182,15 @@ class FeedbackTest extends IntegrationTest {
     handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
     run(passing, true, 0);
 
+    var unrelated = evalCase("approved", null);
+    jdbc.update("INSERT INTO eval_result (run_id, case_id, mapping_failed, hit, evidence_hit, evidence_total, latency_ms) "
+        + "SELECT id, ?, false, true, 1, 1, 10 FROM eval_run WHERE kb_id = ? ORDER BY created_at DESC LIMIT 1", unrelated, kb);
+    handle(askerMessage, resolve(unrelated)).andExpect(status().isUnprocessableEntity());
+    var otherFeedback = evalCase("approved", operatorMessage);
+    jdbc.update("INSERT INTO eval_result (run_id, case_id, mapping_failed, hit, evidence_hit, evidence_total, latency_ms) "
+        + "SELECT id, ?, false, true, 1, 1, 10 FROM eval_run WHERE kb_id = ? ORDER BY created_at DESC LIMIT 1", otherFeedback, kb);
+    handle(askerMessage, resolve(otherFeedback)).andExpect(status().isUnprocessableEntity());
+
     var otherKb = UUID.randomUUID();
     var foreign = UUID.randomUUID();
     jdbc.update("INSERT INTO knowledge_base (id, enterprise_id, name) VALUES (?, ?, ?)", otherKb, enterprise, "其他-" + otherKb);
@@ -197,6 +212,27 @@ class FeedbackTest extends IntegrationTest {
     handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"  \"}").andExpect(status().isUnprocessableEntity());
     handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"" + "长".repeat(1001) + "\"}").andExpect(status().isUnprocessableEntity());
     handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"问题超出试点范围，已转人工渠道\"}").andExpect(status().isNoContent());
+  }
+
+  @Test
+  void changedFeedbackReopensItsHandling() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"MISSING\"}").andExpect(status().isOk());
+    handle(askerMessage, "{\"status\":\"wont_fix\",\"resolution\":\"资料本身未覆盖\"}").andExpect(status().isNoContent());
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"WRONG\",\"comment\":\"其实是答错了\"}").andExpect(status().isOk());
+    records("down")
+        .andExpect(jsonPath("$.items[0].status").value("open"))
+        .andExpect(jsonPath("$.items[0].resolution").doesNotExist())
+        .andExpect(jsonPath("$.items[0].rootCause").doesNotExist());
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/feedback/{id}/history", kb, askerMessage), operator, Role.KB_OPERATOR))
+        .andExpect(jsonPath("$.length()").value(2))
+        .andExpect(jsonPath("$[0].feedbackVersion").value(1))
+        .andExpect(jsonPath("$[1].status").value("open"))
+        .andExpect(jsonPath("$[1].feedbackVersion").value(2))
+        .andExpect(jsonPath("$[1].changedBy").value(asker.toString()));
+
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"WRONG\",\"comment\":\"其实是答错了\"}").andExpect(status().isOk());
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/feedback/{id}/history", kb, askerMessage), operator, Role.KB_OPERATOR))
+        .andExpect(jsonPath("$.length()").value(2));
   }
 
   @Test

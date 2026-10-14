@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/knowledge-bases/{kbId}")
 class EvaluationController {
   record CreateCaseRequest(@NotBlank @Size(max = 2000) String question, @NotNull String label,
-      @Size(max = 10) List<EvaluationService.EvidenceInput> evidence, @Size(max = 100) String source) {}
+      @Size(max = 10) List<EvaluationService.EvidenceInput> evidence, @Size(max = 100) String source, UUID originMessageId) {}
 
   record RunRequest(Integer k) {}
 
@@ -42,7 +42,8 @@ class EvaluationController {
   @PostMapping("/eval-cases")
   @ResponseStatus(HttpStatus.CREATED)
   Map<String, UUID> create(@PathVariable UUID kbId, @Valid @RequestBody CreateCaseRequest request) {
-    return Map.of("id", service.createCase(kbId, request.question().strip(), request.label(), request.evidence(), request.source()));
+    return Map.of("id", service.createCase(kbId, request.question().strip(), request.label(), request.evidence(), request.source(),
+        request.originMessageId()));
   }
 
   @PostMapping("/eval-cases/{caseId}/approve")

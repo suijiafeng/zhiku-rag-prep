@@ -88,8 +88,8 @@ class FeedbackService {
   }
 
   /**
-   * Every closure needs a basis (PRD F02): "resolved" needs a root cause, the fix, and an approved evaluation case that
-   * passed the latest run; "wont_fix" needs the reason. Each change is appended to the handling history.
+   * Every closure needs a basis (PRD F02): "resolved" needs a root cause, the fix, and an approved evaluation case made
+   * from this feedback that passed the latest run; "wont_fix" needs the reason. Each change is appended to the handling history.
    */
   @Transactional
   void updateStatus(UUID kbId, UUID messageId, String status, String rootCause, String resolution, UUID verificationCaseId) {
@@ -103,8 +103,8 @@ class FeedbackService {
       if (rootCause == null || note == null || verificationCaseId == null) {
         throw ApiException.unprocessable("Resolving needs a root cause, the fix and a verification case");
       }
-      if (!regression.passedLatestRun(kbId, verificationCaseId)) {
-        throw ApiException.unprocessable("Verification case must be approved and pass the latest evaluation run");
+      if (!regression.passedLatestRun(kbId, verificationCaseId, messageId)) {
+        throw ApiException.unprocessable("Verification case must be made from this feedback, approved and pass the latest evaluation run");
       }
     }
     repository.updateStatus(kbId, messageId, status, rootCause, note, verificationCaseId, scope.userId());

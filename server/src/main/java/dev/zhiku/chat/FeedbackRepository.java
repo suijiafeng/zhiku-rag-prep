@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,7 +22,8 @@ class FeedbackRepository {
       String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
       Boolean sourceAvailable) {}
 
-  record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt) {}
+  record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt,
+      Integer feedbackVersion) {}
 
   /**
    * Same rule as the history view: a completed answer is available only while, for it and every earlier turn it was
@@ -57,15 +59,32 @@ class FeedbackRepository {
             rs.getObject("enterprise_id", UUID.class), rs.getObject("kb_id", UUID.class), rs.getString("status")), messageId).stream().findFirst();
   }
 
+  /**
+   * Stores the asker's feedback. An unchanged resubmission changes nothing. A changed feedback gets a new version and,
+   * when it had been handled, reopens: the old conclusion was about the previous version (C16).
+   */
   FeedbackView upsert(UUID messageId, UUID userId, String rating, String reason, String comment) {
+    record Current(FeedbackView view, boolean handled) {}
+    var current = jdbc.query("SELECT rating, reason, comment, version, status, updated_at, root_cause, resolution FROM feedback WHERE message_id = ? FOR UPDATE",
+        (rs, i) -> new Current(view(rs, i), !"open".equals(rs.getString("status")) || rs.getString("root_cause") != null || rs.getString("resolution") != null),
+        messageId).stream().findFirst();
+    if (current.isPresent() && Objects.equals(current.get().view().rating(), rating) && Objects.equals(current.get().view().reason(), reason)
+        && Objects.equals(current.get().view().comment(), comment)) {
+      return current.get().view();
+    }
     var view = jdbc.queryForObject("""
         INSERT INTO feedback (message_id, user_id, rating, reason, comment) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (message_id) DO UPDATE SET rating = EXCLUDED.rating, reason = EXCLUDED.reason, comment = EXCLUDED.comment,
-          version = feedback.version + 1, updated_at = now()
+          version = feedback.version + 1, status = 'open', root_cause = NULL, resolution = NULL, verification_case_id = NULL,
+          handled_by = NULL, updated_at = now()
         RETURNING rating, reason, comment, version, status, updated_at
         """, FeedbackRepository::view, messageId, userId, rating, reason, comment);
     jdbc.update("INSERT INTO feedback_history (message_id, version, rating, reason, comment) VALUES (?, ?, ?, ?, ?)",
         messageId, view.version(), rating, reason, comment);
+    if (current.isPresent() && current.get().handled()) {
+      jdbc.update("INSERT INTO feedback_handling (message_id, status, changed_by, feedback_version) VALUES (?, 'open', ?, ?)",
+          messageId, userId, view.version());
+    }
     return view;
   }
 
@@ -126,18 +145,21 @@ class FeedbackRepository {
         FROM message m JOIN conversation c ON c.id = m.conversation_id
         WHERE f.message_id = ? AND m.id = f.message_id AND c.kb_id = ?
         """, status, rootCause, resolution, verificationCaseId, handledBy, messageId, kbId);
-    jdbc.update("INSERT INTO feedback_handling (message_id, status, root_cause, resolution, verification_case_id, changed_by) VALUES (?, ?, ?, ?, ?, ?)",
-        messageId, status, rootCause, resolution, verificationCaseId, handledBy);
+    jdbc.update("""
+        INSERT INTO feedback_handling (message_id, status, root_cause, resolution, verification_case_id, changed_by, feedback_version)
+        SELECT ?, ?, ?, ?, ?, ?, version FROM feedback WHERE message_id = ?
+        """, messageId, status, rootCause, resolution, verificationCaseId, handledBy, messageId);
   }
 
   /** Handling changes of feedback in this knowledge base only; another knowledge base's id yields nothing. */
   List<HandlingView> handlingHistory(UUID kbId, UUID messageId) {
     return jdbc.query("""
-        SELECT h.status, h.root_cause, h.resolution, h.verification_case_id, h.changed_by, h.changed_at
+        SELECT h.status, h.root_cause, h.resolution, h.verification_case_id, h.changed_by, h.changed_at, h.feedback_version
         FROM feedback_handling h JOIN message m ON m.id = h.message_id JOIN conversation c ON c.id = m.conversation_id
         WHERE h.message_id = ? AND c.kb_id = ? ORDER BY h.id
         """, (rs, i) -> new HandlingView(rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"),
-            rs.getObject("verification_case_id", UUID.class), rs.getObject("changed_by", UUID.class), rs.getTimestamp("changed_at").toInstant()),
+            rs.getObject("verification_case_id", UUID.class), rs.getObject("changed_by", UUID.class), rs.getTimestamp("changed_at").toInstant(),
+            (Integer) rs.getObject("feedback_version")),
         messageId, kbId);
   }
 }

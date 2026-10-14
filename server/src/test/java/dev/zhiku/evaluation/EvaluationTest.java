@@ -117,6 +117,30 @@ class EvaluationTest extends IntegrationTest {
     assertThat(body).doesNotContain("10 年以上 15 天").doesNotContain("超标部分需事前审批");
   }
 
+  UUID messageIn(UUID knowledgeBase) {
+    var conversation = UUID.randomUUID();
+    var message = UUID.randomUUID();
+    jdbc.update("INSERT INTO conversation (id, enterprise_id, user_id, kb_id, title) VALUES (?, ?, ?, ?, '年假')", conversation, enterprise, operator, knowledgeBase);
+    jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model) VALUES (?, ?, '年假有几天?', '答[1]', 'test')", message, conversation);
+    return message;
+  }
+
+  @Test
+  void casesCreatedFromFeedbackKeepTheirOriginWithinTheKnowledgeBase() throws Exception {
+    var origin = messageIn(kb);
+    createCase("{\"question\":\"年假有几天?\",\"label\":\"answerable\",\"source\":\"feedback\",\"originMessageId\":\"" + origin + "\"}")
+        .andExpect(status().isCreated());
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-cases", kb), operator, Role.KB_OPERATOR))
+        .andExpect(jsonPath("$[0].originMessageId").value(origin.toString()));
+
+    var otherKb = UUID.randomUUID();
+    jdbc.update("INSERT INTO knowledge_base (id, enterprise_id, name) VALUES (?, ?, ?)", otherKb, enterprise, "其他-" + otherKb);
+    createCase("{\"question\":\"x\",\"label\":\"answerable\",\"originMessageId\":\"" + messageIn(otherKb) + "\"}")
+        .andExpect(status().isUnprocessableEntity());
+    createCase("{\"question\":\"x\",\"label\":\"answerable\",\"originMessageId\":\"" + UUID.randomUUID() + "\"}")
+        .andExpect(status().isUnprocessableEntity());
+  }
+
   @Test
   void rejectsEvidenceThatIsNotInTheVersion() throws Exception {
     createCase(caseJson("年假有几天?", leave, "原文里没有这句话")).andExpect(status().isUnprocessableEntity());
