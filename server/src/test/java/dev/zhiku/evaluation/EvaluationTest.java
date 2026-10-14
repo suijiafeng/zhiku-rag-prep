@@ -32,6 +32,7 @@ class EvaluationTest extends IntegrationTest {
   @Autowired JdbcTemplate jdbc;
   @Autowired ObjectMapper json;
   @Autowired IngestionWorker worker;
+  @Autowired dev.zhiku.support.TestEmbeddingProvider embeddings;
   @Autowired org.springframework.transaction.support.TransactionTemplate tx;
 
   final UUID enterprise = UUID.randomUUID();
@@ -65,6 +66,11 @@ class EvaluationTest extends IntegrationTest {
     mvc.perform(as(req, operator, Role.KB_OPERATOR)).andExpect(status().isAccepted());
     assertThat(worker.processNext()).isTrue();
     return version;
+  }
+
+  @org.junit.jupiter.api.AfterEach
+  void restoreEmbedding() {
+    embeddings.beforeEmbed = () -> {};
   }
 
   <T extends MockHttpServletRequestBuilder> T as(T req, UUID user, Role... roles) {
@@ -249,6 +255,16 @@ class EvaluationTest extends IntegrationTest {
     run(5).andExpect(jsonPath("$.summary.sourceUnavailable").value(1)).andExpect(jsonPath("$.summary.prepFailed").value(0));
     mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-runs/latest", kb), operator, Role.KB_OPERATOR))
         .andExpect(jsonPath("$.results[?(@.sourceUnavailable == true)].question").value(org.hamcrest.Matchers.contains("住宿标准是什么")));
+  }
+
+  @Test
+  void aRunNoticesWhenTheIndexChangedWhileItRan() throws Exception {
+    approve(id(createCase(caseJson("年假有几天", leave, "10 年以上 15 天"))));
+    run(5).andExpect(jsonPath("$.summary.indexChangedDuringRun").value(false));
+    embeddings.beforeEmbed = () -> jdbc.update("UPDATE ingestion_job SET updated_at = now() + interval '1 second' WHERE version_id = ?", leave);
+    run(5).andExpect(status().isOk()).andExpect(jsonPath("$.summary.indexChangedDuringRun").value(true));
+    mvc.perform(as(get("/api/knowledge-bases/{kb}/eval-runs/latest", kb), operator, Role.KB_OPERATOR))
+        .andExpect(jsonPath("$.summary.indexChangedDuringRun").value(true));
   }
 
   @Test

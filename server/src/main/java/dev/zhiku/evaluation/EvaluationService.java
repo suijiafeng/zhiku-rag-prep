@@ -72,8 +72,9 @@ public class EvaluationService {
 
   public record Ratio(int num, int den) {}
 
+  /** indexChangedDuringRun：运行期间有索引任务完成，本次结果可能混用新旧切块，应当重跑而不是当作质量变化。 */
   public record Summary(int cases, int evaluated, int prepFailed, int notApplicable, Ratio hit, Ratio recall, Double recallMacro, Long p95Ms,
-      int sourceUnavailable) {}
+      int sourceUnavailable, boolean indexChangedDuringRun) {}
 
   /** sourceUnavailable：某个证据版本当前无效；此类用例会被报告，但不计入分数。 */
   public record ResultView(UUID caseId, String question, String label, boolean mappingFailed, boolean hit, int evidenceHit, int evidenceTotal, int latencyMs,
@@ -251,6 +252,7 @@ public class EvaluationService {
     int k = requestedK == null ? 5 : requestedK;
     if (k < 1 || k > 30) throw ApiException.unprocessable("k must be between 1 and 30");
     var runAt = Instant.now();
+    var indexMarkBefore = indexMark(kbId);
     var cases = jdbc.query("SELECT id, question, label, query_at FROM eval_case WHERE kb_id = ? AND status = 'approved' ORDER BY created_at, id",
         (rs, i) -> new String[] {rs.getString("id"), rs.getString("question"), rs.getString("label"),
             rs.getTimestamp("query_at") == null ? null : rs.getTimestamp("query_at").toInstant().toString()}, kbId);
@@ -301,7 +303,7 @@ public class EvaluationService {
       }
       results.add(new ResultView(caseId, c[1], c[2], false, covered > 0, covered, spans.size(), latency, false));
     }
-    var summary = summarize(cases.size(), notApplicable, results);
+    var summary = summarize(cases.size(), notApplicable, results, !java.util.Objects.equals(indexMarkBefore, indexMark(kbId)));
     var runId = UUID.randomUUID();
     final var modelUsed = model;
     tx.executeWithoutResult(status -> {
@@ -333,7 +335,19 @@ public class EvaluationService {
     return false;
   }
 
+  /** 本库最近一次索引任务的完成时间，用来发现运行期间的重建。 */
+  private java.sql.Timestamp indexMark(UUID kbId) {
+    return jdbc.queryForObject("""
+        SELECT max(j.updated_at) FROM ingestion_job j JOIN content_version v ON v.id = j.version_id JOIN document d ON d.id = v.document_id
+        WHERE d.kb_id = ? AND j.status = 'succeeded'
+        """, java.sql.Timestamp.class, kbId);
+  }
+
   static Summary summarize(int cases, int notApplicable, List<ResultView> results) {
+    return summarize(cases, notApplicable, results, false);
+  }
+
+  static Summary summarize(int cases, int notApplicable, List<ResultView> results, boolean indexChanged) {
     var evaluated = results.stream().filter(r -> !r.mappingFailed() && !r.sourceUnavailable()).toList();
     int unavailable = (int) results.stream().filter(ResultView::sourceUnavailable).count();
     int hits = (int) evaluated.stream().filter(ResultView::hit).count();
@@ -344,7 +358,7 @@ public class EvaluationService {
     var latencies = evaluated.stream().mapToLong(ResultView::latencyMs).sorted().toArray();
     Long p95 = latencies.length == 0 ? null : latencies[(int) Math.ceil(0.95 * latencies.length) - 1];
     return new Summary(cases, evaluated.size(), results.size() - evaluated.size() - unavailable, notApplicable, new Ratio(hits, evaluated.size()),
-        new Ratio(covered, spans), macro, p95, unavailable);
+        new Ratio(covered, spans), macro, p95, unavailable, indexChanged);
   }
 
   @Transactional(readOnly = true)
