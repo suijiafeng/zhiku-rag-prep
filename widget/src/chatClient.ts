@@ -12,6 +12,8 @@ export interface ChatError {
   code: string;
   message: string;
   requestId?: string;
+  /** 依赖暂时不可用时为 true：用户可稍后重新提问（不会自动重发）。 */
+  retryable?: boolean;
 }
 
 export type ChatOutcome =
@@ -68,7 +70,7 @@ function toEvent(frame: SseFrame): ChatEvent | null {
   if (!isObj(data)) throw new ProtocolError();
   switch (frame.event) {
     case "draft":
-      if (isStr(data.text)) return { event: "draft", data: { text: data.text } };
+      if (isStr(data.text)) return { event: "draft", data: typeof data.seq === "number" ? { text: data.text, seq: data.seq } : { text: data.text } };
       break;
     case "validated":
       if (data.validation === "metadata-only" && Array.isArray(data.citations) && data.citations.every(isCitation)) {
@@ -85,7 +87,12 @@ function toEvent(frame: SseFrame): ChatEvent | null {
       }
       break;
     case "error":
-      if (isErrorBody(data)) return { event: "error", data: { code: data.code, message: data.message, requestId: data.requestId } };
+      if (isErrorBody(data)) {
+        return { event: "error", data: {
+          code: data.code, message: data.message, requestId: data.requestId,
+          ...(typeof data.retryable === "boolean" ? { retryable: data.retryable } : {}),
+        } };
+      }
       break;
   }
   throw new ProtocolError();
@@ -177,6 +184,7 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
   const decoder = new TextDecoder("utf-8");
   let text = "";
   let citations: Citation[] | undefined;
+  let lastSeq = 0;
 
   const handle = (frames: SseFrame[]): ChatOutcome | undefined => {
     for (const frame of frames) {
@@ -184,6 +192,10 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
       if (!event) continue;
       if (event.event === "draft") {
         if (citations) throw new ProtocolError();
+        if (event.data.seq !== undefined) {
+          if (event.data.seq <= lastSeq) continue;
+          lastSeq = event.data.seq;
+        }
         text += event.data.text;
       } else if (event.event === "validated") {
         if (citations) throw new ProtocolError();

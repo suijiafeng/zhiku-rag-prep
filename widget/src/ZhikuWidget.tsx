@@ -116,7 +116,8 @@ export function ZhikuWidget({
     } else if (outcome.status === "cancelled") {
       update(id, { state: "cancelled", text: "", citations: [] });
     } else {
-      update(id, { state: "failed", text: "", citations: [], error: `${outcome.error.message}（${outcome.error.code}）` });
+      update(id, { state: "failed", text: "", citations: [],
+        error: `${outcome.error.message}（${outcome.error.code}）${outcome.error.retryable ? "，可稍后重新提问" : ""}` });
     }
   };
 

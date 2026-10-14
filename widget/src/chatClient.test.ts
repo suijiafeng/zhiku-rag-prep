@@ -96,6 +96,16 @@ describe("streamChat", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("ignores a repeated draft and keeps the retry hint of a failure", async () => {
+    const parts = [sse("start", { requestId: "r", traceId: "t" }), sse("draft", { text: "年假", seq: 1 }), sse("draft", { text: "年假", seq: 1 }),
+      sse("draft", { text: "按司龄计算[1]", seq: 2 }), sse("validated", { citations: [citation], validation: "metadata-only" }), sse("done", { status: "complete" })];
+    const outcome = await streamChat({ ...base, fetchImpl: async () => streamResponse(parts) });
+    expect(outcome).toMatchObject({ status: "complete", text: "年假按司龄计算[1]" });
+    const failedOutcome = await streamChat({ ...base, fetchImpl: async () => streamResponse([
+      sse("error", { code: "MODEL_UNAVAILABLE", message: "模型服务暂不可用", requestId: "r", traceId: "t", retryable: true, discardDraft: true })]) });
+    expect(failedOutcome).toEqual({ status: "failed", error: { code: "MODEL_UNAVAILABLE", message: "模型服务暂不可用", requestId: "r", retryable: true } });
+  });
+
   it("omits Authorization when no token is provided", async () => {
     const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => streamResponse(happy));
     await streamChat({ ...base, fetchImpl, getAccessToken: async () => undefined });
