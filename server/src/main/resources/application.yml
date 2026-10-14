@@ -16,6 +16,9 @@ spring:
   flyway:
     clean-disabled: true
 zhiku:
+  business:
+    # Business dates (effective from/until) are interpreted in this zone; storage is UTC.
+    time-zone: Asia/Shanghai
   auth:
     # HS256 key for locally issued tokens; at least 32 bytes. Empty means every token is rejected.
     jwt-secret: ${ZHIKU_JWT_SECRET:}

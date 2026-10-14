@@ -4,7 +4,7 @@
 ## T1 身份与知识库授权边界 · done（本地 JWT 默认方案，见 ADR-002 与 docs/t1-auth-boundary.md）
 输入：确认企业/身份源、角色和同受众拆库规则。允许路径 server/src/main/java/dev/zhiku/auth/、server/src/main/java/dev/zhiku/knowledgebase/、server/src/test/java/dev/zhiku/、contracts/。验收：未登录/跨企业/跨库拒绝；身份不能由 DTO 伪造；最小集成测试；任何临时 demo 不开放真实材料。无输入则只写接口与测试计划。
 
-## T2 文档版本与迁移 · pending
+## T2 文档版本与迁移 · done（Flyway V3；业务时区 Asia/Shanghai；替代关系图未实现，仅 superseded 标记）
 依赖 T1；输入：业务时区、批准发布职责、效力/替代规则。验收：真实 PostgreSQL 迁移；未来与当前共存；边界时点/冲突/新规未索引不能回退旧规；查询重查 ACL。先建元数据，不碰未知向量维度。
 
 ## T3 持久任务 + 单一格式摄取 · pending

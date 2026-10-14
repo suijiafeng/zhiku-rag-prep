@@ -76,7 +76,80 @@ paths:
         '204': {description: Revoked}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /api/knowledge-bases/{kbId}/documents:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    get:
+      operationId: listDocuments
+      description: Requires grant + ASK_AND_CITE role. Versions carry business state and index state separately.
+      responses:
+        '200': {description: Documents with versions, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Document'}}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: createDocument
+      description: Requires grant + MANAGE_DOCUMENTS (KB_OPERATOR). Audited.
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [title], properties: {title: {type: string, maxLength: 200}}}}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Created'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/documents/{documentId}/versions:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}]
+    post:
+      operationId: createVersion
+      description: Business dates are local dates in zhiku.business.time-zone (Asia/Shanghai), stored as UTC; interval is [from, until).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [versionLabel, effectiveFrom]
+              properties:
+                versionLabel: {type: string, maxLength: 50}
+                effectiveFrom: {type: string, format: date}
+                effectiveUntil: {type: string, format: date}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/Created'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/documents/{documentId}/versions/{versionId}/{transition}:
+    parameters:
+      - {$ref: '#/components/parameters/kbId'}
+      - {name: documentId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: versionId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: transition, in: path, required: true, schema: {type: string, enum: [approve, publish, withdraw]}}
+    post:
+      operationId: transitionVersion
+      description: MANAGE_DOCUMENTS. Publish requires prior approval. Audited. Invalid state returns 409.
+      responses:
+        '204': {description: Done}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/eligibility:
+    parameters: [{$ref: '#/components/parameters/kbId'}, {name: at, in: query, schema: {type: string, format: date-time}}]
+    get:
+      operationId: versionEligibility
+      description: Per-document outcome at a time (default now). versionId only when ELIGIBLE; never falls back to an older version.
+      responses:
+        '200':
+          description: Outcomes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [documentId, title, outcome]
+                  properties:
+                    documentId: {type: string, format: uuid}
+                    title: {type: string}
+                    outcome: {type: string, enum: [ELIGIBLE, NO_EVIDENCE, CONFLICT, INDEX_NOT_READY]}
+                    versionId: {type: string, format: uuid}
 components:
+  parameters:
+    kbId: {name: kbId, in: path, required: true, schema: {type: string, format: uuid}}
   securitySchemes:
     bearer: {type: http, scheme: bearer, bearerFormat: JWT}
   responses:
@@ -104,6 +177,33 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
           example: {code: FORBIDDEN, message: Access denied, requestId: 00000000-0000-0000-0000-000000000000}
   schemas:
+    Created:
+      type: object
+      required: [id]
+      properties:
+        id: {type: string, format: uuid}
+    Document:
+      type: object
+      required: [id, title, versions]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        createdAt: {type: string, format: date-time}
+        versions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string, format: uuid}
+              versionLabel: {type: string}
+              effectiveFrom: {type: string, format: date-time}
+              effectiveUntil: {type: string, format: date-time}
+              approved: {type: boolean}
+              published: {type: boolean}
+              withdrawn: {type: boolean}
+              superseded: {type: boolean}
+              indexStatus: {type: string, enum: [pending, processing, ready, failed]}
+              indexError: {type: string}
     KnowledgeBase:
       type: object
       required: [id, name]
