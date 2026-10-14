@@ -166,6 +166,8 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
   const [k, setK] = useState(5);
   const [editing, setEditing] = useState<EvalCase>();
+  // 创建成功后重新挂载表单以清空输入，避免重复提交同一用例。
+  const [formKey, setFormKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError>();
 
@@ -262,9 +264,11 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
                   await client.setEvalCaseDetails(kbId, editing.id, v.details);
                 })} />
             ) : (
-              <EvidenceForm docs={docs} submitLabel="创建候选"
-                onSubmit={(v) => act(() => client.createEvalCase(kbId, { question: v.question, label: v.label, ...v.details,
-                  ...(v.evidence.length ? { evidence: v.evidence } : {}) }))} />
+              <EvidenceForm key={formKey} docs={docs} submitLabel="创建候选"
+                onSubmit={(v) => act(async () => {
+                  await client.createEvalCase(kbId, { question: v.question, label: v.label, ...v.details, ...(v.evidence.length ? { evidence: v.evidence } : {}) });
+                  setFormKey((k) => k + 1);
+                })} />
             )}
           </Card>
         </Col>
