@@ -57,6 +57,8 @@ zhiku:
     # 更长的回答会被停止并丢弃（ANSWER_TOO_LONG），绝不截断为已完成回答。
     max-answer-chars: 8000
     stream-timeout: PT150S
+    # 等待检索或模型期间按此间隔发送 SSE 注释保持连接；注释不是内容，客户端忽略。
+    heartbeat-interval: PT15S
     # 草稿流式输出期间，授权和来源效力最多按此频率重新读取；变更会在此间隔内被发现。
     recheck-interval: PT1S
   widget:

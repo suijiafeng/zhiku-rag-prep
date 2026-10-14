@@ -121,22 +121,29 @@ public class ChatService {
 
   /** 执行一次回答。范围已由调用方授权；披露前会从授权存储重新读取访问权限。 */
   public void stream(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId) {
+    stream(scope, kbId, question, conversationId, clientRequestId, sink, requestId, UUID.randomUUID());
+  }
+
+  /** traceId 由调用方生成，以便在 start 事件中先行告知客户端。 */
+  public void stream(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId,
+      UUID traceId) {
     try {
-      run(scope, kbId, question, conversationId, clientRequestId, sink, requestId);
+      run(scope, kbId, question, conversationId, clientRequestId, sink, requestId, traceId);
     } catch (IOException e) {
       log.debug("Client disconnected, requestId={}", requestId);
     }
   }
 
-  private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId)
-      throws IOException {
+  private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId,
+      UUID traceId) throws IOException {
     var model = requireModel();
-    var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId, UUID.randomUUID(), new Instant[1]);
+    var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId, traceId, new Instant[1]);
     // 排队期间已取消的请求不再做向量化，也不调用模型。
     if (sink.cancelled()) {
       record(turn, "cancelled", null);
       return;
     }
+    long startedAt = System.nanoTime();
     var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
     // 追问与上一个可见问题一起检索，使“那试用期呢”这类指代能够解析。
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
@@ -164,6 +171,7 @@ public class ChatService {
     }
     var answer = new StringBuilder();
     var lastCheck = new long[] {System.nanoTime()};
+    var seq = new int[] {0};
     turn.modelStarted()[0] = Instant.now();
     try {
       model.stream(prompt(question, sources, context), token -> {
@@ -176,7 +184,7 @@ public class ChatService {
         if (answer.length() + token.length() > settings.maxAnswerChars()) throw new Stopped("ANSWER_TOO_LONG");
         answer.append(token);
         try {
-          sink.send("draft", Map.of("text", token));
+          sink.send("draft", Map.of("text", token, "seq", ++seq[0]));
         } catch (IOException e) {
           throw new ClientGone();
         }
@@ -236,8 +244,14 @@ public class ChatService {
     retrieval.recordGeneration(turn.traceId(), Stage.timed("generation", "上下文与生成", "success", turn.modelStarted()[0],
         "入模 " + sources.size() + " 块 · 模型 " + model.model() + " · 引用元数据检查通过"));
     retrieval.linkMessage(turn.traceId(), stored[1]);
-    sink.send("done", Map.of("status", "complete", "conversationId", stored[0].toString(), "messageId", stored[1].toString(),
-        "traceId", turn.traceId().toString()));
+    var done = new LinkedHashMap<String, Object>();
+    done.put("status", "complete");
+    done.put("finishReason", "stop");
+    done.put("conversationId", stored[0].toString());
+    done.put("messageId", stored[1].toString());
+    done.put("traceId", turn.traceId().toString());
+    done.put("latencyMs", (System.nanoTime() - startedAt) / 1_000_000);
+    sink.send("done", done);
   }
 
   /**
@@ -334,12 +348,17 @@ public class ChatService {
   private record Turn(AccessScope scope, UUID kbId, UUID conversationId, String question, String model, UUID clientRequestId, UUID traceId,
       Instant[] modelStarted) {}
 
+  /** 依赖暂时不可用时可由用户重试；其余失败重试也不会改变结果。 */
+  private static final java.util.Set<String> RETRYABLE = java.util.Set.of("MODEL_UNAVAILABLE", "DEPENDENCY_UNAVAILABLE");
+
   private static void error(ChatSink sink, String code, String message, String requestId, UUID traceId) throws IOException {
-    var data = new LinkedHashMap<String, String>();
+    var data = new LinkedHashMap<String, Object>();
     data.put("code", code);
     data.put("message", message);
     data.put("requestId", requestId);
     data.put("traceId", traceId.toString());
+    data.put("retryable", RETRYABLE.contains(code));
+    data.put("discardDraft", true);
     sink.send("error", data);
   }
 

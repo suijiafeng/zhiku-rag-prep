@@ -125,7 +125,7 @@ class ChatTest extends IntegrationTest {
   void streamsDraftsThenValidatedThenDoneAndStoresTheAnswer() throws Exception {
     var frames = ask("年假有几天?");
     var events = names(frames);
-    assertThat(events.getFirst()).isEqualTo("draft");
+    assertThat(events.subList(0, 2)).containsExactly("start", "draft");
     assertThat(events.subList(events.size() - 2, events.size())).containsExactly("validated", "done");
     var answer = new StringBuilder();
     frames.stream().filter(f -> f.event().equals("draft")).forEach(f -> answer.append(f.data().get("text").asText()));
@@ -173,6 +173,32 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void eventsCarryTheFieldsTheProtocolPromises() throws Exception {
+    var frames = ask("年假有几天?");
+    var start = frames.getFirst().data();
+    assertThat(start.get("requestId").asText()).isNotBlank();
+    var done = last(frames).data();
+    assertThat(start.get("traceId").asText()).isEqualTo(done.get("traceId").asText());
+    var seqs = frames.stream().filter(f -> f.event().equals("draft")).map(f -> f.data().get("seq").asInt()).toList();
+    assertThat(seqs).isNotEmpty().isSorted().doesNotHaveDuplicates().startsWith(1);
+    assertThat(done.get("finishReason").asText()).isEqualTo("stop");
+    assertThat(done.get("latencyMs").isNumber()).isTrue();
+  }
+
+  @Test
+  void errorsSayWhetherARetryCanHelpAndThatTheDraftIsDiscarded() throws Exception {
+    model.failMidway = true;
+    var failed = last(ask("年假有几天?")).data();
+    assertThat(failed.get("retryable").asBoolean()).isTrue();
+    assertThat(failed.get("discardDraft").asBoolean()).isTrue();
+    model.reset();
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
+    var refused = last(ask("年假有几天?")).data();
+    assertThat(refused.get("code").asText()).isEqualTo("NO_EVIDENCE");
+    assertThat(refused.get("retryable").asBoolean()).isFalse();
+  }
+
+  @Test
   void sourcesAreDelimitedAsUntrustedDataInThePrompt() throws Exception {
     ask("年假有几天?");
     var system = model.lastPrompt.getFirst();
@@ -201,7 +227,7 @@ class ChatTest extends IntegrationTest {
     jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
     model.script = m -> { throw new AssertionError("model must not be called without evidence"); };
     var frames = ask("年假有几天?");
-    assertThat(names(frames)).containsExactly("error");
+    assertThat(names(frames)).containsExactly("start", "error");
     assertThat(last(frames).data().get("code").asText()).isEqualTo("NO_EVIDENCE");
   }
 
@@ -240,7 +266,7 @@ class ChatTest extends IntegrationTest {
     embeddings.beforeEmbed = () -> jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
     model.script = m -> { throw new AssertionError("withdrawn sources must not reach the model"); };
     var frames = ask("年假有几天?");
-    assertThat(names(frames)).containsExactly("error");
+    assertThat(names(frames)).containsExactly("start", "error");
     assertThat(last(frames).data().get("code").asText()).isEqualTo("NO_EVIDENCE");
   }
 

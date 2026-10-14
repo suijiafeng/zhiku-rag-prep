@@ -14,7 +14,10 @@ import jakarta.validation.constraints.Size;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.MediaType;
@@ -27,6 +30,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 class ChatController {
+  private static final ScheduledExecutorService HEARTBEAT = Executors.newSingleThreadScheduledExecutor(r -> {
+    var t = new Thread(r, "chat-heartbeat");
+    t.setDaemon(true);
+    return t;
+  });
+
   record ChatRequest(@NotBlank @Size(max = 2000) String question, @NotNull UUID kbId, UUID conversationId, UUID clientRequestId) {}
 
   private final ChatService chat;
@@ -70,15 +79,37 @@ class ChatController {
         return closed.get();
       }
     };
+    // start 在请求线程上发送：提前发送的事件由 Spring 缓冲并在初始化时写出，工作线程之后才开始写响应。
+    var traceId = UUID.randomUUID();
+    var start = new java.util.LinkedHashMap<String, Object>();
+    start.put("requestId", requestId);
+    start.put("traceId", traceId.toString());
+    if (request.clientRequestId() != null) start.put("clientRequestId", request.clientRequestId().toString());
+    try {
+      emitter.send(SseEmitter.event().name("start").data(start, MediaType.APPLICATION_JSON));
+    } catch (IOException e) {
+      closed.set(true);
+    }
+    long period = settings.heartbeatInterval().toMillis();
+    var heartbeat = HEARTBEAT.scheduleAtFixedRate(() -> {
+      if (closed.get()) return;
+      try {
+        emitter.send(SseEmitter.event().comment("keepalive"));
+      } catch (IOException | IllegalStateException e) {
+        closed.set(true);
+      }
+    }, period, period, TimeUnit.MILLISECONDS);
     try {
       executor.execute(() -> {
         try {
-          chat.stream(scope, request.kbId(), question, request.conversationId(), request.clientRequestId(), sink, requestId);
+          chat.stream(scope, request.kbId(), question, request.conversationId(), request.clientRequestId(), sink, requestId, traceId);
         } finally {
+          heartbeat.cancel(false);
           emitter.complete();
         }
       });
     } catch (RejectedExecutionException e) {
+      heartbeat.cancel(false);
       if (request.clientRequestId() != null) chat.release(scope, request.clientRequestId());
       throw ApiException.unavailable("Too many concurrent answers");
     }
