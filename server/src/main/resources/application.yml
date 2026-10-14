@@ -32,6 +32,16 @@ zhiku:
     max-attempts: 3
     worker-enabled: true
     poll-interval: PT2S
+  embedding:
+    # none | ollama. With none, ingestion stores chunks but marks versions failed: nothing becomes searchable without vectors.
+    provider: ${ZHIKU_EMBEDDING_PROVIDER:none}
+    base-url: ${ZHIKU_OLLAMA_URL:http://127.0.0.1:11434}
+    model: ${ZHIKU_EMBEDDING_MODEL:bge-m3}
+    batch-size: 32
+    timeout: PT60S
+  retrieval:
+    default-k: 8
+    max-k: 30
   auth:
     # HS256 key for locally issued tokens; at least 32 bytes. Empty means every token is rejected.
     jwt-secret: ${ZHIKU_JWT_SECRET:}

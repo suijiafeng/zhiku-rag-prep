@@ -161,6 +161,30 @@ paths:
         '202': {description: Queued}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Error'}
+  /api/knowledge-bases/{kbId}/retrieval-debug:
+    parameters: [{$ref: '#/components/parameters/kbId'}]
+    post:
+      operationId: retrievalDebug
+      description: >-
+        DEBUG_AND_EVALUATE (KB_OPERATOR). Eligible versions are resolved from grants and effectivity before any vector
+        comparison; exact cosine search within one embedding model and dimension. Stages that did not run are reported
+        as skipped. 503 when no embedding model is configured or it is unavailable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: {type: string, minLength: 1, maxLength: 2000}
+                k: {type: integer, minimum: 1, maximum: 30, default: 8}
+                at: {type: string, format: date-time}
+      responses:
+        '200': {description: Trace, content: {application/json: {schema: {$ref: '#/components/schemas/RetrievalTrace'}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases/{kbId}/eligibility:
     parameters: [{$ref: '#/components/parameters/kbId'}, {name: at, in: query, schema: {type: string, format: date-time}}]
     get:
@@ -211,6 +235,42 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
           example: {code: FORBIDDEN, message: Access denied, requestId: 00000000-0000-0000-0000-000000000000}
   schemas:
+    RetrievalTrace:
+      type: object
+      required: [traceId, question, stages, candidates]
+      properties:
+        traceId: {type: string, format: uuid}
+        question: {type: string}
+        at: {type: string, format: date-time}
+        embeddingModel: {type: string}
+        dimension: {type: integer}
+        stages:
+          type: array
+          items:
+            type: object
+            properties:
+              key: {type: string}
+              name: {type: string}
+              status: {type: string, enum: [success, failed, skipped, cancelled]}
+              elapsedMs: {type: integer}
+              summary: {type: string}
+        candidates:
+          type: array
+          items:
+            type: object
+            properties:
+              chunkId: {type: string, format: uuid}
+              documentId: {type: string, format: uuid}
+              title: {type: string}
+              versionId: {type: string, format: uuid}
+              versionLabel: {type: string}
+              seq: {type: integer}
+              heading: {type: string}
+              startOffset: {type: integer}
+              endOffset: {type: integer}
+              text: {type: string}
+              score: {type: number, description: cosine similarity; not a confidence in the answer}
+              rank: {type: integer}
     Created:
       type: object
       required: [id]

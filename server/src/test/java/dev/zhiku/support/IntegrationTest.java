@@ -9,7 +9,7 @@ import org.springframework.test.context.DynamicPropertySource;
 /** Shared Spring context against a real pgvector container. */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, TestEmbeddingConfiguration.class})
 public abstract class IntegrationTest {
   @DynamicPropertySource
   static void jwt(DynamicPropertyRegistry registry) {

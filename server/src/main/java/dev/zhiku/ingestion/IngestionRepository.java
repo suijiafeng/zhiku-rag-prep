@@ -1,5 +1,6 @@
 package dev.zhiku.ingestion;
 
+import dev.zhiku.embedding.EmbeddingVectors;
 import dev.zhiku.ingestion.TextChunker.Chunk;
 import java.util.List;
 import java.util.Optional;
@@ -96,6 +97,24 @@ public class IngestionRepository {
           ps.setString(7, c.text());
         });
     return ids;
+  }
+
+  public void insertEmbeddings(List<UUID> chunkIds, List<float[]> vectors, String model, int dimension) {
+    var rows = new java.util.ArrayList<Integer>();
+    for (int i = 0; i < chunkIds.size(); i++) rows.add(i);
+    jdbc.batchUpdate("INSERT INTO chunk_embedding (chunk_id, model, dimension, embedding) VALUES (?, ?, ?, CAST(? AS vector))",
+        rows, 200, (ps, i) -> {
+          ps.setObject(1, chunkIds.get(i));
+          ps.setString(2, model);
+          ps.setInt(3, dimension);
+          ps.setString(4, EmbeddingVectors.literal(vectors.get(i)));
+        });
+  }
+
+  /** Chunks are stored for inspection but nothing is searchable: the version is failed with a fixed reason. */
+  public void failWithoutRetry(UUID jobId, UUID versionId, String reason) {
+    jdbc.update("UPDATE ingestion_job SET status = 'failed', lease_owner = NULL, lease_until = NULL, last_error = ?, updated_at = now() WHERE id = ?", reason, jobId);
+    jdbc.update("UPDATE content_version SET index_status = 'failed', index_error = ? WHERE id = ?", reason, versionId);
   }
 
   public void succeed(UUID jobId, UUID versionId) {
