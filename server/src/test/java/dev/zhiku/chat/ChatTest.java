@@ -163,13 +163,18 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
-  void aFailedAnswerRecordsWhichStageFailed() throws Exception {
+  void aFailedAnswerRecordsWhichStageFailedAndStaysLinkedToItsTurn() throws Exception {
     model.failMidway = true;
     var error = last(ask("年假有几天?")).data();
-    mvc.perform(get("/api/knowledge-bases/{kb}/traces/{id}", kb, error.get("traceId").asText())
-            .header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
+    var traceId = error.get("traceId").asText();
+    var failedId = jdbc.queryForObject("SELECT m.id FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ? AND m.status = 'failed'",
+        UUID.class, kb);
+    mvc.perform(get("/api/knowledge-bases/{kb}/traces/{id}", kb, traceId).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
         .andExpect(jsonPath("$.stages[5].status").value("failed"))
-        .andExpect(jsonPath("$.stages[5].summary").value(org.hamcrest.Matchers.containsString("MODEL_UNAVAILABLE")));
+        .andExpect(jsonPath("$.stages[5].summary").value(org.hamcrest.Matchers.containsString("MODEL_UNAVAILABLE")))
+        .andExpect(jsonPath("$.messageId").value(failedId.toString()));
+    mvc.perform(get("/api/knowledge-bases/{kb}/records", kb).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR)))
+        .andExpect(jsonPath("$.items[0].traceId").value(traceId));
   }
 
   @Test

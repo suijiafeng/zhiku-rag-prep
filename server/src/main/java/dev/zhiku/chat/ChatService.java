@@ -337,11 +337,15 @@ public class ChatService {
   }
 
   private void record(Turn turn, String status, String code) {
-    tx.executeWithoutResult(t -> {
+    var messageId = tx.execute(t -> {
       var id = turn.conversationId() != null ? turn.conversationId()
           : repository.createConversation(turn.scope().enterpriseId(), turn.scope().userId(), turn.kbId(), title(turn.question()));
-      link(turn, repository.saveOutcome(id, turn.question(), status, code, turn.model()));
+      var saved = repository.saveOutcome(id, turn.question(), status, code, turn.model());
+      link(turn, saved);
+      return saved;
     });
+    // 失败或拒答的轮次也关联轨迹，运营才能从记录里查看是哪个阶段出了问题。
+    retrieval.linkMessage(turn.traceId(), messageId);
     var started = turn.modelStarted()[0];
     Stage stage;
     if ("cancelled".equals(status)) {
