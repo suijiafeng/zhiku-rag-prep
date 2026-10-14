@@ -74,6 +74,13 @@ zhiku:
     max-turns: 100
     # 草稿流式输出期间，授权和来源效力最多按此频率重新读取；变更会在此间隔内被发现。
     recheck-interval: PT1S
+  retention:
+    # 只清理诊断数据：检索轨迹与问答请求去重记录；问答记录、反馈、审计不在此列。天数为部署默认值，正式保留期待业务确认。
+    enabled: true
+    poll-interval: PT1H
+    trace-days: 90
+    request-days: 7
+    batch-size: 1000
   widget:
     token-ttl: PT10M
     # 允许从浏览器调用 /api/chat 的显式宿主 origin。为空表示完全不启用 CORS。

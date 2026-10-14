@@ -30,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -480,5 +481,11 @@ public class ChatService {
       var citations = sources.stream().map(s -> new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()))).toList();
       return new MessageView(m.id(), m.question(), m.answer(), false, null, stale, citations, m.createdAt(), ratings.get(m.id()), m.status(), null);
     }).toList();
+  }
+
+  /** 保留期清理：删除早于 before 的请求去重记录，最多 limit 条；返回删除数。 */
+  @Transactional
+  public int purgeRequestsBefore(Instant before, int limit) {
+    return repository.deleteRequestsAcceptedBefore(before, limit);
   }
 }

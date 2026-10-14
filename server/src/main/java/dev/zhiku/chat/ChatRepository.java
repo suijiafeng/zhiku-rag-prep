@@ -121,6 +121,14 @@ class ChatRepository {
         messageId, enterpriseId, userId, clientRequestId);
   }
 
+  /** 分批删除早于 before 的请求去重记录：过期后同一客户端请求编号可再次受理。 */
+  int deleteRequestsAcceptedBefore(Instant before, int limit) {
+    return jdbc.update("""
+        DELETE FROM chat_request r USING (SELECT enterprise_id, user_id, client_request_id FROM chat_request WHERE accepted_at < ? ORDER BY accepted_at LIMIT ?) x
+        WHERE r.enterprise_id = x.enterprise_id AND r.user_id = x.user_id AND r.client_request_id = x.client_request_id
+        """, Timestamp.from(before), limit);
+  }
+
   Optional<RequestRow> request(UUID enterpriseId, UUID userId, UUID clientRequestId) {
     return jdbc.query("""
         SELECT r.kb_id, r.digest, m.conversation_id, r.message_id, m.status, r.accepted_at

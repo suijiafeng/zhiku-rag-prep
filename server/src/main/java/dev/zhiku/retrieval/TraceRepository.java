@@ -62,6 +62,12 @@ class TraceRepository {
     jdbc.update("UPDATE retrieval_trace SET message_id = ? WHERE id = ?", messageId, id);
   }
 
+  /** 分批删除早于 before 的轨迹；阶段与候选随外键级联删除，问答记录只是失去轨迹链接。 */
+  int deleteCreatedBefore(Instant before, int limit) {
+    return jdbc.update("DELETE FROM retrieval_trace WHERE id IN (SELECT id FROM retrieval_trace WHERE created_at < ? ORDER BY created_at LIMIT ?)",
+        ts(before), limit);
+  }
+
   boolean exists(UUID id) {
     return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM retrieval_trace WHERE id = ?)", Boolean.class, id));
   }

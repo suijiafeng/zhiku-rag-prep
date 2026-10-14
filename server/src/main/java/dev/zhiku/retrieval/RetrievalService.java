@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 授权和版本效力在任何向量比较之前确定；只有已授权知识库中
@@ -113,5 +114,11 @@ public class RetrievalService {
   /** 重建索引会整体替换切块：引用的切块已不存在时，答案不能再按这些引用披露。 */
   public boolean allChunksExist(List<UUID> chunkIds) {
     return chunkIds.isEmpty() || repository.allChunksExist(chunkIds);
+  }
+
+  /** 保留期清理：删除早于 before 的轨迹，最多 limit 条；返回删除数。 */
+  @Transactional
+  public int purgeTracesBefore(Instant before, int limit) {
+    return traces.deleteCreatedBefore(before, limit);
   }
 }

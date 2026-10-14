@@ -21,5 +21,6 @@ public abstract class IntegrationTest {
     // 测试显式驱动 ingestion worker，而不是依赖调度器。
     registry.add("zhiku.ingestion.worker-enabled", () -> "false");
     registry.add("zhiku.document.cleanup-enabled", () -> "false");
+    registry.add("zhiku.retention.enabled", () -> "false");
   }
 }
