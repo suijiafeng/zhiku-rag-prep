@@ -153,3 +153,11 @@ body { margin: 0; background: #f4f6f9; color: #1d2433; }
 .debug-query { margin-bottom: 16px; }
 .debug-input { width: min(520px, 70vw); }
 .debug-k { width: 120px; }
+
+.role-matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
+.role-matrix th, .role-matrix td { padding: 8px 6px; border-bottom: 1px solid #f0f2f5; text-align: center; }
+.role-matrix th:first-child, .role-matrix td:first-child { text-align: left; color: #3a4256; }
+.role-matrix th { color: #6b7385; font-weight: 500; }
+.rule-allowed { color: #1f9d55; font-weight: 600; }
+.rule-requires_explicit_grant { color: #d97706; font-size: 12px; }
+.rule-never { color: #8b93a7; }

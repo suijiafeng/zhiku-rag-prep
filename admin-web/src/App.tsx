@@ -6,6 +6,7 @@ import { LiveDocuments } from "./features/documents/LiveDocuments";
 import { LiveQa } from "./features/qa/LiveQa";
 import { LiveDebug } from "./features/debug/LiveDebug";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { UsersPage } from "./features/users/UsersPage";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
 import { QaWorkbench } from "./features/qa/QaWorkbench";
@@ -23,6 +24,7 @@ const NAV = [
   { key: "qa", label: "问答工作台" },
   { key: "debug", label: "检索调试" },
   { key: "evaluation", label: "评测中心" },
+  { key: "users", label: "用户与权限" },
   { key: "settings", label: "系统设置" },
 ] as const;
 
@@ -44,6 +46,7 @@ export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   if (key === "qa") return live ? <LiveQa {...live} modelEnabled={ctx.status?.modelEnabled ?? false} /> : <QaWorkbench data={qaFixture} />;
   if (key === "debug") return live ? <LiveDebug {...live} kbName={ctx.kbName ?? ""} /> : <RetrievalDebugPage trace={debugFixture} />;
   if (key === "evaluation") return <EvaluationPage data={evaluationFixture} />;
+  if (key === "users") return <UsersPage client={ctx.client} />;
   return <SettingsPage status={ctx.status} error={ctx.statusError} />;
 }
 

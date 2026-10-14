@@ -82,6 +82,35 @@ export interface HistoryMessage {
   createdAt: string;
 }
 
+export type Role = "IT_ADMIN" | "KB_OPERATOR" | "EMPLOYEE";
+export type KbAction = "ASK_AND_CITE" | "MANAGE_DOCUMENTS" | "DEBUG_AND_EVALUATE" | "READ_OTHERS_CONVERSATIONS";
+export type Rule = "ALLOWED" | "REQUIRES_EXPLICIT_GRANT" | "NEVER";
+
+export interface RolePolicy {
+  roles: Role[];
+  actions: KbAction[];
+  rules: Record<Role, Record<KbAction, Rule>>;
+}
+
+export interface Me {
+  userId: string;
+  enterpriseId: string;
+  roles: Role[];
+  knowledgeBaseIds: string[];
+}
+
+export interface AdminKnowledgeBase {
+  id: string;
+  name: string;
+  memberCount: number;
+  createdAt: string;
+}
+
+export interface Grant {
+  userId: string;
+  grantedAt: string;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -148,6 +177,13 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     reindex: (kbId: string, doc: string, v: string) => request<void>(`${version(kbId, doc, v)}/reindex`, { method: "POST" }),
     retrievalDebug: (kbId: string, query: string, k?: number) =>
       request<TraceResult>(`${kb(kbId)}/retrieval-debug`, post(k === undefined ? { query } : { query, k })),
+    me: () => request<Me>("/api/me"),
+    rolePolicy: () => request<RolePolicy>("/api/policy/roles"),
+    adminKnowledgeBases: () => request<AdminKnowledgeBase[]>("/api/admin/knowledge-bases"),
+    createKnowledgeBase: (name: string) => request<KnowledgeBase>("/api/knowledge-bases", post({ name })),
+    grants: (kbId: string) => request<Grant[]>(`${kb(kbId)}/grants`),
+    grant: (kbId: string, userId: string) => request<void>(`${kb(kbId)}/grants/${e(userId)}`, { method: "PUT" }),
+    revoke: (kbId: string, userId: string) => request<void>(`${kb(kbId)}/grants/${e(userId)}`, { method: "DELETE" }),
     conversations: () => request<Conversation[]>("/api/conversations"),
     messages: (id: string) => request<HistoryMessage[]>(`/api/conversations/${e(id)}/messages`),
   };

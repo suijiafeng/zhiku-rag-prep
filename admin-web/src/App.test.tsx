@@ -6,7 +6,7 @@ describe("admin shell", () => {
   const html = renderToStaticMarkup(<App />);
 
   it("renders the navigation from the design", () => {
-    for (const label of ["知识库总览", "文档管理", "问答工作台", "检索调试", "评测中心", "系统设置"]) {
+    for (const label of ["知识库总览", "文档管理", "问答工作台", "检索调试", "评测中心", "用户与权限", "系统设置"]) {
       expect(html).toContain(label);
     }
   });
