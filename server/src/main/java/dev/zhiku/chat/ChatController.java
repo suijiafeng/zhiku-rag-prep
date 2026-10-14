@@ -27,7 +27,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @RestController
 class ChatController {
-  record ChatRequest(@NotBlank @Size(max = 2000) String question, @NotNull UUID kbId, UUID conversationId) {}
+  record ChatRequest(@NotBlank @Size(max = 2000) String question, @NotNull UUID kbId, UUID conversationId, UUID clientRequestId) {}
 
   private final ChatService chat;
   private final KnowledgeBaseAccess access;
@@ -50,6 +50,8 @@ class ChatController {
     var scope = access.require(request.kbId(), ASK_AND_CITE);
     chat.requireModel();
     if (request.conversationId() != null) chat.requireOwnConversation(scope, request.conversationId(), request.kbId());
+    var question = request.question().strip();
+    if (request.clientRequestId() != null) chat.accept(scope, request.clientRequestId(), request.kbId(), request.conversationId(), question);
     var requestId = RequestIdFilter.of(http);
     var emitter = new SseEmitter(settings.streamTimeout().toMillis());
     var closed = new AtomicBoolean(false);
@@ -71,15 +73,22 @@ class ChatController {
     try {
       executor.execute(() -> {
         try {
-          chat.stream(scope, request.kbId(), request.question().strip(), request.conversationId(), sink, requestId);
+          chat.stream(scope, request.kbId(), question, request.conversationId(), request.clientRequestId(), sink, requestId);
         } finally {
           emitter.complete();
         }
       });
     } catch (RejectedExecutionException e) {
+      if (request.clientRequestId() != null) chat.release(scope, request.clientRequestId());
       throw ApiException.unavailable("Too many concurrent answers");
     }
     return emitter;
+  }
+
+  /** Looks up the caller's own request after a disconnect instead of posting the question again. */
+  @GetMapping("/api/chat/requests/{clientRequestId}")
+  ChatService.RequestView request(@PathVariable UUID clientRequestId) {
+    return chat.request(knowledgeBases.requireScope(), clientRequestId);
   }
 
   @GetMapping("/api/conversations")

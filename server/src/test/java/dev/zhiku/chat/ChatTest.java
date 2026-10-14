@@ -201,7 +201,7 @@ class ChatTest extends IntegrationTest {
   void cancelledStreamsAreNotStored() {
     var scope = new AccessScope(enterprise, employee, Set.of(kb), Set.of(Role.EMPLOYEE));
     var sent = new ArrayList<String>();
-    chat.stream(scope, kb, "年假有几天?", null, new ChatSink() {
+    chat.stream(scope, kb, "年假有几天?", null, null, new ChatSink() {
       @Override public void send(String event, Object data) { sent.add(event); }
       @Override public boolean cancelled() { return !sent.isEmpty(); }
     }, "test-request");

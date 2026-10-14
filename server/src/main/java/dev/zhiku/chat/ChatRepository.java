@@ -15,6 +15,8 @@ class ChatRepository {
 
   record MessageRow(UUID id, String question, String answer, Instant createdAt, String status, String errorCode) {}
 
+  record RequestRow(UUID kbId, String digest, UUID conversationId, UUID messageId, String messageStatus, Instant acceptedAt) {}
+
   record SourceRow(UUID messageId, int ordinal, UUID versionId, UUID chunkId, UUID documentId, String title, UUID kbId,
       boolean withdrawn, String chunkText) {}
 
@@ -83,6 +85,32 @@ class ChatRepository {
         """, (rs, i) -> new SourceRow(rs.getObject("message_id", UUID.class), rs.getInt("ordinal"), rs.getObject("version_id", UUID.class),
             rs.getObject("chunk_id", UUID.class), rs.getObject("document_id", UUID.class), rs.getString("title"),
             rs.getObject("kb_id", UUID.class), rs.getBoolean("withdrawn"), rs.getString("chunk_text")), conversationId);
+  }
+
+  /** Accepts a client request id once per user; false when it was already accepted. */
+  boolean accept(UUID enterpriseId, UUID userId, UUID clientRequestId, UUID kbId, String digest) {
+    return jdbc.update("INSERT INTO chat_request (enterprise_id, user_id, client_request_id, kb_id, digest) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+        enterpriseId, userId, clientRequestId, kbId, digest) == 1;
+  }
+
+  void release(UUID enterpriseId, UUID userId, UUID clientRequestId) {
+    jdbc.update("DELETE FROM chat_request WHERE enterprise_id = ? AND user_id = ? AND client_request_id = ? AND message_id IS NULL",
+        enterpriseId, userId, clientRequestId);
+  }
+
+  void linkRequest(UUID enterpriseId, UUID userId, UUID clientRequestId, UUID messageId) {
+    jdbc.update("UPDATE chat_request SET message_id = ? WHERE enterprise_id = ? AND user_id = ? AND client_request_id = ?",
+        messageId, enterpriseId, userId, clientRequestId);
+  }
+
+  Optional<RequestRow> request(UUID enterpriseId, UUID userId, UUID clientRequestId) {
+    return jdbc.query("""
+        SELECT r.kb_id, r.digest, m.conversation_id, r.message_id, m.status, r.accepted_at
+        FROM chat_request r LEFT JOIN message m ON m.id = r.message_id
+        WHERE r.enterprise_id = ? AND r.user_id = ? AND r.client_request_id = ?
+        """, (rs, i) -> new RequestRow(rs.getObject("kb_id", UUID.class), rs.getString("digest"), rs.getObject("conversation_id", UUID.class),
+            rs.getObject("message_id", UUID.class), rs.getString("status"), rs.getTimestamp("accepted_at").toInstant()),
+        enterpriseId, userId, clientRequestId).stream().findFirst();
   }
 
   static Timestamp ts(Instant i) {

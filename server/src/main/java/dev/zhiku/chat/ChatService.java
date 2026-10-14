@@ -10,6 +10,10 @@ import dev.zhiku.platform.ApiException;
 import dev.zhiku.retrieval.Retrieval.Candidate;
 import dev.zhiku.retrieval.RetrievalService;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -20,6 +24,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -69,18 +74,60 @@ public class ChatService {
     if (conversation.isEmpty() || !conversation.get().kbId().equals(kbId)) throw ApiException.forbidden();
   }
 
-  /** Runs one answer. The scope was authorized by the caller; access is re-read from the grant store before disclosure. */
-  public void stream(AccessScope scope, UUID kbId, String question, UUID conversationId, ChatSink sink, String requestId) {
+  /**
+   * Accepts a client request id before streaming (PRD Q04). A repeat never starts another generation: the same question
+   * is a duplicate whose outcome can be looked up, a different question under the same id is a conflict.
+   */
+  void accept(AccessScope scope, UUID clientRequestId, UUID kbId, UUID conversationId, String question) {
+    var digest = digest(kbId, conversationId, question);
+    if (repository.accept(scope.enterpriseId(), scope.userId(), clientRequestId, kbId, digest)) return;
+    var existing = repository.request(scope.enterpriseId(), scope.userId(), clientRequestId).orElseThrow();
+    if (existing.digest().equals(digest)) {
+      throw new ApiException(HttpStatus.CONFLICT, "REQUEST_DUPLICATE", "This request was already accepted; look up its outcome");
+    }
+    throw new ApiException(HttpStatus.CONFLICT, "REQUEST_CONFLICT", "This request id was used for a different question");
+  }
+
+  /** Frees an id whose stream never started, so the client may retry with it. */
+  void release(AccessScope scope, UUID clientRequestId) {
+    repository.release(scope.enterpriseId(), scope.userId(), clientRequestId);
+  }
+
+  public record RequestView(String status, UUID conversationId, UUID messageId, Instant acceptedAt) {}
+
+  /** Outcome of the caller's own request; no answer text, which is read from history with its source checks. */
+  RequestView request(AccessScope scope, UUID clientRequestId) {
+    var row = repository.request(scope.enterpriseId(), scope.userId(), clientRequestId).orElseThrow(ApiException::notFound);
+    if (!scope.permits(scope.enterpriseId(), row.kbId(), ASK_AND_CITE)) throw ApiException.forbidden();
+    String status;
+    if (row.messageStatus() != null) status = row.messageStatus();
+    else if (row.acceptedAt().isBefore(Instant.now().minus(settings.streamTimeout()))) status = "interrupted";
+    else status = "running";
+    return new RequestView(status, row.conversationId(), row.messageId(), row.acceptedAt());
+  }
+
+  static String digest(UUID kbId, UUID conversationId, String question) {
     try {
-      run(scope, kbId, question, conversationId, sink, requestId);
+      var hash = MessageDigest.getInstance("SHA-256").digest((kbId + "\n" + conversationId + "\n" + question).getBytes(StandardCharsets.UTF_8));
+      return HexFormat.of().formatHex(hash);
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  /** Runs one answer. The scope was authorized by the caller; access is re-read from the grant store before disclosure. */
+  public void stream(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId) {
+    try {
+      run(scope, kbId, question, conversationId, clientRequestId, sink, requestId);
     } catch (IOException e) {
       log.debug("Client disconnected, requestId={}", requestId);
     }
   }
 
-  private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, ChatSink sink, String requestId) throws IOException {
+  private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId)
+      throws IOException {
     var model = requireModel();
-    var turn = new Turn(scope, kbId, conversationId, question, model.model());
+    var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId);
     var context = conversationId == null ? List.<MessageView>of() : priorContext(scope, conversationId);
     // Follow-ups are retrieved together with the previous visible question so references like "那试用期呢" resolve.
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
@@ -151,7 +198,9 @@ public class ChatService {
     UUID[] stored = tx.execute(status -> {
       var id = conversationId != null ? conversationId
           : repository.createConversation(scope.enterpriseId(), scope.userId(), kbId, title(question));
-      return new UUID[] {id, repository.saveMessage(id, question, text, model.model(), sources)};
+      var messageId = repository.saveMessage(id, question, text, model.model(), sources);
+      link(turn, messageId);
+      return new UUID[] {id, messageId};
     });
 
     var citations = sources.stream().map(s -> Map.of("documentId", s.documentId().toString(), "versionId", s.versionId().toString(),
@@ -200,11 +249,17 @@ public class ChatService {
     tx.executeWithoutResult(t -> {
       var id = turn.conversationId() != null ? turn.conversationId()
           : repository.createConversation(turn.scope().enterpriseId(), turn.scope().userId(), turn.kbId(), title(turn.question()));
-      repository.saveOutcome(id, turn.question(), status, code, turn.model());
+      link(turn, repository.saveOutcome(id, turn.question(), status, code, turn.model()));
     });
   }
 
-  private record Turn(AccessScope scope, UUID kbId, UUID conversationId, String question, String model) {}
+  private void link(Turn turn, UUID messageId) {
+    if (turn.clientRequestId() != null) {
+      repository.linkRequest(turn.scope().enterpriseId(), turn.scope().userId(), turn.clientRequestId(), messageId);
+    }
+  }
+
+  private record Turn(AccessScope scope, UUID kbId, UUID conversationId, String question, String model, UUID clientRequestId) {}
 
   private static void error(ChatSink sink, String code, String message, String requestId) throws IOException {
     var data = new LinkedHashMap<String, String>();
