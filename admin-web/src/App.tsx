@@ -8,6 +8,7 @@ import { LiveDebug } from "./features/debug/LiveDebug";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { UsersPage } from "./features/users/UsersPage";
 import { RecordsPage } from "./features/records/RecordsPage";
+import { LoginPage } from "./features/login/LoginPage";
 import { IntegrationPage } from "./features/integration/IntegrationPage";
 import { DocumentsPage } from "./features/documents/DocumentsPage";
 import { documentsFixture } from "./features/documents/fixtures";
@@ -56,23 +57,37 @@ export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   return <SettingsPage status={ctx.status} error={ctx.statusError} />;
 }
 
-export function App() {
+type Mode = "login" | "sample";
+
+export function App({ initialMode = "login" }: { initialMode?: Mode }) {
   return (
-    <SessionProvider>
-      <Shell />
-    </SessionProvider>
+    <ConfigProvider button={{ autoInsertSpace: false }} theme={{ token: { colorPrimary: "#2f5bd3", borderRadius: 8 } }}>
+      <SessionProvider>
+        <Entry initialMode={initialMode} />
+      </SessionProvider>
+    </ConfigProvider>
   );
 }
 
+/** Login first; the console shows once a session is connected or the user chooses sample data. */
+function Entry({ initialMode }: { initialMode: Mode }) {
+  const session = useSession();
+  const [mode, setMode] = useState<Mode>(initialMode);
+  if (!session.client && mode === "login") {
+    return <LoginPage onLogin={session.connect} onBrowseSamples={() => setMode("sample")} />;
+  }
+  return <Shell onLogin={() => setMode("login")} />;
+}
+
 /** Admin shell following the Figma frames. Sample data until a local session is connected. */
-function Shell() {
+function Shell({ onLogin }: { onLogin: () => void }) {
   const session = useSession();
   const [active, setActive] = useState<NavKey>("overview");
   const kbName = session.knowledgeBases.find((k) => k.id === session.kbId)?.name;
   const current = NAV.find((n) => n.key === active) ?? NAV[0];
 
   return (
-    <ConfigProvider button={{ autoInsertSpace: false }} theme={{ token: { colorPrimary: "#2f5bd3", borderRadius: 8 } }}>
+    <>
       <Layout className="shell">
         <Layout.Sider width={208} className="shell-sider" breakpoint="lg" collapsedWidth={0}>
           <div className="brand">
@@ -103,7 +118,7 @@ function Shell() {
             <Breadcrumb items={[{ title: kbName ?? "知识库" }, { title: current.label }]} />
             <div className="shell-tools">
               <Input className="shell-search" placeholder="搜索文档、问答…" disabled aria-label="搜索（未实现）" />
-              <ConnectControl />
+              <ConnectControl onLogin={onLogin} />
             </div>
           </Layout.Header>
           <Layout.Content className="shell-content">
@@ -114,12 +129,12 @@ function Shell() {
               title="开发环境，尚未接入生产服务"
               description={session.client
                 ? "已连接本地服务：文档、问答、检索调试为真实数据；总览与评测仍为示例数据。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"
-                : "未连接时页面为虚构示例数据。连接本地服务需开发令牌；生产 IdP 未接入。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"}
+                : "未登录时页面为虚构示例数据。登录需开发令牌；生产 IdP 未接入。SSE validated 仅表示 metadata-only 来源检查，不代表回答正确。"}
             />
             {pageFor(active, { client: session.client, kbId: session.kbId, kbName, status: session.status, statusError: session.statusError })}
           </Layout.Content>
         </Layout>
       </Layout>
-    </ConfigProvider>
+    </>
   );
 }

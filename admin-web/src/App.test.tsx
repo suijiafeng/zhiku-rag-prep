@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { App } from "./App";
 
 describe("admin shell", () => {
-  const html = renderToStaticMarkup(<App />);
+  const html = renderToStaticMarkup(<App initialMode="sample" />);
 
   it("renders the navigation from the design", () => {
     for (const label of ["知识库总览", "文档管理", "问答工作台", "问答记录", "检索调试", "评测中心", "API 与集成", "用户与权限", "系统设置"]) {
