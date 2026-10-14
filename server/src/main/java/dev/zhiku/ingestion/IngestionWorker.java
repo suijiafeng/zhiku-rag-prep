@@ -7,6 +7,9 @@ import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -21,6 +24,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class IngestionWorker {
   private static final Logger log = LoggerFactory.getLogger(IngestionWorker.class);
   static final long RETRY_BASE_SECONDS = 30;
+  private static final ScheduledExecutorService HEARTBEAT = Executors.newSingleThreadScheduledExecutor(r -> {
+    var t = new Thread(r, "ingestion-lease");
+    t.setDaemon(true);
+    return t;
+  });
 
   private final IngestionRepository repository;
   private final IngestionSettings settings;
@@ -53,6 +61,10 @@ public class IngestionWorker {
   }
 
   public void process(ClaimedJob job) {
+    // 处理期间按租约的三分之一周期续租，健康的长任务不会被其他 worker 接管。
+    long period = Math.max(100, settings.leaseSeconds() * 1000L / 3);
+    var heartbeat = HEARTBEAT.scheduleAtFixedRate(() -> repository.renewLease(job.jobId(), owner, settings.leaseSeconds()),
+        period, period, TimeUnit.MILLISECONDS);
     try {
       var blob = repository.blob(job.versionId());
       var chunks = chunker.chunk(new String(blob.content(), StandardCharsets.UTF_8).replaceFirst("^﻿", ""), "text/markdown".equals(blob.mediaType()));
@@ -81,6 +93,8 @@ public class IngestionWorker {
     } catch (RuntimeException e) {
       log.warn("Ingestion job {} attempt {} failed: {}", job.jobId(), job.attempts(), e.getClass().getSimpleName());
       repository.releaseAfterFailure(job.jobId(), owner, job.attempts() >= settings.maxAttempts(), reason(e), RETRY_BASE_SECONDS * job.attempts());
+    } finally {
+      heartbeat.cancel(false);
     }
   }
 

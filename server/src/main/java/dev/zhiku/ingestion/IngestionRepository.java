@@ -89,6 +89,12 @@ public class IngestionRepository {
         (rs, i) -> new Blob(rs.getString("media_type"), rs.getBytes("content")), versionId);
   }
 
+  /** 仍持有租约时续期；返回 false 表示任务已被接管。 */
+  public boolean renewLease(UUID jobId, String owner, int leaseSeconds) {
+    return jdbc.update("UPDATE ingestion_job SET lease_until = now() + make_interval(secs => ?), updated_at = now() "
+        + "WHERE id = ? AND lease_owner = ? AND status = 'running'", leaseSeconds, jobId, owner) == 1;
+  }
+
   /** 锁定任务行；仅当本 worker 仍持有有效 lease 时返回 true。 */
   public boolean holdsLease(UUID jobId, String owner) {
     return !jdbc.queryForList("SELECT 1 FROM ingestion_job WHERE id = ? AND status = 'running' AND lease_owner = ? FOR UPDATE",
