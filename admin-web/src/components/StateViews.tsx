@@ -31,6 +31,9 @@ export function errorTitle(code: string) {
   if (code === "UNAUTHENTICATED") return "登录已失效";
   if (code === "NO_EVIDENCE") return "知识库中没有足够依据";
   if (code === "SOURCE_UNAVAILABLE") return "来源已变更";
+  if (code === "SENSITIVE_INPUT") return "问题含个人敏感信息";
+  if (code === "ANSWER_TOO_LONG") return "回答超出长度上限";
+  if (code === "CITATION_INVALID") return "引用无法核对";
   if (code === "NETWORK" || code === "STREAM_INCOMPLETE") return "连接中断";
   return "请求失败";
 }

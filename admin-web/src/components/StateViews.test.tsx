@@ -25,4 +25,10 @@ describe("state views", () => {
     expect(html).toContain("新建文档");
     expect(renderToStaticMarkup(<LoadingList />)).toContain("ant-skeleton");
   });
+
+  it("names the newer refusal and stop codes", () => {
+    expect(errorTitle("SENSITIVE_INPUT")).toBe("问题含个人敏感信息");
+    expect(errorTitle("ANSWER_TOO_LONG")).toBe("回答超出长度上限");
+    expect(errorTitle("CITATION_INVALID")).toBe("引用无法核对");
+  });
 });
