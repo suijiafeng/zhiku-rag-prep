@@ -29,6 +29,8 @@ import { ZhikuWidget } from "@zhiku/widget";
   endpoint="https://kb.example.test/api/chat"
   knowledgeBaseId="<知识库 UUID>"
   getAccessToken={() => fetchWidgetTokenFromHostBackend()}
+  themeColor="#1D5BBF"
+  quickQuestions={["年假有几天?", "报销流程"]}
 />
 ```
 
@@ -56,6 +58,8 @@ createSseParser 仅解析 event/data 分帧，输出字符串；不会执行 HTM
 - 持久 TextDecoder 流式解码，逐帧运行时校验 JSON；未知事件名忽略，已知事件结构不符即 `PROTOCOL` 失败。
 - 只有先 validated 后 done 才算 complete；error、取消、协议违规、流提前结束（`STREAM_INCOMPLETE`）都丢弃回答。onEvent 收到的 draft 是临时内容，结果不是 complete 时调用方必须丢弃。
 - 从不自动重试，避免重复 POST 造成重复计费。
+
+ZhikuWidget 按设计稿第 12 页实现：右下角悬浮按钮，展开为 380×620 面板（手机全屏）；问候语与快捷问题；回答中的 [n] 点击展开来源卡；赞/踩（踩需选原因）通过 rateMessage 同步到管理端"问答记录"；themeColor 只接受 #rgb/#rrggbb，否则回退默认蓝。样式以内嵌 <style> 提供，所有选择器以 .zhiku- 开头，不影响宿主页面。会话只保存在组件内存中。不提供匿名提问（首版采用受控身份）。
 
 ZhikuWidget 使用 streamChat：发送时才调用 getAccessToken，流式显示草稿，只有 complete 才保留回答和来源；取消或失败即丢弃。组件不读写 localStorage/sessionStorage/Cookie。
 

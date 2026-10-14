@@ -1,92 +1,202 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { streamChat, type ChatOutcome } from "./chatClient.js";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { rateMessage, streamChat, type FeedbackReason } from "./chatClient.js";
 import type { AccessTokenGetter, Citation } from "./contracts.js";
+import { WIDGET_CSS } from "./widgetStyles.js";
 
 export interface ZhikuWidgetProps {
-  /** Same-origin or explicitly allow-listed backend chat URL; never a model provider URL. */
+  /** Same-origin or allow-listed backend chat URL (…/api/chat); never a model provider URL. */
   endpoint: string;
   knowledgeBaseId: string;
-  /** Returns a short-lived widget token per request (POST /api/widget-tokens on the host's backend). Never stored here. */
+  /** Short-lived widget token per request (host backend calls POST /api/widget-tokens). Never stored here. */
   getAccessToken?: AccessTokenGetter;
   title?: string;
+  subtitle?: string;
+  greeting?: string;
+  quickQuestions?: string[];
+  /** Brand colour as #rgb or #rrggbb; anything else falls back to the default blue. */
+  themeColor?: string;
+  defaultOpen?: boolean;
 }
 
-type View =
-  | { kind: "idle" }
-  | { kind: "running"; question: string; draft: string }
-  | { kind: "done"; question: string; outcome: ChatOutcome };
+const DEFAULT_THEME = "#2f5bd3";
+const REASONS: { key: FeedbackReason; label: string }[] = [
+  { key: "WRONG", label: "答错了" },
+  { key: "MISSING", label: "没答到" },
+  { key: "BAD_CITATION", label: "引用不对" },
+  { key: "SHOULD_REFUSE", label: "应该拒答" },
+  { key: "OUTDATED", label: "内容过期" },
+];
 
-const VALIDATED_NOTE = "来源信息检查通过，请核对内容";
+export const normalizeTheme = (color: string | undefined) =>
+  color && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(color) ? color : DEFAULT_THEME;
 
-function Answer({ text, citations }: { text: string; citations: Citation[] }) {
+type Turn = {
+  id: number;
+  question: string;
+  state: "running" | "complete" | "failed" | "cancelled";
+  text: string;
+  citations: Citation[];
+  error?: string;
+  messageId?: string;
+  rating?: "up" | "down";
+  picking?: boolean;
+};
+
+/** Renders untrusted answer text; only [n] markers with a matching citation become toggles. */
+function AnswerBody({ turn, open, onToggle }: { turn: Turn; open: number | undefined; onToggle: (n: number) => void }) {
+  const parts = turn.text.split(/(\[\d+\])/u);
+  const source = open === undefined ? undefined : turn.citations[open - 1];
   return (
-    <div className="zhiku-answer">
-      <p>{text}</p>
-      <ol className="zhiku-citations">
-        {citations.map((c, i) => (
-          <li key={`${c.versionId}-${i}`}>
-            <strong>[{i + 1}] {c.title}</strong>
-            <span>{c.excerpt}</span>
-          </li>
-        ))}
-      </ol>
-      <p className="zhiku-note">{VALIDATED_NOTE}</p>
-    </div>
+    <>
+      <div>
+        {parts.map((part, i) => {
+          const n = Number(/^\[(\d+)\]$/u.exec(part)?.[1] ?? NaN);
+          return n >= 1 && n <= turn.citations.length ? (
+            <button key={i} type="button" className="zhiku-cite" aria-expanded={open === n} aria-label={`来源 ${n}`} onClick={() => onToggle(n)}>[{n}]</button>
+          ) : <Fragment key={i}>{part}</Fragment>;
+        })}
+      </div>
+      {source && (
+        <div className="zhiku-source">
+          <strong>[{open}] {source.title}</strong>
+          {source.excerpt}
+        </div>
+      )}
+      <p className="zhiku-note">来源信息检查通过，请核对内容</p>
+    </>
   );
 }
 
 /**
- * Minimal embeddable Q&A. Drafts are shown while streaming but kept only when the server reaches
- * validated + done; errors and cancellation discard them. Plain React text rendering, no HTML injection.
+ * Embeddable Q&A (design page 12). Drafts show while streaming but only answers that reach validated + done are
+ * kept; errors and cancellation discard them. Conversation lives in component memory only.
  */
-export function ZhikuWidget({ endpoint, knowledgeBaseId, getAccessToken, title = "知库助手" }: ZhikuWidgetProps) {
+export function ZhikuWidget({
+  endpoint, knowledgeBaseId, getAccessToken, title = "知库问答", subtitle = "知识库助手", themeColor,
+  greeting = "你好，我是知识库助手，可以问我公司制度、流程相关问题。", quickQuestions = [], defaultOpen = false,
+}: ZhikuWidgetProps) {
+  const [open, setOpen] = useState(defaultOpen);
   const [question, setQuestion] = useState("");
-  const [view, setView] = useState<View>({ kind: "idle" });
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [expanded, setExpanded] = useState<{ turn: number; n: number }>();
+  const conversation = useRef<string | undefined>(undefined);
   const controller = useRef<AbortController | null>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const running = turns.some((t) => t.state === "running");
+  const tokenOpts = getAccessToken ? { getAccessToken } : {};
 
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    body.current?.scrollTo?.({ top: body.current.scrollHeight });
+  }, [turns]);
 
-  const ask = async (event: FormEvent) => {
-    event.preventDefault();
-    const q = question.trim();
-    if (!q || view.kind === "running") return;
+  const update = (id: number, patch: Partial<Turn> | ((t: Turn) => Partial<Turn>)) =>
+    setTurns((all) => all.map((t) => (t.id === id ? { ...t, ...(typeof patch === "function" ? patch(t) : patch) } : t)));
+
+  const ask = async (text: string) => {
+    const q = text.trim();
+    if (!q || running) return;
+    const id = Date.now();
     const abort = new AbortController();
     controller.current = abort;
     setQuestion("");
-    setView({ kind: "running", question: q, draft: "" });
+    setTurns((all) => [...all, { id, question: q, state: "running", text: "", citations: [] }]);
     const outcome = await streamChat({
       endpoint,
-      request: { question: q, kbId: knowledgeBaseId },
+      request: conversation.current ? { question: q, kbId: knowledgeBaseId, conversationId: conversation.current } : { question: q, kbId: knowledgeBaseId },
       signal: abort.signal,
-      ...(getAccessToken ? { getAccessToken } : {}),
+      ...tokenOpts,
       onEvent: (e) => {
-        if (e.event === "draft") setView((v) => (v.kind === "running" ? { ...v, draft: v.draft + e.data.text } : v));
+        if (e.event === "draft") update(id, (t) => ({ text: t.text + e.data.text }));
       },
     });
-    setView({ kind: "done", question: q, outcome });
+    if (outcome.status === "complete") {
+      if (outcome.conversationId) conversation.current = outcome.conversationId;
+      update(id, { state: "complete", text: outcome.text, citations: outcome.citations, ...(outcome.messageId ? { messageId: outcome.messageId } : {}) });
+    } else if (outcome.status === "cancelled") {
+      update(id, { state: "cancelled", text: "", citations: [] });
+    } else {
+      update(id, { state: "failed", text: "", citations: [], error: `${outcome.error.message}（${outcome.error.code}）` });
+    }
   };
 
+  const rate = async (turn: Turn, rating: "up" | "down", reason?: FeedbackReason) => {
+    if (!turn.messageId) return;
+    const result = await rateMessage({ endpoint, messageId: turn.messageId, rating, ...(reason ? { reason } : {}), ...tokenOpts });
+    update(turn.id, result.ok ? { rating, picking: false } : { picking: false, error: "反馈提交失败" });
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void ask(question);
+  };
+
+  const style = { "--zhiku-primary": normalizeTheme(themeColor) } as CSSProperties;
+
   return (
-    <section className="zhiku-widget" aria-label={title}>
-      <h2>{title}</h2>
-      {view.kind === "idle" && <p role="status">输入问题，回答会附带可核对的来源。</p>}
-      {view.kind !== "idle" && <p className="zhiku-question">{view.question}</p>}
-      {view.kind === "running" && (
-        <div role="status" aria-live="polite">
-          <p className="zhiku-draft">{view.draft || "正在检索与生成…"}</p>
-          <button type="button" onClick={() => controller.current?.abort()}>停止生成</button>
-        </div>
+    <div className="zhiku-root" style={style}>
+      <style>{WIDGET_CSS}</style>
+      {!open && (
+        <button type="button" className="zhiku-launcher" aria-label="打开知库问答" onClick={() => setOpen(true)}>💬</button>
       )}
-      {view.kind === "done" && view.outcome.status === "complete" && <Answer text={view.outcome.text} citations={view.outcome.citations} />}
-      {view.kind === "done" && view.outcome.status === "cancelled" && <p role="status">已停止，未完成的回答已丢弃。</p>}
-      {view.kind === "done" && view.outcome.status === "failed" && (
-        <p role="alert">{view.outcome.error.message}（{view.outcome.error.code}）</p>
+      {open && (
+        <section className="zhiku-panel" role="dialog" aria-label={title}>
+          <header className="zhiku-header">
+            <span className="zhiku-logo" aria-hidden="true">知</span>
+            <div>
+              <h2>{title}</h2>
+              <p>{subtitle}</p>
+            </div>
+            <button type="button" className="zhiku-close" aria-label="关闭" onClick={() => setOpen(false)}>×</button>
+          </header>
+          <div className="zhiku-body" ref={body}>
+            <div className="zhiku-bot">{greeting}</div>
+            {turns.length === 0 && quickQuestions.length > 0 && (
+              <div className="zhiku-quick">
+                {quickQuestions.map((q) => <button key={q} type="button" className="zhiku-chip" onClick={() => void ask(q)}>{q}</button>)}
+              </div>
+            )}
+            {turns.map((t) => (
+              <Fragment key={t.id}>
+                <div className="zhiku-user">{t.question}</div>
+                <div className="zhiku-bot" role={t.state === "running" ? "status" : undefined} aria-live="polite">
+                  {t.state === "running" && (
+                    <>
+                      <div>{t.text || "正在检索与生成…"}</div>
+                      <button type="button" className="zhiku-stop" onClick={() => controller.current?.abort()}>停止生成</button>
+                    </>
+                  )}
+                  {t.state === "complete" && (
+                    <>
+                      <AnswerBody turn={t} open={expanded?.turn === t.id ? expanded.n : undefined}
+                        onToggle={(n) => setExpanded((cur) => (cur?.turn === t.id && cur.n === n ? undefined : { turn: t.id, n }))} />
+                      {t.messageId && (
+                        <div className="zhiku-feedback">
+                          <span>这个回答有帮助吗？</span>
+                          <button type="button" aria-pressed={t.rating === "up"} onClick={() => void rate(t, "up")}>赞</button>
+                          <button type="button" aria-pressed={t.rating === "down"} onClick={() => update(t.id, { picking: !t.picking })}>踩</button>
+                          {t.picking && REASONS.map((r) => (
+                            <button key={r.key} type="button" onClick={() => void rate(t, "down", r.key)}>{r.label}</button>
+                          ))}
+                          {t.error && <span className="zhiku-error">{t.error}</span>}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {t.state === "cancelled" && <div>已停止，未完成的回答已丢弃。</div>}
+                  {t.state === "failed" && <div className="zhiku-error" role="alert">{t.error}</div>}
+                </div>
+              </Fragment>
+            ))}
+          </div>
+          <form className="zhiku-form" onSubmit={submit}>
+            <textarea value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={2000} rows={2} aria-label="问题"
+              placeholder="输入问题…" disabled={running}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void ask(question); } }} />
+            <button type="submit" className="zhiku-send" disabled={running || !question.trim()}>发送</button>
+          </form>
+        </section>
       )}
-      <form onSubmit={ask}>
-        <textarea value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={2000} rows={2}
-          aria-label="问题" placeholder="输入问题" disabled={view.kind === "running"} />
-        <button type="submit" disabled={view.kind === "running" || !question.trim()}>发送</button>
-      </form>
-    </section>
+    </div>
   );
 }

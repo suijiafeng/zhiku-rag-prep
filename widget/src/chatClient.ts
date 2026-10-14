@@ -15,7 +15,7 @@ export interface ChatError {
 }
 
 export type ChatOutcome =
-  | { status: "complete"; text: string; citations: Citation[] }
+  | { status: "complete"; text: string; citations: Citation[]; conversationId?: string; messageId?: string }
   | { status: "failed"; error: ChatError }
   | { status: "cancelled" };
 
@@ -65,7 +65,13 @@ function toEvent(frame: SseFrame): ChatEvent | null {
       }
       break;
     case "done":
-      if (data.status === "complete") return { event: "done", data: { status: "complete" } };
+      if (data.status === "complete") {
+        return { event: "done", data: {
+          status: "complete",
+          ...(isStr(data.conversationId) ? { conversationId: data.conversationId } : {}),
+          ...(isStr(data.messageId) ? { messageId: data.messageId } : {}),
+        } };
+      }
       break;
     case "error":
       if (isErrorBody(data)) return { event: "error", data: { code: data.code, message: data.message, requestId: data.requestId } };
@@ -109,7 +115,9 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
     response = await fetchImpl(endpoint, {
       method: "POST",
       headers,
-      body: JSON.stringify({ question: request.question, kbId: request.kbId }),
+      body: JSON.stringify(request.conversationId
+        ? { question: request.question, kbId: request.kbId, conversationId: request.conversationId }
+        : { question: request.question, kbId: request.kbId }),
       credentials: "omit",
       cache: "no-store",
       ...(signal ? { signal } : {}),
@@ -143,7 +151,11 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
       onEvent?.(event);
       if (signal?.aborted) return { status: "cancelled" };
       if (event.event === "error") return { status: "failed", error: { ...event.data } };
-      if (event.event === "done") return { status: "complete", text, citations: citations ?? [] };
+      if (event.event === "done") {
+        return { status: "complete", text, citations: citations ?? [],
+          ...(event.data.conversationId ? { conversationId: event.data.conversationId } : {}),
+          ...(event.data.messageId ? { messageId: event.data.messageId } : {}) };
+      }
     }
     return undefined;
   };
@@ -163,5 +175,44 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
     return failed("NETWORK", "连接中断");
   } finally {
     reader.cancel().catch(() => undefined);
+  }
+}
+
+export type FeedbackReason = "WRONG" | "MISSING" | "BAD_CITATION" | "SHOULD_REFUSE" | "OUTDATED";
+
+export interface RateOptions {
+  /** The chat endpoint; feedback goes to the sibling /messages/{id}/feedback path. */
+  endpoint: string;
+  messageId: string;
+  rating: "up" | "down";
+  reason?: FeedbackReason;
+  getAccessToken?: AccessTokenGetter;
+  fetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
+}
+
+/** Rates the asker's own answer. One attempt, no retry, no storage. */
+export async function rateMessage(options: RateOptions): Promise<{ ok: true } | { ok: false; error: ChatError }> {
+  const fetchImpl = options.fetchImpl ?? ((url: string, init: RequestInit) => fetch(url, init));
+  let token: string | undefined;
+  try {
+    token = await options.getAccessToken?.();
+  } catch {
+    return { ok: false, error: { code: "TOKEN_UNAVAILABLE", message: "无法获取访问令牌" } };
+  }
+  const url = `${options.endpoint.replace(/\/chat\/?$/, "")}/messages/${encodeURIComponent(options.messageId)}/feedback`;
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    const res = await fetchImpl(url, {
+      method: "PUT",
+      headers,
+      credentials: "omit",
+      body: JSON.stringify(options.rating === "down" ? { rating: "down", reason: options.reason } : { rating: "up" }),
+    });
+    if (res.ok) return { ok: true };
+    const failure = await httpError(res);
+    return { ok: false, error: failure.status === "failed" ? failure.error : { code: `HTTP_${res.status}`, message: "请求失败" } };
+  } catch {
+    return { ok: false, error: { code: "NETWORK", message: "网络请求失败" } };
   }
 }

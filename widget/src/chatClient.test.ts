@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { streamChat } from "./chatClient.js";
+import { rateMessage, streamChat } from "./chatClient.js";
 
 const enc = new TextEncoder();
 const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -147,6 +147,37 @@ describe("streamChat", () => {
   it("reports network failures without retrying", async () => {
     const fetchImpl = vi.fn(async () => { throw new TypeError("network"); });
     expect(await streamChat({ ...base, fetchImpl })).toMatchObject({ status: "failed", error: { code: "NETWORK" } });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("conversation and feedback", () => {
+  it("passes conversation and message ids from done and sends conversationId when continuing", async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => streamResponse([
+      ...happy.slice(0, 3),
+      sse("done", { status: "complete", conversationId: "c1", messageId: "m1" }),
+    ]));
+    const out = await streamChat({ ...base, request: { ...base.request, conversationId: "c0" }, fetchImpl });
+    expect(out).toMatchObject({ status: "complete", conversationId: "c1", messageId: "m1" });
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1].body))).toMatchObject({ conversationId: "c0" });
+  });
+
+  it("rates a message next to the chat endpoint with a fresh token", async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) =>
+      new Response(JSON.stringify({ rating: "down" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const out = await rateMessage({ endpoint: "https://kb.example.test/api/chat", messageId: "m/1", rating: "down", reason: "MISSING",
+      getAccessToken: async () => "t", fetchImpl });
+    expect(out).toEqual({ ok: true });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("https://kb.example.test/api/messages/m%2F1/feedback");
+    expect(init.method).toBe("PUT");
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer t");
+    expect(JSON.parse(String(init.body))).toEqual({ rating: "down", reason: "MISSING" });
+  });
+
+  it("reports rating failures without retrying", async () => {
+    const fetchImpl = vi.fn(async () => new Response("{}", { status: 403, headers: { "Content-Type": "application/json" } }));
+    expect(await rateMessage({ endpoint: "/api/chat", messageId: "m", rating: "up", fetchImpl })).toMatchObject({ ok: false });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
