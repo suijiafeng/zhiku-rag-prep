@@ -32,7 +32,8 @@ class FeedbackService {
       "融合或重排误排", "上下文预算挤出", "生成没有遵循证据", "引用映射失败");
 
   record RecordItem(UUID messageId, Instant createdAt, boolean own, String question, int citationCount, String rating,
-      String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome) {}
+      String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
+      Boolean sourceAvailable) {}
 
   record Stats(int total, int up, int down, int unrated, Map<String, Integer> reasons) {}
 
@@ -69,8 +70,11 @@ class FeedbackService {
     var items = repository.records(kbId, filter).stream().map(r -> {
       boolean own = r.userId().equals(scope.userId());
       boolean visible = own || canReadOthers;
+      // A comment may quote the answer; once its sources are unavailable it is hidden like the answer itself.
+      boolean commentVisible = visible && !Boolean.FALSE.equals(r.sourceAvailable());
       return new RecordItem(r.messageId(), r.createdAt(), own, visible ? r.question() : null, r.citationCount(), r.rating(),
-          r.reason(), visible ? r.comment() : null, r.status(), r.rootCause(), r.resolution(), r.verificationCaseId(), r.outcome());
+          r.reason(), commentVisible ? r.comment() : null, r.status(), r.rootCause(), r.resolution(), r.verificationCaseId(), r.outcome(),
+          r.sourceAvailable());
     }).toList();
     var raw = repository.stats(kbId, Instant.now().minus(Duration.ofDays(7)));
     var reasons = new LinkedHashMap<String, Integer>();

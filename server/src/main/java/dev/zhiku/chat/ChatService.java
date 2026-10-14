@@ -343,7 +343,11 @@ public class ChatService {
       boolean available = !sources.isEmpty() && sources.stream().allMatch(s -> s.documentId() != null && !s.withdrawn()
           && s.chunkText() != null && conversation.kbId().equals(s.kbId()));
       if (!available) {
-        return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), ratings.get(m.id()), m.status(), null);
+        // The comment is free text that may quote the hidden answer: only structured feedback stays visible.
+        var rating = ratings.get(m.id());
+        var safe = rating == null ? null : new FeedbackRepository.FeedbackView(rating.rating(), rating.reason(), null, rating.version(),
+            rating.status(), rating.updatedAt());
+        return new MessageView(m.id(), m.question(), null, true, "SOURCE_UNAVAILABLE", false, List.of(), m.createdAt(), safe, m.status(), null);
       }
       boolean stale = sources.stream().anyMatch(s -> !eligibleNow.contains(s.versionId()));
       var citations = sources.stream().map(s -> new CitationView(s.documentId().toString(), s.versionId().toString(), s.title(), excerpt(s.chunkText()))).toList();

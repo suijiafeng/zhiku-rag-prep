@@ -18,9 +18,26 @@ class FeedbackRepository {
   record OwnedMessage(UUID messageId, UUID userId, UUID enterpriseId, UUID kbId, String status) {}
 
   record RecordRow(UUID messageId, Instant createdAt, UUID userId, String question, int citationCount, String rating,
-      String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome) {}
+      String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
+      Boolean sourceAvailable) {}
 
   record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt) {}
+
+  /**
+   * Same rule as the history view: a completed answer is available only while every source document exists and is not
+   * deleted, its version is not withdrawn, the chunk still exists, and it belongs to the conversation's knowledge base.
+   * Null for turns that are not completed answers.
+   */
+  private static final String SOURCE_AVAILABLE = """
+      CASE WHEN m.status <> 'complete' THEN NULL ELSE
+        EXISTS (SELECT 1 FROM message_source s WHERE s.message_id = m.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM message_source s
+          LEFT JOIN content_version v ON v.id = s.version_id
+          LEFT JOIN document d ON d.id = v.document_id AND d.deleted_at IS NULL
+          LEFT JOIN chunk ch ON ch.id = s.chunk_id AND ch.version_id = s.version_id
+          WHERE s.message_id = m.id AND (d.id IS NULL OR v.withdrawn_at IS NOT NULL OR ch.id IS NULL OR d.kb_id <> c.kb_id))
+      END""";
 
   private final JdbcTemplate jdbc;
 
@@ -67,16 +84,18 @@ class FeedbackRepository {
       case "none" -> " AND f.message_id IS NULL";
       default -> "";
     };
-    return jdbc.query("""
+    var sql = """
         SELECT m.id, m.created_at, c.user_id, m.question,
                (SELECT count(*) FROM message_source s WHERE s.message_id = m.id) AS citations,
-               f.rating, f.reason, f.comment, f.status, f.root_cause, f.resolution, f.verification_case_id, m.status AS outcome
+               f.rating, f.reason, f.comment, f.status, f.root_cause, f.resolution, f.verification_case_id, m.status AS outcome,
+               %s AS source_available
         FROM message m JOIN conversation c ON c.id = m.conversation_id LEFT JOIN feedback f ON f.message_id = m.id
-        WHERE c.kb_id = ?""" + where + " ORDER BY m.created_at DESC, m.id LIMIT 200",
+        WHERE c.kb_id = ?""".formatted(SOURCE_AVAILABLE) + where + " ORDER BY m.created_at DESC, m.id LIMIT 200";
+    return jdbc.query(sql,
         (rs, i) -> new RecordRow(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant(), rs.getObject("user_id", UUID.class),
             rs.getString("question"), rs.getInt("citations"), rs.getString("rating"), rs.getString("reason"), rs.getString("comment"),
             rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"), rs.getObject("verification_case_id", UUID.class),
-            rs.getString("outcome")), kbId);
+            rs.getString("outcome"), (Boolean) rs.getObject("source_available")), kbId);
   }
 
   Map<String, Integer> stats(UUID kbId, Instant since) {

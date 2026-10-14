@@ -220,6 +220,45 @@ class FeedbackTest extends IntegrationTest {
         .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
   }
 
+  /** A completed answer whose single source really exists, so withdrawing it makes the answer unavailable. */
+  UUID[] answeredFromRealSource(UUID user) {
+    var doc = UUID.randomUUID();
+    var version = UUID.randomUUID();
+    var chunk = UUID.randomUUID();
+    jdbc.update("INSERT INTO document (id, kb_id, title, created_by) VALUES (?, ?, '员工手册', ?)", doc, kb, operator);
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, created_by, approved_at, published_at, index_status) "
+        + "VALUES (?, ?, 'v1', now() - interval '1 day', ?, now(), now(), 'ready')", version, doc, operator);
+    jdbc.update("INSERT INTO chunk (id, version_id, seq, start_offset, end_offset, text) VALUES (?, ?, 0, 0, 10, '年假按司龄计算')", chunk, version);
+    var conversation = UUID.randomUUID();
+    var id = UUID.randomUUID();
+    jdbc.update("INSERT INTO conversation (id, enterprise_id, user_id, kb_id, title) VALUES (?, ?, ?, ?, '年假')", conversation, enterprise, user, kb);
+    jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model) VALUES (?, ?, '年假有几天?', '年假按司龄计算[1]', 'test')", id, conversation);
+    jdbc.update("INSERT INTO message_source (message_id, ordinal, version_id, chunk_id) VALUES (?, 1, ?, ?)", id, version, chunk);
+    return new UUID[] {id, conversation, version};
+  }
+
+  @Test
+  void commentsAreHiddenWithTheAnswerWhenItsSourceIsUnavailable() throws Exception {
+    var answered = answeredFromRealSource(operator);
+    rate(answered[0], operator, "{\"rating\":\"down\",\"reason\":\"WRONG\",\"comment\":\"原文写的是年假按司龄计算\"}").andExpect(status().isOk());
+    mvc.perform(as(get("/api/conversations/{id}/messages", answered[1]), operator, Role.EMPLOYEE))
+        .andExpect(jsonPath("$[0].hidden").value(false))
+        .andExpect(jsonPath("$[0].feedback.comment").value("原文写的是年假按司龄计算"));
+    records("down").andExpect(jsonPath("$.items[0].comment").value("原文写的是年假按司龄计算"));
+
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", answered[2]);
+    var history = mvc.perform(as(get("/api/conversations/{id}/messages", answered[1]), operator, Role.EMPLOYEE))
+        .andExpect(jsonPath("$[0].hidden").value(true))
+        .andExpect(jsonPath("$[0].feedback.rating").value("down"))
+        .andExpect(jsonPath("$[0].feedback.reason").value("WRONG"))
+        .andReturn().getResponse().getContentAsString();
+    assertThat(history).doesNotContain("原文写的是");
+    var records = records("down").andExpect(jsonPath("$.items[0].rating").value("down"))
+        .andExpect(jsonPath("$.items[0].sourceAvailable").value(false))
+        .andReturn().getResponse().getContentAsString();
+    assertThat(records).doesNotContain("原文写的是");
+  }
+
   @Test
   void historyShowsTheAskersOwnFeedback() throws Exception {
     rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"MISSING\"}").andExpect(status().isOk());
