@@ -43,12 +43,20 @@ class FeedbackTest extends IntegrationTest {
     unratedMessage = message(asker, "VPN 怎么申请?");
   }
 
+  /** 已完成的回答，来源真实存在（随机来源 ID 会被当作来源失效）。 */
   UUID message(UUID user, String question) {
+    var doc = UUID.randomUUID();
+    var version = UUID.randomUUID();
+    var chunk = UUID.randomUUID();
+    jdbc.update("INSERT INTO document (id, kb_id, title, created_by) VALUES (?, ?, '制度', ?)", doc, kb, operator);
+    jdbc.update("INSERT INTO content_version (id, document_id, version_label, effective_from, created_by, approved_at, published_at, index_status) "
+        + "VALUES (?, ?, 'v1', now() - interval '1 day', ?, now(), now(), 'ready')", version, doc, operator);
+    jdbc.update("INSERT INTO chunk (id, version_id, seq, start_offset, end_offset, text) VALUES (?, ?, 0, 0, 4, '制度正文')", chunk, version);
     var conversation = UUID.randomUUID();
     var id = UUID.randomUUID();
     jdbc.update("INSERT INTO conversation (id, enterprise_id, user_id, kb_id, title) VALUES (?, ?, ?, ?, ?)", conversation, enterprise, user, kb, question);
     jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model) VALUES (?, ?, ?, '答案[1]', 'test')", id, conversation, question);
-    jdbc.update("INSERT INTO message_source (message_id, ordinal, version_id, chunk_id) VALUES (?, 1, ?, ?)", id, UUID.randomUUID(), UUID.randomUUID());
+    jdbc.update("INSERT INTO message_source (message_id, ordinal, version_id, chunk_id) VALUES (?, 1, ?, ?)", id, version, chunk);
     return id;
   }
 
@@ -119,23 +127,23 @@ class FeedbackTest extends IntegrationTest {
   @Test
   void operatorsTrackHandlingStatusWithAudit() throws Exception {
     rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"OUTDATED\"}").andExpect(status().isOk());
-    mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, askerMessage), operator, Role.KB_OPERATOR)
-            .contentType("application/json").content("{\"status\":\"in_progress\",\"rootCause\":\"文档未就绪或版本错误\"}"))
-        .andExpect(status().isNoContent());
+    handle(askerMessage, "{\"status\":\"in_progress\",\"rootCause\":\"文档未就绪或版本错误\"}").andExpect(status().isNoContent());
     records("down").andExpect(jsonPath("$.items[0].status").value("in_progress")).andExpect(jsonPath("$.items[0].rootCause").value("文档未就绪或版本错误"));
     assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE action = 'FEEDBACK_STATUS' AND target = ?", Integer.class, "message:" + askerMessage)).isEqualTo(1);
 
-    mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, askerMessage), operator, Role.KB_OPERATOR)
-        .contentType("application/json").content("{\"status\":\"done\"}")).andExpect(status().isUnprocessableEntity());
-    mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, askerMessage), operator, Role.KB_OPERATOR)
-        .contentType("application/json").content("{\"status\":\"resolved\",\"rootCause\":\"模型问题\"}")).andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, "{\"status\":\"done\"}").andExpect(status().isUnprocessableEntity());
+    handle(askerMessage, "{\"status\":\"resolved\",\"rootCause\":\"模型问题\"}").andExpect(status().isUnprocessableEntity());
     mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, askerMessage), asker, Role.EMPLOYEE)
-        .contentType("application/json").content("{\"status\":\"resolved\"}")).andExpect(status().isForbidden());
-    mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, unratedMessage), operator, Role.KB_OPERATOR)
-        .contentType("application/json").content("{\"status\":\"resolved\"}")).andExpect(status().isNotFound());
+        .contentType("application/json").content("{\"expectedVersion\":1,\"status\":\"resolved\"}")).andExpect(status().isForbidden());
+    handle(unratedMessage, "{\"status\":\"resolved\"}").andExpect(status().isNotFound());
   }
 
+  /** 处理请求须带 expectedVersion；测试里默认填当前反馈版本。 */
   ResultActions handle(UUID messageId, String body) throws Exception {
+    if (!body.contains("expectedVersion")) {
+      var version = jdbc.queryForList("SELECT version FROM feedback WHERE message_id = ?", Integer.class, messageId);
+      body = "{\"expectedVersion\":" + (version.isEmpty() ? 1 : version.getFirst()) + "," + body.substring(1);
+    }
     return mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, messageId), operator, Role.KB_OPERATOR)
         .contentType("application/json").content(body));
   }
@@ -230,6 +238,35 @@ class FeedbackTest extends IntegrationTest {
     handle(askerMessage, resolve(passing)).andExpect(status().isUnprocessableEntity());
     jdbc.update("UPDATE ingestion_job SET updated_at = now() - interval '1 hour' WHERE version_id = ?", source);
     handle(askerMessage, resolve(passing)).andExpect(status().isNoContent());
+  }
+
+  @Test
+  void handlingNeedsTheFeedbackVersionItWasMadeFor() throws Exception {
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"WRONG\"}").andExpect(status().isOk());
+    records("down").andExpect(jsonPath("$.items[0].feedbackVersion").value(1));
+    handle(askerMessage, "{\"expectedVersion\":2,\"status\":\"in_progress\"}").andExpect(status().isConflict());
+    handle(askerMessage, "{\"status\":\"in_progress\"}").andExpect(status().isNoContent());
+    rate(askerMessage, asker, "{\"rating\":\"down\",\"reason\":\"MISSING\"}").andExpect(status().isOk());
+    handle(askerMessage, "{\"expectedVersion\":1,\"status\":\"wont_fix\",\"resolution\":\"旧页面的操作\"}").andExpect(status().isConflict());
+    records("down").andExpect(jsonPath("$.items[0].status").value("open")).andExpect(jsonPath("$.items[0].feedbackVersion").value(2));
+    mvc.perform(as(patch("/api/knowledge-bases/{kb}/feedback/{id}", kb, askerMessage), operator, Role.KB_OPERATOR)
+        .contentType("application/json").content("{\"status\":\"in_progress\"}")).andExpect(status().isUnprocessableEntity());
+  }
+
+  @Test
+  void handlingNotesAreHiddenWithTheAnswerWhenItsSourceIsUnavailable() throws Exception {
+    var answered = answeredFromRealSource(operator);
+    rate(answered[0], operator, "{\"rating\":\"down\",\"reason\":\"WRONG\"}").andExpect(status().isOk());
+    handle(answered[0], "{\"status\":\"wont_fix\",\"resolution\":\"原文写的是年假按司龄计算，答案无误\"}").andExpect(status().isNoContent());
+    records("down").andExpect(jsonPath("$.items[0].resolution").value("原文写的是年假按司龄计算，答案无误"));
+    jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", answered[2]);
+    var list = records("down").andExpect(jsonPath("$.items[0].status").value("wont_fix")).andReturn().getResponse().getContentAsString();
+    assertThat(list).doesNotContain("原文写的是");
+    var history = mvc.perform(as(get("/api/knowledge-bases/{kb}/feedback/{id}/history", kb, answered[0]), operator, Role.KB_OPERATOR))
+        .andExpect(jsonPath("$[0].status").value("wont_fix"))
+        .andExpect(jsonPath("$[0].sourceAvailable").value(false))
+        .andReturn().getResponse().getContentAsString();
+    assertThat(history).doesNotContain("原文写的是");
   }
 
   @Test

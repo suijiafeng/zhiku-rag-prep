@@ -147,7 +147,8 @@ public class ChatService {
   private void run(AccessScope scope, UUID kbId, String question, UUID conversationId, UUID clientRequestId, ChatSink sink, String requestId,
       UUID traceId, ConfigService.Effective config) throws IOException {
     var model = requireModel();
-    var turn = new Turn(scope, kbId, conversationId, question, model.model(), clientRequestId, traceId, new Instant[1]);
+    // 所有保存路径（含排队时取消）只用隐藏了敏感号码的问题；无敏感号码时与原问题相同。
+    var turn = new Turn(scope, kbId, conversationId, SensitiveInput.redact(question), model.model(), clientRequestId, traceId, new Instant[1]);
     // 排队期间已取消的请求不再做向量化，也不调用模型。
     if (sink.cancelled()) {
       record(turn, "cancelled", null);
@@ -155,8 +156,7 @@ public class ChatService {
     }
     // 疑似个人敏感号码：不检索、不调用模型，只保存隐藏号码后的问题。
     if (SensitiveInput.detect(question)) {
-      var redacted = new Turn(scope, kbId, conversationId, SensitiveInput.redact(question), model.model(), clientRequestId, traceId, new Instant[1]);
-      fail(redacted, sink, "SENSITIVE_INPUT", "问题中可能包含个人敏感信息（如证件号、银行卡号或手机号），请删除后再提问；个人事务请联系"
+      fail(turn, sink, "SENSITIVE_INPUT", "问题中可能包含个人敏感信息（如证件号、银行卡号或手机号），请删除后再提问；个人事务请联系"
           + handoff(config.handoffChannel()), requestId);
       return;
     }

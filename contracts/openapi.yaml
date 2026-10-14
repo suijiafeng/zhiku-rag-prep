@@ -148,15 +148,16 @@ paths:
         category. Closing needs a basis: resolved requires rootCause, resolution and verificationCaseId of an approved case
         in this knowledge base made from the current version of this feedback (originMessageId) whose evidence spans were all retrieved in the latest evaluation run, with no evidence source withdrawn, deleted, not ready or re-indexed since that run (a retrieval check, not
         proof that the answer is correct); wont_fix requires resolution as the reason. Every change is kept in the handling
-        history. Audited.
+        history. resolution is hidden in lists and history once the answer's sources are unavailable (sourceAvailable false). Audited.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [status]
+              required: [expectedVersion, status]
               properties:
+                expectedVersion: {type: integer, description: feedbackVersion from the records list; a changed feedback returns 409 FEEDBACK_VERSION_CONFLICT}
                 status: {type: string}
                 rootCause: {type: string}
                 resolution: {type: string, maxLength: 1000}
@@ -188,6 +189,7 @@ paths:
                     changedBy: {type: string, format: uuid}
                     changedAt: {type: string, format: date-time}
                     feedbackVersion: {type: integer, description: Feedback version the change was made for}
+                    sourceAvailable: {type: boolean}
         '403': {$ref: '#/components/responses/Forbidden'}
   /api/widget-tokens:
     post:

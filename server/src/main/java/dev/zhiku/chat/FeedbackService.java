@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +34,7 @@ class FeedbackService {
 
   record RecordItem(UUID messageId, Instant createdAt, boolean own, String question, int citationCount, String rating,
       String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
-      Boolean sourceAvailable, UUID traceId) {}
+      Boolean sourceAvailable, UUID traceId, Integer feedbackVersion) {}
 
   record Stats(int total, int up, int down, int unrated, Map<String, Integer> reasons) {}
 
@@ -72,9 +73,11 @@ class FeedbackService {
       boolean visible = own || canReadOthers;
       // 评论可能引用回答；一旦其来源不可用，评论与回答一样被隐藏。
       boolean commentVisible = visible && !Boolean.FALSE.equals(r.sourceAvailable());
+      // 处理说明也可能摘抄答案或原文：来源失效后同样隐藏，只保留状态等结构化字段。
+      boolean sourceGone = Boolean.FALSE.equals(r.sourceAvailable());
       return new RecordItem(r.messageId(), r.createdAt(), own, visible ? r.question() : null, r.citationCount(), r.rating(),
-          r.reason(), commentVisible ? r.comment() : null, r.status(), r.rootCause(), r.resolution(), r.verificationCaseId(), r.outcome(),
-          r.sourceAvailable(), r.traceId());
+          r.reason(), commentVisible ? r.comment() : null, r.status(), r.rootCause(), sourceGone ? null : r.resolution(), r.verificationCaseId(),
+          r.outcome(), r.sourceAvailable(), r.traceId(), r.feedbackVersion());
     }).toList();
     var raw = repository.stats(kbId, Instant.now().minus(Duration.ofDays(7)));
     var reasons = new LinkedHashMap<String, Integer>();
@@ -92,7 +95,7 @@ class FeedbackService {
    * 通过的评测用例；"wont_fix" 需要说明原因。每次变更都追加到处理历史中。
    */
   @Transactional
-  void updateStatus(UUID kbId, UUID messageId, String status, String rootCause, String resolution, UUID verificationCaseId) {
+  void updateStatus(UUID kbId, UUID messageId, int expectedVersion, String status, String rootCause, String resolution, UUID verificationCaseId) {
     var scope = access.require(kbId, DEBUG_AND_EVALUATE);
     if (!STATUSES.contains(status)) throw ApiException.unprocessable("Unknown status");
     if (rootCause != null && !ROOT_CAUSES.contains(rootCause)) throw ApiException.unprocessable("Unknown root cause");
@@ -107,7 +110,10 @@ class FeedbackService {
         throw ApiException.unprocessable("Verification case must be made from this feedback, approved and pass the latest evaluation run");
       }
     }
-    repository.updateStatus(kbId, messageId, status, rootCause, note, verificationCaseId, scope.userId());
+    // 条件更新绑定反馈版本：旧页面的操作或校验与更新之间的用户修改都会落空。
+    if (repository.updateStatus(kbId, messageId, expectedVersion, status, rootCause, note, verificationCaseId, scope.userId()) != 1) {
+      throw new ApiException(HttpStatus.CONFLICT, "FEEDBACK_VERSION_CONFLICT", "Feedback changed since it was loaded; reload and confirm again");
+    }
     var detail = new LinkedHashMap<String, Object>();
     detail.put("status", status);
     if (rootCause != null) detail.put("rootCause", rootCause);
@@ -118,7 +124,10 @@ class FeedbackService {
   @Transactional(readOnly = true)
   List<FeedbackRepository.HandlingView> handlingHistory(UUID kbId, UUID messageId) {
     access.require(kbId, DEBUG_AND_EVALUATE);
-    return repository.handlingHistory(kbId, messageId);
+    return repository.handlingHistory(kbId, messageId).stream()
+        .map(h -> Boolean.FALSE.equals(h.sourceAvailable()) ? new FeedbackRepository.HandlingView(h.status(), h.rootCause(), null, h.verificationCaseId(),
+            h.changedBy(), h.changedAt(), h.feedbackVersion(), h.sourceAvailable()) : h)
+        .toList();
   }
 
   private static String blankToNull(String s) {

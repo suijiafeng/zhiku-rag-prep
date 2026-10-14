@@ -369,6 +369,19 @@ class ChatTest extends IntegrationTest {
   }
 
   @Test
+  void aCancelledSensitiveQuestionIsStoredRedactedToo() {
+    var scope = new AccessScope(enterprise, employee, Set.of(kb), Set.of(Role.EMPLOYEE));
+    chat.stream(scope, kb, "我的身份证号是11010119900307123X，年假还剩几天", null, null, new ChatSink() {
+      @Override public void send(String event, Object data) { }
+      @Override public boolean cancelled() { return true; }
+    }, "test-request");
+    var stored = jdbc.queryForObject("SELECT m.question || '|' || c.title FROM message m JOIN conversation c ON c.id = m.conversation_id WHERE c.kb_id = ?",
+        String.class, kb);
+    assertThat(stored).doesNotContain("11010119900307123X").contains("[已隐藏]");
+    assertThat(lastStatus()).isEqualTo("cancelled::true");
+  }
+
+  @Test
   void aRequestCancelledDuringRetrievalNeverReachesTheModel() {
     var scope = new AccessScope(enterprise, employee, Set.of(kb), Set.of(Role.EMPLOYEE));
     var cancelled = new java.util.concurrent.atomic.AtomicBoolean();

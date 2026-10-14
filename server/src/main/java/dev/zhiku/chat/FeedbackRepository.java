@@ -20,10 +20,10 @@ class FeedbackRepository {
 
   record RecordRow(UUID messageId, Instant createdAt, UUID userId, String question, int citationCount, String rating,
       String reason, String comment, String status, String rootCause, String resolution, UUID verificationCaseId, String outcome,
-      Boolean sourceAvailable, UUID traceId) {}
+      Boolean sourceAvailable, UUID traceId, Integer feedbackVersion) {}
 
   record HandlingView(String status, String rootCause, String resolution, UUID verificationCaseId, UUID changedBy, Instant changedAt,
-      Integer feedbackVersion) {}
+      Integer feedbackVersion, Boolean sourceAvailable) {}
 
   /**
    * 与历史视图规则相同：已完成回答仅当其自身及生成它所依据的每个较早轮次满足以下条件时可用：
@@ -109,14 +109,16 @@ class FeedbackRepository {
                (SELECT count(*) FROM message_source s WHERE s.message_id = m.id) AS citations,
                f.rating, f.reason, f.comment, f.status, f.root_cause, f.resolution, f.verification_case_id, m.status AS outcome,
                %s AS source_available,
-               (SELECT t.id FROM retrieval_trace t WHERE t.message_id = m.id ORDER BY t.created_at DESC LIMIT 1) AS trace_id
+               (SELECT t.id FROM retrieval_trace t WHERE t.message_id = m.id ORDER BY t.created_at DESC LIMIT 1) AS trace_id,
+               f.version AS feedback_version
         FROM message m JOIN conversation c ON c.id = m.conversation_id LEFT JOIN feedback f ON f.message_id = m.id
         WHERE c.kb_id = ?""".formatted(SOURCE_AVAILABLE) + where + " ORDER BY m.created_at DESC, m.id LIMIT 200";
     return jdbc.query(sql,
         (rs, i) -> new RecordRow(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant(), rs.getObject("user_id", UUID.class),
             rs.getString("question"), rs.getInt("citations"), rs.getString("rating"), rs.getString("reason"), rs.getString("comment"),
             rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"), rs.getObject("verification_case_id", UUID.class),
-            rs.getString("outcome"), (Boolean) rs.getObject("source_available"), rs.getObject("trace_id", UUID.class)), kbId);
+            rs.getString("outcome"), (Boolean) rs.getObject("source_available"), rs.getObject("trace_id", UUID.class),
+            (Integer) rs.getObject("feedback_version")), kbId);
   }
 
   Map<String, Integer> stats(UUID kbId, Instant since) {
@@ -140,27 +142,31 @@ class FeedbackRepository {
         """, Boolean.class, messageId, kbId));
   }
 
-  void updateStatus(UUID kbId, UUID messageId, String status, String rootCause, String resolution, UUID verificationCaseId, UUID handledBy) {
-    jdbc.update("""
+  int updateStatus(UUID kbId, UUID messageId, int expectedVersion, String status, String rootCause, String resolution, UUID verificationCaseId,
+      UUID handledBy) {
+    int changed = jdbc.update("""
         UPDATE feedback f SET status = ?, root_cause = ?, resolution = ?, verification_case_id = ?, handled_by = ?, updated_at = now()
         FROM message m JOIN conversation c ON c.id = m.conversation_id
-        WHERE f.message_id = ? AND m.id = f.message_id AND c.kb_id = ?
-        """, status, rootCause, resolution, verificationCaseId, handledBy, messageId, kbId);
+        WHERE f.message_id = ? AND m.id = f.message_id AND c.kb_id = ? AND f.version = ?
+        """, status, rootCause, resolution, verificationCaseId, handledBy, messageId, kbId, expectedVersion);
+    if (changed != 1) return changed;
     jdbc.update("""
         INSERT INTO feedback_handling (message_id, status, root_cause, resolution, verification_case_id, changed_by, feedback_version)
         SELECT ?, ?, ?, ?, ?, ?, version FROM feedback WHERE message_id = ?
         """, messageId, status, rootCause, resolution, verificationCaseId, handledBy, messageId);
+    return changed;
   }
 
   /** 仅限本知识库内反馈的处理变更；其他知识库的 id 不返回任何内容。 */
   List<HandlingView> handlingHistory(UUID kbId, UUID messageId) {
     return jdbc.query("""
-        SELECT h.status, h.root_cause, h.resolution, h.verification_case_id, h.changed_by, h.changed_at, h.feedback_version
+        SELECT h.status, h.root_cause, h.resolution, h.verification_case_id, h.changed_by, h.changed_at, h.feedback_version,
+               %s AS source_available
         FROM feedback_handling h JOIN message m ON m.id = h.message_id JOIN conversation c ON c.id = m.conversation_id
         WHERE h.message_id = ? AND c.kb_id = ? ORDER BY h.id
-        """, (rs, i) -> new HandlingView(rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"),
+        """.formatted(SOURCE_AVAILABLE), (rs, i) -> new HandlingView(rs.getString("status"), rs.getString("root_cause"), rs.getString("resolution"),
             rs.getObject("verification_case_id", UUID.class), rs.getObject("changed_by", UUID.class), rs.getTimestamp("changed_at").toInstant(),
-            (Integer) rs.getObject("feedback_version")),
+            (Integer) rs.getObject("feedback_version"), (Boolean) rs.getObject("source_available")),
         messageId, kbId);
   }
 }
