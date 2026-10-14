@@ -76,7 +76,7 @@ export interface ConfigOverview {
   published: KnowledgeBaseConfig | null;
   candidate: KnowledgeBaseConfig | null;
   history: KnowledgeBaseConfig[];
-  defaults: { retrievalK: number; contextChunks: number; handoffChannel: string };
+  defaults: { retrievalK: number; contextChunks: number; handoffChannel: string; maxContextChunks: number };
 }
 
 export interface ConfigCandidateBody {

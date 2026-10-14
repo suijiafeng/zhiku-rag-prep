@@ -397,9 +397,11 @@ paths:
       operationId: knowledgeBaseConfig
       description: >-
         DEBUG_AND_EVALUATE. Published version (null means deployment defaults apply, reported as defaults), the single
-        candidate if any, and the version history. Configurable here: retrievalK (1..max-k), contextChunks (1..20, at
-        most retrievalK; the chunks given to the model), handoffChannel, promptAddendum (appended to the fixed system
-        prompt). Embedding and chunking are deployment settings: changing them re-indexes everything and is not done here.
+        candidate if any, and the version history. Configurable here: retrievalK (1..max-k), contextChunks (1..defaults.maxContextChunks,
+        at most retrievalK; the chunks given to the model; the maximum is the context budget zhiku.chat.max-context-chars divided
+        by max-chunk-chars, never above 20), handoffChannel, promptAddendum (appended to the fixed system prompt). At request time
+        prior turns and chunks share the same budget: chunks that do not fit are left out and the generation stage of the trace
+        says how many. Embedding and chunking are deployment settings: changing them re-indexes everything and is not done here.
       responses:
         '200':
           description: Overview
@@ -411,7 +413,7 @@ paths:
                   published: {$ref: '#/components/schemas/KnowledgeBaseConfig'}
                   candidate: {$ref: '#/components/schemas/KnowledgeBaseConfig'}
                   history: {type: array, items: {$ref: '#/components/schemas/KnowledgeBaseConfig'}}
-                  defaults: {type: object, properties: {retrievalK: {type: integer}, contextChunks: {type: integer}, handoffChannel: {type: string}}}
+                  defaults: {type: object, properties: {retrievalK: {type: integer}, contextChunks: {type: integer}, handoffChannel: {type: string}, maxContextChunks: {type: integer}}}
         '403': {$ref: '#/components/responses/Forbidden'}
   /api/knowledge-bases/{kbId}/config/candidate:
     parameters: [{$ref: '#/components/parameters/kbId'}]

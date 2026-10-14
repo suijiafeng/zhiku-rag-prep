@@ -31,7 +31,7 @@ public class ConfigService {
       String promptAddendum, String note, UUID createdBy, Instant createdAt, Instant validatedAt, Validation validation, UUID publishedBy,
       Instant publishedAt, Integer rolledBackFrom) {}
 
-  public record Defaults(int retrievalK, int contextChunks, String handoffChannel) {}
+  public record Defaults(int retrievalK, int contextChunks, String handoffChannel, int maxContextChunks) {}
 
   public record Overview(View published, View candidate, List<View> history, Defaults defaults) {}
 
@@ -71,7 +71,7 @@ public class ConfigService {
     return new Overview(repository.published(kbId).map(ConfigService::view).orElse(null),
         repository.candidate(kbId, false).map(ConfigService::view).orElse(null),
         repository.history(kbId).stream().map(ConfigService::view).toList(),
-        new Defaults(retrieval.defaultK(), chat.contextChunks(), chat.handoffChannel()));
+        new Defaults(retrieval.defaultK(), chat.contextChunks(), chat.handoffChannel(), maxContextChunks()));
   }
 
   @Transactional
@@ -136,10 +136,16 @@ public class ConfigService {
     return candidate;
   }
 
+  /** 配置允许的入模块数上限：块数 × 单块上限不能超过总预算，否则组合必然超出模型上下文。 */
+  private int maxContextChunks() {
+    return Math.max(1, Math.min(20, chat.maxContextChars() / chat.maxChunkChars()));
+  }
+
   private Input normalize(Input in) {
     if (in.retrievalK() < 1 || in.retrievalK() > retrieval.maxK()) throw ApiException.unprocessable("retrievalK must be between 1 and " + retrieval.maxK());
-    if (in.contextChunks() < 1 || in.contextChunks() > 20 || in.contextChunks() > in.retrievalK()) {
-      throw ApiException.unprocessable("contextChunks must be between 1 and min(20, retrievalK)");
+    if (in.contextChunks() < 1 || in.contextChunks() > maxContextChunks() || in.contextChunks() > in.retrievalK()) {
+      throw ApiException.unprocessable("contextChunks must be between 1 and min(" + maxContextChunks() + ", retrievalK); "
+          + maxContextChunks() + " blocks of max-chunk-chars fill the context budget");
     }
     var addendum = trimToNull(in.promptAddendum());
     if (addendum != null && addendum.length() > 1000) throw ApiException.unprocessable("promptAddendum must be at most 1000 characters");

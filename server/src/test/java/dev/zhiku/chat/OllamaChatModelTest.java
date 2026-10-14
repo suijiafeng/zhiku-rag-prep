@@ -52,7 +52,7 @@ class OllamaChatModelTest {
 
   OllamaChatModel model(Duration total, Duration idle) {
     var settings = new ChatSettings("ollama", "http://127.0.0.1:" + server.getAddress().getPort(), "test", 5, 1500,
-        total, Duration.ofSeconds(150), Duration.ofSeconds(1), idle, 8000, Duration.ofSeconds(15), "", 100);
+        total, Duration.ofSeconds(150), Duration.ofSeconds(1), idle, 8000, Duration.ofSeconds(15), "", 100, 16000);
     return new OllamaChatModel(settings, new ObjectMapper());
   }
 

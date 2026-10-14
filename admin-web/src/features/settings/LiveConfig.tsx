@@ -158,7 +158,7 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
           <Space wrap>
             <InputNumber min={1} max={30} addonBefore="召回 K" value={form.retrievalK} aria-label="召回 K"
               onChange={(v) => setForm({ ...form, retrievalK: v ?? 1 })} />
-            <InputNumber min={1} max={20} addonBefore="入模证据块数" value={form.contextChunks} aria-label="入模证据块数"
+            <InputNumber min={1} max={overview.defaults.maxContextChunks} addonBefore="入模证据块数" value={form.contextChunks} aria-label="入模证据块数"
               onChange={(v) => setForm({ ...form, contextChunks: v ?? 1 })} />
           </Space>
           <Input maxLength={200} placeholder="人工渠道，如：人事服务台 8001（空则沿用部署配置）" value={form.handoffChannel} aria-label="人工渠道"

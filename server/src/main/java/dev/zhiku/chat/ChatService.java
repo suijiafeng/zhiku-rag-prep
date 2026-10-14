@@ -170,10 +170,15 @@ public class ChatService {
     // 追问与上一个可见问题一起检索，使“那试用期呢”这类指代能够解析。
     var searchQuery = context.isEmpty() ? question : context.getLast().question() + "\n" + question;
     List<Candidate> sources;
+    int squeezedOut;
     try {
       // 召回 K 条，只把前 contextChunks 条交给模型。
       var retrieved = retrieval.searchAuthorized(scope, kbId, searchQuery, config.retrievalK(), Instant.now(), "chat", turn.traceId(), config.version()).candidates();
-      sources = retrieved.subList(0, Math.min(retrieved.size(), config.contextChunks()));
+      // 再按总字符预算挤出放不下的块，前序对话也占预算。
+      var selection = ContextBudget.select(retrieved.subList(0, Math.min(retrieved.size(), config.contextChunks())),
+          priorContextText(context).length(), settings.maxChunkChars(), settings.maxContextChars());
+      sources = selection.kept();
+      squeezedOut = selection.squeezedOut();
     } catch (ApiException e) {
       fail(turn, sink, "DEPENDENCY_UNAVAILABLE", "检索服务暂不可用", requestId);
       return;
@@ -266,7 +271,7 @@ public class ChatService {
         "title", s.title(), "excerpt", excerpt(s.text()))).toList();
     sink.send("validated", Map.of("citations", citations, "validation", "metadata-only"));
     retrieval.recordGeneration(turn.traceId(), Stage.timed("generation", "上下文与生成", "success", turn.modelStarted()[0],
-        "入模 " + sources.size() + " 块 · 模型 " + model.model() + " · 引用元数据检查通过"));
+        "入模 " + sources.size() + " 块" + (squeezedOut == 0 ? "" : "（预算挤出 " + squeezedOut + " 块）") + " · 模型 " + model.model() + " · 引用元数据检查通过"));
     retrieval.linkMessage(turn.traceId(), stored[1]);
     var done = new LinkedHashMap<String, Object>();
     done.put("status", "complete");
@@ -299,16 +304,18 @@ public class ChatService {
     return out;
   }
 
-  private List<Message> prompt(String question, List<Candidate> sources, List<MessageView> context, ConfigService.Effective config) {
-    var sb = new StringBuilder();
-    if (!context.isEmpty()) {
-      sb.append("此前对话（仅帮助理解指代，不是事实依据，不得引用）：\n");
-      for (var m : context) {
-        sb.append("问：").append(m.question()).append('\n');
-        if (!m.stale() && m.answer() != null) sb.append("答：").append(m.answer().replaceAll("\\[\\d+\\]", "")).append('\n');
-      }
-      sb.append('\n');
+  private static String priorContextText(List<MessageView> context) {
+    if (context.isEmpty()) return "";
+    var sb = new StringBuilder("此前对话（仅帮助理解指代，不是事实依据，不得引用）：\n");
+    for (var m : context) {
+      sb.append("问：").append(m.question()).append('\n');
+      if (!m.stale() && m.answer() != null) sb.append("答：").append(m.answer().replaceAll("\\[\\d+\\]", "")).append('\n');
     }
+    return sb.append('\n').toString();
+  }
+
+  private List<Message> prompt(String question, List<Candidate> sources, List<MessageView> context, ConfigService.Effective config) {
+    var sb = new StringBuilder(priorContextText(context));
     sb.append("资料：\n");
     for (int i = 0; i < sources.size(); i++) {
       var s = sources.get(i);

@@ -201,6 +201,9 @@ class ConfigTest extends IntegrationTest {
     save(candidate(5, 6, "", "", "", null)).andExpect(status().isUnprocessableEntity());
     save(candidate(5, 0, "", "", "", null)).andExpect(status().isUnprocessableEntity());
     save(candidate(5, 5, "", "长".repeat(1001), "", null)).andExpect(status().isUnprocessableEntity());
+    // 20 块 × 1500 字符超出 16000 字符的上下文预算：组合必然超出模型上下文，保存即拒绝。
+    save(candidate(30, 20, "", "", "", null)).andExpect(status().isUnprocessableEntity());
+    getConfig().andExpect(jsonPath("$.defaults.maxContextChunks").value(10));
     assertThat(jdbc.queryForObject("SELECT count(*) FROM kb_config WHERE kb_id = ?", Integer.class, kb)).isZero();
   }
 

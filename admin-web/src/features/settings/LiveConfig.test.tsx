@@ -31,13 +31,13 @@ describe("config candidate", () => {
   it("shows the published version with its predecessor and offers rollback only for older versions", () => {
     const v2: KnowledgeBaseConfig = { ...base, id: "c2", version: 2, status: "published", publishedAt: "2026-10-14T03:00:00Z", retrievalK: 12 };
     const v1: KnowledgeBaseConfig = { ...base, id: "c0", version: 1, status: "superseded", publishedAt: "2026-10-14T02:00:00Z" };
-    const published = renderToStaticMarkup(<PublishedCard published={v2} history={[v2, v1]} defaults={{ retrievalK: 8, contextChunks: 5, handoffChannel: "" }} />);
+    const published = renderToStaticMarkup(<PublishedCard published={v2} history={[v2, v1]} defaults={{ retrievalK: 8, contextChunks: 5, handoffChannel: "", maxContextChunks: 10 }} />);
     expect(published).toContain("版本 2");
     expect(published).toContain("上个版本 1");
     expect(published).toContain("新问答请求立即使用");
     const history = renderToStaticMarkup(<ConfigHistory history={[v2, v1]} onRollback={() => {}} />);
     expect((history.match(/回滚到此版本/g) ?? []).length).toBe(1);
-    const none = renderToStaticMarkup(<PublishedCard published={null} history={[]} defaults={{ retrievalK: 8, contextChunks: 5, handoffChannel: "" }} />);
+    const none = renderToStaticMarkup(<PublishedCard published={null} history={[]} defaults={{ retrievalK: 8, contextChunks: 5, handoffChannel: "", maxContextChunks: 10 }} />);
     expect(none).toContain("部署默认值");
   });
 });

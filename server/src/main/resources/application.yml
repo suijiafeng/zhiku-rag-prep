@@ -57,6 +57,8 @@ zhiku:
     model: ${ZHIKU_CHAT_MODEL:qwen3.5:latest}
     context-chunks: 5
     max-chunk-chars: 1500
+    # 一次送入模型的前序对话与证据块的合计字符上限；超出的证据块被挤出并记入轨迹。配置的入模块数 × max-chunk-chars 不得超过它。
+    max-context-chars: 16000
     # 单次模型调用从请求到最后一个片段的总时长；浏览器端流的超时更晚。
     timeout: PT120S
     # 模型流超过此时长没有新数据即放弃。
