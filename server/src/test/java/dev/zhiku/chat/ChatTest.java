@@ -41,6 +41,7 @@ class ChatTest extends IntegrationTest {
   @Autowired IngestionWorker worker;
   @Autowired TestChatModel model;
   @Autowired ChatService chat;
+  @Autowired dev.zhiku.support.TestEmbeddingProvider embeddings;
 
   final UUID enterprise = UUID.randomUUID();
   final UUID operator = UUID.randomUUID();
@@ -73,6 +74,7 @@ class ChatTest extends IntegrationTest {
   @AfterEach
   void reset() {
     model.reset();
+    embeddings.beforeEmbed = () -> {};
   }
 
   String token(UUID user, Role... roles) {
@@ -178,6 +180,36 @@ class ChatTest extends IntegrationTest {
     assertThat(names(frames)).doesNotContain("validated", "done");
     assertThat(last(frames).data().get("code").asText()).isEqualTo("ACCESS_REVOKED");
     assertThat(messages()).isZero();
+  }
+
+  @Test
+  void revocationAfterTheFirstDraftStopsFurtherDrafts() throws Exception {
+    model.afterPiece = n -> {
+      if (n == 0) jdbc.update("DELETE FROM kb_grant WHERE kb_id = ? AND user_id = ?", kb, employee);
+    };
+    var frames = ask("年假有几天?");
+    assertThat(frames.stream().filter(f -> f.event().equals("draft")).count()).isEqualTo(1);
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("ACCESS_REVOKED");
+    assertThat(messages()).isZero();
+  }
+
+  @Test
+  void withdrawalAfterTheFirstDraftStopsFurtherDrafts() throws Exception {
+    model.afterPiece = n -> {
+      if (n == 0) jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
+    };
+    var frames = ask("年假有几天?");
+    assertThat(frames.stream().filter(f -> f.event().equals("draft")).count()).isEqualTo(1);
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("SOURCE_UNAVAILABLE");
+  }
+
+  @Test
+  void withdrawalWhileTheQueryIsEmbeddedKeepsTheSourceFromTheModel() throws Exception {
+    embeddings.beforeEmbed = () -> jdbc.update("UPDATE content_version SET withdrawn_at = now() WHERE id = ?", version);
+    model.script = m -> { throw new AssertionError("withdrawn sources must not reach the model"); };
+    var frames = ask("年假有几天?");
+    assertThat(names(frames)).containsExactly("error");
+    assertThat(last(frames).data().get("code").asText()).isEqualTo("NO_EVIDENCE");
   }
 
   @Test

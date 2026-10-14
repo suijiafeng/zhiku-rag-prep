@@ -36,6 +36,7 @@ class DocumentDeletionTest extends IntegrationTest {
   @Autowired IngestionWorker worker;
   @Autowired DocumentCleanupWorker cleanup;
   @Autowired TestChatModel model;
+  @Autowired dev.zhiku.support.TestEmbeddingProvider embeddings;
 
   final UUID enterprise = UUID.randomUUID();
   final UUID operator = UUID.randomUUID();
@@ -66,6 +67,7 @@ class DocumentDeletionTest extends IntegrationTest {
   @AfterEach
   void reset() {
     model.reset();
+    embeddings.beforeEmbed = () -> {};
   }
 
   String token(UUID user, Role... roles) {
@@ -139,6 +141,22 @@ class DocumentDeletionTest extends IntegrationTest {
         .andExpect(jsonPath("$.recentDocuments.length()").value(0));
     assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE action = 'DOCUMENT_DELETE' AND target = ?", Integer.class, "document:" + doc))
         .isEqualTo(1);
+  }
+
+  @Test
+  void deletionWhileARetrievalIsInFlightReturnsNoDeletedText() throws Exception {
+    embeddings.beforeEmbed = () -> jdbc.update("UPDATE document SET deleted_at = now(), cleanup_status = 'pending' WHERE id = ?", doc);
+    mvc.perform(post("/api/knowledge-bases/{kb}/retrieval-debug", kb).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR))
+            .contentType("application/json").content("{\"query\":\"年假有几天?\"}"))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.candidates.length()").value(0));
+  }
+
+  @Test
+  void revocationWhileARetrievalIsInFlightReturnsNothing() throws Exception {
+    embeddings.beforeEmbed = () -> jdbc.update("DELETE FROM kb_grant WHERE kb_id = ? AND user_id = ?", kb, operator);
+    mvc.perform(post("/api/knowledge-bases/{kb}/retrieval-debug", kb).header(HttpHeaders.AUTHORIZATION, token(operator, Role.KB_OPERATOR))
+            .contentType("application/json").content("{\"query\":\"年假有几天?\"}"))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.candidates.length()").value(0));
   }
 
   @Test

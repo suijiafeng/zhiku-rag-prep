@@ -52,6 +52,8 @@ zhiku:
     max-chunk-chars: 1500
     timeout: PT120S
     stream-timeout: PT150S
+    # Grants and source eligibility are re-read at most this often while drafts stream; a change is detected within it.
+    recheck-interval: PT1S
   widget:
     token-ttl: PT10M
     # Explicit host origins allowed to call /api/chat from the browser. Empty means no CORS at all.

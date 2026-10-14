@@ -1,6 +1,7 @@
 package dev.zhiku.retrieval;
 
 import dev.zhiku.auth.AccessScope;
+import dev.zhiku.auth.GrantLookup;
 import dev.zhiku.auth.KnowledgeBaseAction;
 import dev.zhiku.document.DocumentService;
 import dev.zhiku.embedding.EmbeddingProvider;
@@ -27,9 +28,11 @@ public class RetrievalService {
   private final RetrievalRepository repository;
   private final ObjectProvider<EmbeddingProvider> embeddings;
   private final RetrievalSettings settings;
+  private final GrantLookup grants;
 
   public RetrievalService(KnowledgeBaseAccess access, DocumentService documents, RetrievalRepository repository,
-      ObjectProvider<EmbeddingProvider> embeddings, RetrievalSettings settings) {
+      ObjectProvider<EmbeddingProvider> embeddings, RetrievalSettings settings, GrantLookup grants) {
+    this.grants = grants;
     this.access = access;
     this.documents = documents;
     this.repository = repository;
@@ -48,7 +51,6 @@ public class RetrievalService {
     var provider = embeddings.getIfAvailable();
     if (provider == null) throw ApiException.unavailable("Embedding model is not configured");
 
-    var eligible = documents.eligibleVersionIds(scope, kbId, at);
     long started = System.nanoTime();
     float[] query;
     try {
@@ -58,7 +60,11 @@ public class RetrievalService {
     } catch (RuntimeException e) {
       throw ApiException.unavailable("Embedding service is unavailable");
     }
-    var candidates = repository.nearest(eligible, provider.model(), query, limit);
+    // Eligibility and grants are read after the (slow) embedding call, and the query re-checks deletion and withdrawal,
+    // so changes committed while a request is in flight are not disclosed. Later changes are checked by callers.
+    var eligible = documents.eligibleVersionIds(scope, kbId, at);
+    var candidates = grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()).contains(kbId)
+        ? repository.nearest(eligible, provider.model(), query, limit) : List.<Retrieval.Candidate>of();
     long elapsed = (System.nanoTime() - started) / 1_000_000;
 
     var stages = List.of(

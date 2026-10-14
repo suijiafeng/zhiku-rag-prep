@@ -27,7 +27,7 @@ class RetrievalRepository {
         JOIN chunk c ON c.id = e.chunk_id
         JOIN content_version v ON v.id = c.version_id
         JOIN document d ON d.id = v.document_id
-        WHERE c.version_id = ANY(?) AND e.model = ? AND e.dimension = ?
+        WHERE c.version_id = ANY(?) AND e.model = ? AND e.dimension = ? AND d.deleted_at IS NULL AND v.withdrawn_at IS NULL
         ORDER BY e.embedding <=> CAST(? AS vector), c.id
         LIMIT ?
         """, (rs, i) -> new Candidate(rs.getObject("id", UUID.class), rs.getObject("document_id", UUID.class), rs.getString("title"),

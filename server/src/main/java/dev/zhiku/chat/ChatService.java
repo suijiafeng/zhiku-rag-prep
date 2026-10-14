@@ -143,9 +143,22 @@ public class ChatService {
       return;
     }
 
+    // Access or sources may change while retrieval ran: check again before anything reaches the model.
+    var changed = recheck(scope, kbId, sources);
+    if (changed != null) {
+      fail(turn, sink, changed, STOP_MESSAGE.get(changed), requestId);
+      return;
+    }
     var answer = new StringBuilder();
+    var lastCheck = new long[] {System.nanoTime()};
     try {
       model.stream(prompt(question, sources, context), token -> {
+        // Re-read grants and eligibility before disclosing more drafts (at most once per recheck interval).
+        if (System.nanoTime() - lastCheck[0] >= settings.recheckInterval().toNanos()) {
+          lastCheck[0] = System.nanoTime();
+          var code = recheck(scope, kbId, sources);
+          if (code != null) throw new Stopped(code);
+        }
         answer.append(token);
         try {
           sink.send("draft", Map.of("text", token));
@@ -155,6 +168,9 @@ public class ChatService {
       }, sink::cancelled);
     } catch (ClientGone e) {
       record(turn, "cancelled", null);
+      return;
+    } catch (Stopped e) {
+      fail(turn, sink, e.code, STOP_MESSAGE.get(e.code), requestId);
       return;
     } catch (RuntimeException e) {
       log.warn("Chat model failed, requestId={}: {}", requestId, e.getClass().getSimpleName());
@@ -180,14 +196,9 @@ public class ChatService {
     }
 
     // Revocation and withdrawal can happen while the model runs: re-read grants and eligibility before disclosure.
-    var fresh = new AccessScope(scope.enterpriseId(), scope.userId(), grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()), scope.roles());
-    if (!fresh.permits(scope.enterpriseId(), kbId, ASK_AND_CITE)) {
-      fail(turn, sink, "ACCESS_REVOKED", "访问权限已变更，回答已停止", requestId);
-      return;
-    }
-    var eligible = new HashSet<>(documents.eligibleVersionIds(fresh, kbId, Instant.now()));
-    if (!sources.stream().allMatch(s -> eligible.contains(s.versionId()))) {
-      fail(turn, sink, "SOURCE_UNAVAILABLE", "引用的来源已变更，回答已停止", requestId);
+    var stopped = recheck(scope, kbId, sources);
+    if (stopped != null) {
+      fail(turn, sink, stopped, STOP_MESSAGE.get(stopped), requestId);
       return;
     }
     if (sink.cancelled()) {
@@ -239,6 +250,17 @@ public class ChatService {
     return List.of(new Message("system", SYSTEM_PROMPT), new Message("user", sb.toString()));
   }
 
+  private static final Map<String, String> STOP_MESSAGE = Map.of(
+      "ACCESS_REVOKED", "访问权限已变更，回答已停止", "SOURCE_UNAVAILABLE", "引用的来源已变更，回答已停止");
+
+  /** Re-reads grants and current eligibility; returns the stop code, or null when the sources may still be disclosed. */
+  private String recheck(AccessScope scope, UUID kbId, List<Candidate> sources) {
+    var fresh = new AccessScope(scope.enterpriseId(), scope.userId(), grants.grantedKnowledgeBases(scope.enterpriseId(), scope.userId()), scope.roles());
+    if (!fresh.permits(scope.enterpriseId(), kbId, ASK_AND_CITE)) return "ACCESS_REVOKED";
+    var eligible = new HashSet<>(documents.eligibleVersionIds(fresh, kbId, Instant.now()));
+    return sources.stream().allMatch(s -> eligible.contains(s.versionId())) ? null : "SOURCE_UNAVAILABLE";
+  }
+
   /** Persists a refused or failed turn (no draft text) and then sends the terminal error event. */
   private void fail(Turn turn, ChatSink sink, String code, String message, String requestId) throws IOException {
     record(turn, "NO_EVIDENCE".equals(code) ? "refused" : "failed", code);
@@ -275,6 +297,15 @@ public class ChatService {
 
   static String excerpt(String text) {
     return text == null ? "" : text.length() > 200 ? text.substring(0, 200) + "…" : text;
+  }
+
+  private static final class Stopped extends RuntimeException {
+    final String code;
+
+    Stopped(String code) {
+      super(null, null, false, false);
+      this.code = code;
+    }
   }
 
   private static final class ClientGone extends RuntimeException {

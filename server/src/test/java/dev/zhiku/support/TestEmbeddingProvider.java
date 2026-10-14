@@ -11,6 +11,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class TestEmbeddingProvider implements EmbeddingProvider {
   public static final int DIMENSION = 64;
   public final AtomicBoolean failing = new AtomicBoolean(false);
+  /** Runs before each embedding call, e.g. to commit a deletion while a query is being embedded. */
+  public volatile Runnable beforeEmbed = () -> {};
 
   @Override
   public String model() {
@@ -19,6 +21,7 @@ public class TestEmbeddingProvider implements EmbeddingProvider {
 
   @Override
   public List<float[]> embed(List<String> texts) {
+    beforeEmbed.run();
     if (failing.get()) throw new IllegalStateException("embedding service unavailable (test)");
     return texts.stream().map(TestEmbeddingProvider::vector).toList();
   }

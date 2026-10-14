@@ -10,7 +10,8 @@ import org.springframework.test.context.DynamicPropertySource;
  * Shared Spring context against a real pgvector container. Model providers and CORS are pinned here so a
  * developer's ../.env (imported by application.yml) can never change test behaviour; test doubles stand in.
  */
-@SpringBootTest(properties = {"zhiku.chat.provider=none", "zhiku.embedding.provider=none", "zhiku.widget.allowed-origins="})
+@SpringBootTest(properties = {"zhiku.chat.provider=none", "zhiku.embedding.provider=none", "zhiku.widget.allowed-origins=",
+    "zhiku.chat.recheck-interval=PT0S"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, TestEmbeddingConfiguration.class})
 public abstract class IntegrationTest {
