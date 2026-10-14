@@ -30,6 +30,8 @@ describe("admin shell", () => {
     expect(renderToStaticMarkup(pageFor("qa"))).toContain("问答工作台");
     expect(renderToStaticMarkup(pageFor("debug"))).toContain("检索调试");
     expect(renderToStaticMarkup(pageFor("debug"))).not.toContain("待实现");
-    expect(renderToStaticMarkup(pageFor("evaluation"))).toContain("待实现");
+    expect(renderToStaticMarkup(pageFor("evaluation"))).toContain("评测中心");
+    expect(renderToStaticMarkup(pageFor("evaluation"))).not.toContain("待实现");
+    expect(renderToStaticMarkup(pageFor("settings"))).toContain("待实现");
   });
 });
