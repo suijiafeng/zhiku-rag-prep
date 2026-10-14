@@ -14,7 +14,7 @@ paths:
       security: []
       responses:
         '200':
-          description: Non-sensitive scaffold status
+          description: Non-sensitive capability summary; no secrets, URLs or business data
           content:
             application/json:
               schema:
@@ -22,9 +22,67 @@ paths:
                 required: [name, stage, prdVersion, modelEnabled]
                 properties:
                   name: {type: string}
-                  stage: {type: string, const: scaffold}
+                  stage: {type: string}
                   prdVersion: {type: string, const: '0.3'}
-                  modelEnabled: {type: boolean, const: false}
+                  modelEnabled: {type: boolean}
+                  chatModel: {type: [string, 'null']}
+                  embeddingModel: {type: [string, 'null']}
+                  retrieval: {type: string}
+                  businessTimeZone: {type: string}
+                  maxUploadBytes: {type: integer}
+                  uploadFormats: {type: array, items: {type: string}}
+  /api/chat:
+    post:
+      operationId: chat
+      description: >-
+        ASK_AND_CITE on kbId. Authorization, conversation ownership and model availability fail as JSON (401/403/422/503)
+        before streaming. Otherwise text/event-stream per x-sse. Widget tokens may call only this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question, kbId]
+              properties:
+                question: {type: string, minLength: 1, maxLength: 2000}
+                kbId: {type: string, format: uuid}
+                conversationId: {type: string, format: uuid, description: Own conversation in the same knowledge base}
+      responses:
+        '200': {description: SSE stream, content: {text/event-stream: {schema: {type: string}}}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/conversations:
+    get:
+      operationId: listConversations
+      description: Caller's own conversations in knowledge bases still granted.
+      responses:
+        '200': {description: Conversations}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /api/conversations/{id}/messages:
+    parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      operationId: listMessages
+      description: >-
+        Own conversation only; knowledge base must still be granted. Each stored answer is re-checked against its source
+        dependencies: if any source version is withdrawn, deleted or re-indexed, the answer and citations are hidden
+        (hidden=true, reason=SOURCE_UNAVAILABLE). stale=true means a source is no longer the currently effective version.
+      responses:
+        '200': {description: Messages}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api/widget-tokens:
+    post:
+      operationId: issueWidgetToken
+      description: >-
+        Exchanges a user token for a 10-minute widget token limited to one granted knowledge base, role EMPLOYEE,
+        and the chat endpoint. Widget tokens cannot mint tokens. Audited. Host pages must not persist it.
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [kbId], properties: {kbId: {type: string, format: uuid}}}}}}
+      responses:
+        '201': {description: Issued, content: {application/json: {schema: {type: object, required: [token, expiresAt], properties: {token: {type: string}, expiresAt: {type: string, format: date-time}}}}}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/Error'}
   /api/knowledge-bases:
     get:
       operationId: listKnowledgeBases
@@ -338,14 +396,17 @@ components:
       required: [status]
       properties:
         status: {type: string, const: complete}
-x-sse-draft:
-  status: provisional-not-implemented
-  transport: POST with fetch; no route yet
+x-sse:
+  status: implemented (POST /api/chat)
   events: [draft, validated, error, done]
   rules:
     - All events use JSON data. Error is terminal. Done requires preceding validated.
     - Draft is provisional. Metadata validation does not establish semantic correctness.
-    - Disconnect, cancellation or error must not preserve a usable answer.
+    - Disconnect, cancellation or error must not preserve a usable answer; the server stores only answers that reached done.
+    - validated.citations lists every source given to the model in order; marker [n] refers to citations[n-1].
+    - done.data may include conversationId to continue the conversation.
+    - Before validated the server checks that markers exist and are in range, then re-reads grants and version eligibility.
+  errorCodes: [NO_EVIDENCE, CITATION_INVALID, ACCESS_REVOKED, SOURCE_UNAVAILABLE, MODEL_UNAVAILABLE, DEPENDENCY_UNAVAILABLE]
 x-auth:
   status: implemented (local HS256 issuer; OIDC provider replaceable)
   claims:
@@ -355,7 +416,8 @@ x-auth:
     enterprise_id: enterprise id (uuid)
     roles: "array of IT_ADMIN, KB_OPERATOR, EMPLOYEE (PRD v0.3 suggested mapping)"
     exp: required
+  widgetToken: {token_use: widget, kb_scope: [kbId], roles: [EMPLOYEE], ttl: PT10M}
   rules:
     - Identity comes only from the verified token. Bodies, query parameters and other headers never carry enterpriseId, userId or roles.
     - Knowledge base grants are read from the database on every request, so revocation applies to the next request.
-    - Stateless; no cookies or sessions, so CSRF protection is not applicable. CORS is not enabled.
+    - Stateless; no cookies or sessions, so CSRF protection is not applicable. CORS only for zhiku.widget.allowed-origins on POST /api/chat, without credentials.

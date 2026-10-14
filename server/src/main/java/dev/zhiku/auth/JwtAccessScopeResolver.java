@@ -15,6 +15,11 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class JwtAccessScopeResolver implements AccessScopeResolver {
+  /** Widget tokens: restricted to the listed knowledge bases and to the chat endpoint. */
+  public static final String KB_SCOPE = "kb_scope";
+  public static final String TOKEN_USE = "token_use";
+  public static final String WIDGET = "widget";
+
   private final GrantLookup grants;
 
   public JwtAccessScopeResolver(GrantLookup grants) {
@@ -32,7 +37,12 @@ public class JwtAccessScopeResolver implements AccessScopeResolver {
     if (user == null || enterprise == null) {
       return Optional.empty();
     }
-    return Optional.of(new AccessScope(enterprise, user, grants.grantedKnowledgeBases(enterprise, user), roles(jwt.getClaimAsStringList("roles"))));
+    var granted = new java.util.HashSet<>(grants.grantedKnowledgeBases(enterprise, user));
+    if (WIDGET.equals(jwt.getClaimAsString(TOKEN_USE)) || jwt.hasClaim(KB_SCOPE)) {
+      var limit = jwt.getClaimAsStringList(KB_SCOPE);
+      granted.removeIf(kb -> limit == null || !limit.contains(kb.toString()));
+    }
+    return Optional.of(new AccessScope(enterprise, user, granted, roles(jwt.getClaimAsStringList("roles"))));
   }
 
   private static UUID uuid(String value) {

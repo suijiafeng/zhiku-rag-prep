@@ -21,8 +21,12 @@ class SecuritySmokeTest extends IntegrationTest {
   @Autowired MockMvc mvc;
 
   @Test
-  void publicStatusHasNoModel() throws Exception {
-    mvc.perform(get("/api/status")).andExpect(status().isOk()).andExpect(jsonPath("$.modelEnabled").value(false));
+  void publicStatusReportsCapabilitiesWithoutSecrets() throws Exception {
+    var body = mvc.perform(get("/api/status")).andExpect(status().isOk())
+        .andExpect(jsonPath("$.modelEnabled").isBoolean())
+        .andExpect(jsonPath("$.businessTimeZone").value("Asia/Shanghai"))
+        .andReturn().getResponse().getContentAsString();
+    org.assertj.core.api.Assertions.assertThat(body).doesNotContain(dev.zhiku.support.TestJwt.SECRET).doesNotContain("password");
   }
 
   @Test

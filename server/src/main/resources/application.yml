@@ -39,6 +39,19 @@ zhiku:
     model: ${ZHIKU_EMBEDDING_MODEL:bge-m3}
     batch-size: 32
     timeout: PT60S
+  chat:
+    # none | ollama. With none, POST /api/chat returns 503.
+    provider: ${ZHIKU_CHAT_PROVIDER:none}
+    base-url: ${ZHIKU_OLLAMA_URL:http://127.0.0.1:11434}
+    model: ${ZHIKU_CHAT_MODEL:qwen3.5:latest}
+    context-chunks: 5
+    max-chunk-chars: 1500
+    timeout: PT120S
+    stream-timeout: PT150S
+  widget:
+    token-ttl: PT10M
+    # Explicit host origins allowed to call /api/chat from the browser. Empty means no CORS at all.
+    allowed-origins: ${ZHIKU_WIDGET_ORIGINS:}
   retrieval:
     default-k: 8
     max-k: 30

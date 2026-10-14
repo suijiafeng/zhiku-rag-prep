@@ -1,0 +1,82 @@
+package dev.zhiku.chat;
+
+import dev.zhiku.retrieval.Retrieval.Candidate;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+class ChatRepository {
+  record ConversationRow(UUID id, UUID kbId, String title, Instant updatedAt) {}
+
+  record MessageRow(UUID id, String question, String answer, Instant createdAt) {}
+
+  record SourceRow(UUID messageId, int ordinal, UUID versionId, UUID chunkId, UUID documentId, String title, UUID kbId,
+      boolean withdrawn, String chunkText) {}
+
+  private final JdbcTemplate jdbc;
+
+  ChatRepository(JdbcTemplate jdbc) {
+    this.jdbc = jdbc;
+  }
+
+  Optional<ConversationRow> conversation(UUID id, UUID enterpriseId, UUID userId) {
+    return jdbc.query("SELECT id, kb_id, title, updated_at FROM conversation WHERE id = ? AND enterprise_id = ? AND user_id = ?",
+        (rs, i) -> new ConversationRow(rs.getObject("id", UUID.class), rs.getObject("kb_id", UUID.class), rs.getString("title"),
+            rs.getTimestamp("updated_at").toInstant()), id, enterpriseId, userId).stream().findFirst();
+  }
+
+  List<ConversationRow> conversations(UUID enterpriseId, UUID userId) {
+    return jdbc.query("SELECT id, kb_id, title, updated_at FROM conversation WHERE enterprise_id = ? AND user_id = ? ORDER BY updated_at DESC LIMIT 100",
+        (rs, i) -> new ConversationRow(rs.getObject("id", UUID.class), rs.getObject("kb_id", UUID.class), rs.getString("title"),
+            rs.getTimestamp("updated_at").toInstant()), enterpriseId, userId);
+  }
+
+  UUID createConversation(UUID enterpriseId, UUID userId, UUID kbId, String title) {
+    var id = UUID.randomUUID();
+    jdbc.update("INSERT INTO conversation (id, enterprise_id, user_id, kb_id, title) VALUES (?, ?, ?, ?, ?)", id, enterpriseId, userId, kbId, title);
+    return id;
+  }
+
+  UUID saveMessage(UUID conversationId, String question, String answer, String model, List<Candidate> sources) {
+    var id = UUID.randomUUID();
+    jdbc.update("INSERT INTO message (id, conversation_id, question, answer, model) VALUES (?, ?, ?, ?, ?)", id, conversationId, question, answer, model);
+    for (int i = 0; i < sources.size(); i++) {
+      jdbc.update("INSERT INTO message_source (message_id, ordinal, version_id, chunk_id) VALUES (?, ?, ?, ?)",
+          id, i + 1, sources.get(i).versionId(), sources.get(i).chunkId());
+    }
+    jdbc.update("UPDATE conversation SET updated_at = now() WHERE id = ?", conversationId);
+    return id;
+  }
+
+  List<MessageRow> messages(UUID conversationId) {
+    return jdbc.query("SELECT id, question, answer, created_at FROM message WHERE conversation_id = ? ORDER BY created_at, id",
+        (rs, i) -> new MessageRow(rs.getObject("id", UUID.class), rs.getString("question"), rs.getString("answer"),
+            rs.getTimestamp("created_at").toInstant()), conversationId);
+  }
+
+  /** Sources joined to their current state; missing joins (deleted or re-indexed) come back with null ids. */
+  List<SourceRow> sources(UUID conversationId) {
+    return jdbc.query("""
+        SELECT s.message_id, s.ordinal, s.version_id, s.chunk_id, d.id AS document_id, d.title, d.kb_id,
+               v.withdrawn_at IS NOT NULL AS withdrawn, c.text AS chunk_text
+        FROM message_source s
+        JOIN message m ON m.id = s.message_id
+        LEFT JOIN content_version v ON v.id = s.version_id
+        LEFT JOIN document d ON d.id = v.document_id
+        LEFT JOIN chunk c ON c.id = s.chunk_id AND c.version_id = s.version_id
+        WHERE m.conversation_id = ?
+        ORDER BY s.message_id, s.ordinal
+        """, (rs, i) -> new SourceRow(rs.getObject("message_id", UUID.class), rs.getInt("ordinal"), rs.getObject("version_id", UUID.class),
+            rs.getObject("chunk_id", UUID.class), rs.getObject("document_id", UUID.class), rs.getString("title"),
+            rs.getObject("kb_id", UUID.class), rs.getBoolean("withdrawn"), rs.getString("chunk_text")), conversationId);
+  }
+
+  static Timestamp ts(Instant i) {
+    return Timestamp.from(i);
+  }
+}
