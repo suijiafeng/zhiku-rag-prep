@@ -91,16 +91,41 @@ function toEvent(frame: SseFrame): ChatEvent | null {
   throw new ProtocolError();
 }
 
-async function httpError(response: Response): Promise<ChatOutcome> {
-  if ((response.headers.get("Content-Type") ?? "").includes("application/json")) {
-    try {
-      const body: unknown = JSON.parse((await response.text()).slice(0, MAX_ERROR_BODY_CHARS));
-      if (isErrorBody(body)) return { status: "failed", error: { code: body.code, message: body.message, requestId: body.requestId } };
-    } catch {
-      // fall through to a generic error; the body is untrusted
-    }
+/**
+ * Error bodies are untrusted: read at most MAX_ERROR_BODY_CHARS (then give up and cancel the rest), honour
+ * cancellation while reading, and always release the body.
+ */
+async function httpError(response: Response, signal?: AbortSignal): Promise<ChatOutcome> {
+  const generic = failed(`HTTP_${response.status}`, "请求失败");
+  if (!(response.headers.get("Content-Type") ?? "").includes("application/json") || !response.body) {
+    response.body?.cancel().catch(() => undefined);
+    return generic;
   }
-  return failed(`HTTP_${response.status}`, "请求失败");
+  const reader = response.body.getReader();
+  const onAbort = () => {
+    reader.cancel().catch(() => undefined);
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const decoder = new TextDecoder("utf-8");
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (signal?.aborted) return { status: "cancelled" };
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      if (text.length > MAX_ERROR_BODY_CHARS) return generic;
+    }
+    const body: unknown = JSON.parse(text + decoder.decode());
+    if (isErrorBody(body)) return { status: "failed", error: { code: body.code, message: body.message, requestId: body.requestId } };
+  } catch {
+    if (signal?.aborted) return { status: "cancelled" };
+    // fall through to a generic error; the body is untrusted
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    reader.cancel().catch(() => undefined);
+  }
+  return generic;
 }
 
 const isAbort = (e: unknown, signal?: AbortSignal) => signal?.aborted === true || (e instanceof Error && e.name === "AbortError");
@@ -108,6 +133,8 @@ const isAbort = (e: unknown, signal?: AbortSignal) => signal?.aborted === true |
 export async function streamChat(options: StreamChatOptions): Promise<ChatOutcome> {
   const { endpoint, request, getAccessToken, signal, onEvent } = options;
   const fetchImpl = options.fetchImpl ?? ((url: string, init: RequestInit) => fetch(url, init));
+  // Invalid options throw here, before a token is fetched or a request is sent, so no resource is left open.
+  const parser = createSseParser(options.maxEventChars);
   if (signal?.aborted) return { status: "cancelled" };
 
   let token: string | undefined;
@@ -140,12 +167,14 @@ export async function streamChat(options: StreamChatOptions): Promise<ChatOutcom
     return isAbort(e, signal) ? { status: "cancelled" } : failed("NETWORK", "网络请求失败");
   }
 
-  if (!response.ok) return httpError(response);
-  if (!(response.headers.get("Content-Type") ?? "").startsWith("text/event-stream") || !response.body) return protocol();
+  if (!response.ok) return httpError(response, signal);
+  if (!(response.headers.get("Content-Type") ?? "").startsWith("text/event-stream") || !response.body) {
+    response.body?.cancel().catch(() => undefined);
+    return protocol();
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
-  const parser = createSseParser(options.maxEventChars);
   let text = "";
   let citations: Citation[] | undefined;
 

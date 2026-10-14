@@ -59,6 +59,43 @@ describe("streamChat", () => {
     expect(ids[2]).toBe("11111111-1111-4111-8111-111111111111");
   });
 
+  it("reads at most the error-body limit and cancels the rest", async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const chunk = enc.encode("x".repeat(16_384));
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled >= 12) return controller.close();
+        pulled++;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    }, { highWaterMark: 0 });
+    const fetchImpl = vi.fn(async () => new Response(body, { status: 500, headers: { "Content-Type": "application/json" } }));
+    const outcome = await streamChat({ ...base, fetchImpl });
+    expect(outcome).toEqual({ status: "failed", error: { code: "HTTP_500", message: "请求失败" } });
+    expect(pulled * chunk.length).toBeLessThanOrEqual(65_536 + chunk.length);
+    expect(cancelled).toBe(true);
+  });
+
+  it("reports cancellation while an error body is still being read", async () => {
+    const controller = new AbortController();
+    const body = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(enc.encode("{\"code\":")); } });
+    const fetchImpl = vi.fn(async () => {
+      setTimeout(() => controller.abort(), 20);
+      return new Response(body, { status: 401, headers: { "Content-Type": "application/json" } });
+    });
+    expect(await streamChat({ ...base, fetchImpl, signal: controller.signal })).toEqual({ status: "cancelled" });
+  });
+
+  it("rejects an invalid event limit before sending anything", async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => streamResponse(happy));
+    await expect(streamChat({ ...base, fetchImpl, maxEventChars: 0 })).rejects.toThrow("maxEventChars");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("omits Authorization when no token is provided", async () => {
     const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => streamResponse(happy));
     await streamChat({ ...base, fetchImpl, getAccessToken: async () => undefined });
