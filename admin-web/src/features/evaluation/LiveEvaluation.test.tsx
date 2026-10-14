@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CaseList, metricCards } from "./LiveEvaluation";
+import { CaseList, evidenceEntry, metricCards, resultTag } from "./LiveEvaluation";
 import { RecordsTable } from "../records/RecordsPage";
 import type { EvalCase, EvalSummary } from "../../api/client";
 
@@ -14,6 +14,26 @@ describe("live evaluation", () => {
     expect(cards.map((c) => c.value)).toEqual(["2/3", "3/5", "42 ms", "1"]);
     expect(cards[0]!.title).toBe("Hit@5（证据位置覆盖）");
     expect(cards.map((c) => c.title).join()).not.toContain("答案准确率");
+  });
+
+  it("counts cases left out of the denominators, naming source failures separately", () => {
+    const cards = metricCards({ ...summary, sourceUnavailable: 2 }, 5);
+    expect(cards[3]).toMatchObject({ title: "未计入分母", value: "3" });
+    expect(cards[3]!.sub).toContain("来源失效 2");
+    expect(metricCards(summary, 5)[3]!.value).toBe("1");
+  });
+
+  it("labels each result, including cases whose source is no longer eligible", () => {
+    const r = { caseId: "c", question: "q", label: "answerable", mappingFailed: false, hit: false, evidenceHit: 0, evidenceTotal: 1, latencyMs: 0 };
+    expect(resultTag({ ...r, sourceUnavailable: true })).toBe("来源已失效");
+    expect(resultTag({ ...r, mappingFailed: true })).toBe("评测准备失败");
+    expect(resultTag({ ...r, hit: true })).toBe("命中");
+    expect(resultTag(r)).toBe("未命中");
+  });
+
+  it("sends the chosen occurrence only when one was given", () => {
+    expect(evidenceEntry("v", " 五个工作日 ", undefined)).toEqual({ versionId: "v", quote: "五个工作日" });
+    expect(evidenceEntry("v", "五个工作日", 2)).toEqual({ versionId: "v", quote: "五个工作日", occurrence: 2 });
   });
 
   it("shows dashes before the first run", () => {

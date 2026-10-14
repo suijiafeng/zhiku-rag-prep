@@ -1,6 +1,6 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalRun, type EvalSummary } from "../../api/client";
+import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalRun, type EvalSummary, type EvidenceInput } from "../../api/client";
 import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews";
 
 const LABEL: Record<EvalCase["label"], string> = { answerable: "可回答", clarify: "应澄清", handoff: "应转人工" };
@@ -9,15 +9,28 @@ const pct = (n: number, d: number) => (d ? ` · ${((n / d) * 100).toFixed(1)}%` 
 /** Only retrieval metrics that a run actually measured; answer accuracy needs human review and is not shown. */
 export function metricCards(summary: EvalSummary | undefined, k: number) {
   if (!summary) {
-    return [`Hit@${k}（证据位置覆盖）`, "证据 Recall", "P95 检索延迟", "评测准备失败"].map((title) => ({ title, value: "—", sub: "尚未运行" }));
+    return [`Hit@${k}（证据位置覆盖）`, "证据 Recall", "P95 检索延迟", "未计入分母"].map((title) => ({ title, value: "—", sub: "尚未运行" }));
   }
   return [
     { title: `Hit@${k}（证据位置覆盖）`, value: `${summary.hit.num}/${summary.hit.den}`, sub: pct(summary.hit.num, summary.hit.den).slice(3) || "—" },
     { title: "证据 Recall", value: `${summary.recall.num}/${summary.recall.den}`,
       sub: summary.recallMacro === null ? "—" : `宏平均 ${(summary.recallMacro * 100).toFixed(1)}%` },
     { title: "P95 检索延迟", value: summary.p95Ms === null ? "—" : `${summary.p95Ms} ms`, sub: "仅检索，不含生成" },
-    { title: "评测准备失败", value: String(summary.prepFailed), sub: "证据无法映射到当前索引，不计入分母" },
+    { title: "未计入分母", value: String(summary.prepFailed + (summary.sourceUnavailable ?? 0)),
+      sub: `准备失败 ${summary.prepFailed}（无法映射到当前索引）· 来源失效 ${summary.sourceUnavailable ?? 0}（已撤回、删除或不在有效期）` },
   ];
+}
+
+export function resultTag(r: EvalResult) {
+  if (r.sourceUnavailable) return "来源已失效";
+  if (r.mappingFailed) return "评测准备失败";
+  return r.hit ? "命中" : "未命中";
+}
+
+const RESULT_COLOR: Record<string, string> = { 来源已失效: "default", 评测准备失败: "warning", 命中: "success", 未命中: "error" };
+
+export function evidenceEntry(versionId: string, quote: string, occurrence: number | undefined): EvidenceInput {
+  return occurrence ? { versionId, quote: quote.trim(), occurrence } : { versionId, quote: quote.trim() };
 }
 
 export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onApprove: (c: EvalCase) => void; onEdit: (c: EvalCase) => void }) {
@@ -56,13 +69,14 @@ function EvidenceForm({ docs, initialQuestion, onSubmit, onCancel, submitLabel }
   docs: DocumentInfo[];
   initialQuestion?: string;
   submitLabel: string;
-  onSubmit: (v: { question: string; label: EvalCase["label"]; evidence: { versionId: string; quote: string }[] }) => Promise<void>;
+  onSubmit: (v: { question: string; label: EvalCase["label"]; evidence: EvidenceInput[] }) => Promise<void>;
   onCancel?: () => void;
 }) {
   const [question, setQuestion] = useState(initialQuestion ?? "");
   const [label, setLabel] = useState<EvalCase["label"]>("answerable");
   const [versionId, setVersionId] = useState<string>();
   const [quote, setQuote] = useState("");
+  const [occurrence, setOccurrence] = useState<number>();
   const versions = docs.flatMap((d) => d.versions.map((v) => ({ value: v.id, label: `${d.title} ${v.versionLabel}` })));
   return (
     <div className="eval-form">
@@ -75,9 +89,11 @@ function EvidenceForm({ docs, initialQuestion, onSubmit, onCancel, submitLabel }
       )}
       <Select<string> placeholder="证据所在文档版本" options={versions} onChange={setVersionId} aria-label="证据版本" {...(versionId ? { value: versionId } : {})} />
       <Input.TextArea rows={2} placeholder="粘贴原文摘录（服务端在该版本原文中定位字符区间）" value={quote} onChange={(e) => setQuote(e.target.value)} aria-label="原文摘录" />
+      <InputNumber min={1} precision={0} placeholder="第几处（摘录在原文重复出现时填写）" value={occurrence ?? null}
+        onChange={(v) => setOccurrence(v ?? undefined)} aria-label="第几处" className="eval-occurrence" />
       <Space>
         <Button type="primary" size="small" disabled={!question.trim() || (label === "answerable" && (!versionId || quote.trim().length < 2))}
-          onClick={() => void onSubmit({ question: question.trim(), label, evidence: versionId && quote.trim() ? [{ versionId, quote: quote.trim() }] : [] })}>
+          onClick={() => void onSubmit({ question: question.trim(), label, evidence: versionId && quote.trim() ? [evidenceEntry(versionId, quote, occurrence)] : [] })}>
           {submitLabel}
         </Button>
         {onCancel && <Button size="small" onClick={onCancel}>取消</Button>}
@@ -166,13 +182,9 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
               <Table<EvalResult> size="small" rowKey="caseId" pagination={false} dataSource={run.results} scroll={{ x: 640 }}
                 columns={[
                   { title: "问题", dataIndex: "question" },
-                  { title: "证据命中", key: "e", className: "mono", render: (_, r) => (r.mappingFailed ? "—" : `${r.evidenceHit}/${r.evidenceTotal}`) },
-                  { title: "延迟", dataIndex: "latencyMs", className: "mono", render: (v: number, r) => (r.mappingFailed ? "—" : `${v} ms`) },
-                  {
-                    title: "结果",
-                    key: "r",
-                    render: (_, r) => r.mappingFailed ? <Tag color="warning">评测准备失败</Tag> : r.hit ? <Tag color="success">命中</Tag> : <Tag color="error">未命中</Tag>,
-                  },
+                  { title: "证据命中", key: "e", className: "mono", render: (_, r) => (r.mappingFailed || r.sourceUnavailable ? "—" : `${r.evidenceHit}/${r.evidenceTotal}`) },
+                  { title: "延迟", dataIndex: "latencyMs", className: "mono", render: (v: number, r) => (r.mappingFailed || r.sourceUnavailable ? "—" : `${v} ms`) },
+                  { title: "结果", key: "r", render: (_, r) => <Tag color={RESULT_COLOR[resultTag(r)] ?? "default"}>{resultTag(r)}</Tag> },
                 ]} />
             )}
           </Card>

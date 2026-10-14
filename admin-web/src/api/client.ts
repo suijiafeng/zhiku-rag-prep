@@ -195,6 +195,13 @@ export interface OverviewApi {
   recentQuestions: { messageId: string; own: boolean; question: string | null; citationCount: number; createdAt: string }[];
 }
 
+export interface EvidenceInput {
+  versionId: string;
+  quote: string;
+  /** 1-based; needed when the quote occurs more than once in the version. */
+  occurrence?: number;
+}
+
 export interface EvalEvidence {
   versionId: string;
   documentTitle: string;
@@ -227,6 +234,8 @@ export interface EvalSummary {
   recall: { num: number; den: number };
   recallMacro: number | null;
   p95Ms: number | null;
+  /** Cases whose evidence version is not eligible now; absent in runs stored before this was reported. */
+  sourceUnavailable?: number;
 }
 
 export interface EvalResult {
@@ -238,6 +247,7 @@ export interface EvalResult {
   evidenceHit: number;
   evidenceTotal: number;
   latencyMs: number;
+  sourceUnavailable?: boolean;
 }
 
 export interface EvalRun {
@@ -319,9 +329,9 @@ export function createClient(token: string | undefined, fetchImpl: Fetch = (u, i
     overview: (kbId: string) => request<OverviewApi>(`${kb(kbId)}/overview`),
     evalCases: (kbId: string) => request<EvalCase[]>(`${kb(kbId)}/eval-cases`),
     createEvalCase: (kbId: string, body: { question: string; label: EvalCase["label"]; source?: string; originMessageId?: string;
-      evidence?: { versionId: string; quote: string }[] }) =>
+      evidence?: EvidenceInput[] }) =>
       request<{ id: string }>(`${kb(kbId)}/eval-cases`, post(body)),
-    setEvalEvidence: (kbId: string, caseId: string, evidence: { versionId: string; quote: string }[]) =>
+    setEvalEvidence: (kbId: string, caseId: string, evidence: EvidenceInput[]) =>
       request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/evidence`, { ...post({ evidence }), method: "PUT" }),
     approveEvalCase: (kbId: string, caseId: string) => request<void>(`${kb(kbId)}/eval-cases/${e(caseId)}/approve`, { method: "POST" }),
     runEvaluation: (kbId: string, k: number) => request<EvalRun>(`${kb(kbId)}/eval-runs`, post({ k })),
