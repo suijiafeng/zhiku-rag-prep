@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CaseList, detailsBody, evidenceEntry, metricCards, missingForApproval, parseFacts, resultTag } from "./LiveEvaluation";
+import { CaseList, detailsBody, evidenceEntry, localDateTimeValue, metricCards, missingForApproval, parseFacts, resultTag } from "./LiveEvaluation";
 import { RecordsTable } from "../records/RecordsPage";
 import type { EvalCase, EvalSummary } from "../../api/client";
 
@@ -33,7 +33,7 @@ describe("live evaluation", () => {
 
   it("does not flag approved cases that predate the sample fields", () => {
     const legacy: EvalCase = { id: "c4", question: "旧用例", label: "answerable", status: "approved", source: "manual", createdAt: "", originMessageId: null,
-      expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null,
+      expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null, sourceAvailable: true,
       evidence: [{ versionId: "v", documentTitle: "手册", versionLabel: "v1", startOffset: 0, endOffset: 4, quote: "摘录", available: true }] };
     const html = renderToStaticMarkup(<CaseList cases={[legacy]} onApprove={() => {}} onEdit={() => {}} />);
     expect(html).not.toContain("待补齐");
@@ -41,7 +41,7 @@ describe("live evaluation", () => {
   });
 
   it("lists what an answerable case still needs before approval", () => {
-    const base = { id: "c", question: "q", status: "candidate", source: "manual", createdAt: "", originMessageId: null, appliesTo: null, queryAt: null } as const;
+    const base = { id: "c", question: "q", status: "candidate", source: "manual", createdAt: "", originMessageId: null, appliesTo: null, queryAt: null, sourceAvailable: true } as const;
     expect(missingForApproval({ ...base, label: "answerable", evidence: [], expectedAnswer: null, requiredFacts: [] })).toEqual(["证据", "参考答案", "必要事实"]);
     expect(missingForApproval({ ...base, label: "handoff", evidence: [], expectedAnswer: null, requiredFacts: [] })).toEqual([]);
   });
@@ -52,6 +52,23 @@ describe("live evaluation", () => {
       .toEqual({ expectedAnswer: "按司龄", requiredFacts: ["a", "b"] });
     expect(detailsBody({ expectedAnswer: "x", facts: "a", appliesTo: "正式员工", queryAt: "2099-06-01T08:00" }).queryAt)
       .toBe(new Date("2099-06-01T08:00").toISOString());
+  });
+
+  it("round-trips an existing query time through the form without changing the instant", () => {
+    const stored = "2030-01-01T00:00:00Z";
+    const value = localDateTimeValue(stored);
+    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(detailsBody({ expectedAnswer: "x", facts: "a", appliesTo: "", queryAt: value }).queryAt).toBe(new Date(stored).toISOString());
+    expect(localDateTimeValue(null)).toBe("");
+  });
+
+  it("hides the reference answer and facts of a case whose source is gone", () => {
+    const gone: EvalCase = { id: "c5", question: "差旅?", label: "answerable", status: "approved", source: "manual", createdAt: "", originMessageId: null,
+      expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null, sourceAvailable: false,
+      evidence: [{ versionId: "v", documentTitle: "差旅标准", versionLabel: "v1", startOffset: 3, endOffset: 9, quote: null, available: false }] };
+    const html = renderToStaticMarkup(<CaseList cases={[gone]} onApprove={() => {}} onEdit={() => {}} />);
+    expect(html).toContain("来源已撤回或删除，参考答案与必要事实不再显示");
+    expect(html).not.toContain("批准时未要求");
   });
 
   it("sends the chosen occurrence only when one was given", () => {
@@ -66,10 +83,10 @@ describe("live evaluation", () => {
   it("lets candidates be approved and completed but freezes approved cases", () => {
     const cases: EvalCase[] = [
       { id: "c1", question: "年假有几天?", label: "answerable", status: "candidate", source: "feedback", createdAt: "", evidence: [], originMessageId: "m1",
-        expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null },
+        expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null, sourceAvailable: true },
       { id: "c2", question: "报销多久?", label: "answerable", status: "approved", source: "manual", createdAt: "",
         evidence: [{ versionId: "v", documentTitle: "报销说明", versionLabel: "v2", startOffset: 0, endOffset: 4, quote: "五个工作日", available: true }],
-        originMessageId: null, expectedAnswer: "五个工作日内到账", requiredFacts: ["五个工作日"], appliesTo: "正式员工", queryAt: null },
+        originMessageId: null, expectedAnswer: "五个工作日内到账", requiredFacts: ["五个工作日"], appliesTo: "正式员工", queryAt: null, sourceAvailable: true },
     ];
     const html = renderToStaticMarkup(<CaseList cases={cases} onApprove={() => {}} onEdit={() => {}} />);
     expect(html).toContain("候选");
@@ -82,7 +99,7 @@ describe("live evaluation", () => {
 
   it("says a source was withdrawn or deleted instead of showing an empty quote", () => {
     const cases: EvalCase[] = [{ id: "c3", question: "差旅?", label: "answerable", status: "approved", source: "manual", createdAt: "", originMessageId: null,
-      expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null,
+      expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null, sourceAvailable: false,
       evidence: [{ versionId: "v", documentTitle: "差旅标准", versionLabel: "v1", startOffset: 3, endOffset: 9, quote: null, available: false }] }];
     const html = renderToStaticMarkup(<CaseList cases={cases} onApprove={() => {}} onEdit={() => {}} />);
     expect(html).toContain("来源已撤回或删除，摘录不再显示");

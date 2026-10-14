@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Input, InputNumber, Popconfirm, Space, Tag, Typography } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type ConfigCandidateBody, type ConfigOverview, type KnowledgeBaseConfig } from "../../api/client";
 import { LoadingList, errorTitle } from "../../components/StateViews";
 
@@ -113,9 +114,12 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
 
+  const gate = useRef(createRequestGate());
   const load = useCallback(async () => {
+    const g = gate.current.next();
     try {
       const o = await client.config(kbId);
+      if (!gate.current.isCurrent(g)) return;
       setOverview(o);
       setForm(formOf(o.candidate ?? o.published ?? undefined, o.defaults));
     } catch (e) {

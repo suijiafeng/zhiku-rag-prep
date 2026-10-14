@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Input, Popconfirm, Space, Table, Tag, Typography } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type DeletionInfo, type DocumentInfo, type Status, type VersionInfo } from "../../api/client";
 import { IndexStatusTag, type IndexStatus } from "../../components/IndexStatusTag";
 import { EmptyState, LoadingList } from "../../components/StateViews";
@@ -7,15 +8,14 @@ import { EmptyState, LoadingList } from "../../components/StateViews";
 export const indexState = (s: VersionInfo["indexStatus"]): IndexStatus =>
   s === "ready" ? "indexed" : s === "failed" ? "failed" : s === "processing" ? "parsing" : "pending";
 
-const cleaning = (d: DocumentInfo) => d.deletion?.status === "pending" || d.deletion?.status === "running";
-
 /**
  * "pending" 也包括从未获得内容的版本，因此只在上传或重建索引后立即轮询。
  * 删除清理只在删除后立即轮询，这样清理 worker 停止时不会导致无限轮询。
  */
 export function shouldPoll(docs: DocumentInfo[] | undefined, watchBudget: number) {
   const states = docs?.flatMap((d) => d.versions.map((v) => v.indexStatus)) ?? [];
-  return states.includes("processing") || (watchBudget > 0 && (states.includes("pending") || (docs ?? []).some(cleaning)));
+  // 已就绪版本重建时索引状态保持 ready，所以观察期内一律轮询，重建成功或失败都能在页面看到。
+  return states.includes("processing") || watchBudget > 0;
 }
 
 export function deletionLabel(status: DeletionInfo["status"]) {
@@ -73,11 +73,14 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<{ doc: string; version: string }>(undefined);
 
+  const gate = useRef(createRequestGate());
   const load = useCallback(async () => {
+    const g = gate.current.next();
     try {
-      setDocs(await client.documents(kbId));
+      const docs = await client.documents(kbId);
+      if (gate.current.isCurrent(g)) setDocs(docs);
     } catch (e) {
-      setError(failure(e));
+      if (gate.current.isCurrent(g)) setError(failure(e));
     }
   }, [client, kbId]);
 

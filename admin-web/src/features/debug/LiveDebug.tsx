@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Input, Space } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient } from "../../api/client";
 import { traceFromResult } from "./liveTrace";
 import { RetrievalDebugPage } from "./RetrievalDebugPage";
@@ -14,15 +15,25 @@ export function LiveDebug({ client, kbId, kbName }: { client: ApiClient; kbId: s
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
+  const gate = useRef(createRequestGate());
+  // 切换知识库后清掉旧结果，迟到的旧请求结果也不再显示。
+  useEffect(() => {
+    gate.current.invalidate();
+    setTrace(undefined);
+    setError(undefined);
+    setBusy(false);
+  }, [client, kbId]);
   const run = async () => {
+    const g = gate.current.next();
     setBusy(true);
     setError(undefined);
     try {
-      setTrace(traceFromResult(await client.retrievalDebug(kbId, query.trim(), Number(k)), kbName, "按当前授权实时计算"));
+      const result = await client.retrievalDebug(kbId, query.trim(), Number(k));
+      if (gate.current.isCurrent(g)) setTrace(traceFromResult(result, kbName, "按当前授权实时计算"));
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "请求失败");
+      if (gate.current.isCurrent(g)) setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "请求失败");
     } finally {
-      setBusy(false);
+      if (gate.current.isCurrent(g)) setBusy(false);
     }
   };
 

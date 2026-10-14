@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { App } from "./App";
+import { App, pageFor } from "./App";
+import { createClient } from "./api/client";
 
 describe("admin shell", () => {
   const html = renderToStaticMarkup(<App initialMode="sample" />);
@@ -23,11 +24,12 @@ describe("admin shell", () => {
     expect(html).toMatch(/<input[^>]*disabled/);
   });
 
-  it("shows sample pages until a session with a knowledge base is connected", async () => {
+  it("shows sample pages only without a session, and real pages once a knowledge base is selected", async () => {
     const { pageFor } = await import("./App");
     const { createClient } = await import("./api/client");
     const client = createClient("t", async () => new Response("[]", { headers: { "Content-Type": "application/json" } }));
-    expect(renderToStaticMarkup(pageFor("documents", { client }))).toContain("员工手册 v3.2.pdf");
+    expect(renderToStaticMarkup(pageFor("documents"))).toContain("员工手册 v3.2.pdf");
+    expect(renderToStaticMarkup(pageFor("documents", { client }))).not.toContain("员工手册 v3.2.pdf");
     const live = renderToStaticMarkup(pageFor("documents", { client, kbId: "kb" }));
     expect(live).toContain("已连接本地服务");
     expect(live).not.toContain("员工手册 v3.2.pdf");
@@ -43,5 +45,14 @@ describe("admin shell", () => {
     expect(renderToStaticMarkup(pageFor("evaluation"))).toContain("评测中心");
     expect(renderToStaticMarkup(pageFor("evaluation"))).not.toContain("待实现");
     expect(renderToStaticMarkup(pageFor("settings"))).toContain("系统设置");
+  });
+
+  it("shows an empty state instead of sample data when connected without a knowledge base", () => {
+    const client = createClient("tok", async () => new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } }));
+    for (const key of ["overview", "documents", "qa", "debug", "evaluation"] as const) {
+      const html = renderToStaticMarkup(<>{pageFor(key, { client })}</>);
+      expect(html).toContain("没有可访问的知识库");
+      expect(html).not.toContain("示例");
+    }
   });
 });

@@ -5,18 +5,18 @@ import type { EvalCase } from "../../api/client";
 
 describe("closing feedback", () => {
   it("requires root cause, fix and an approved verification case to resolve", () => {
-    expect(closingBody("resolved", { rootCause: undefined, resolution: "已修复", caseId: "c1" })).toEqual({ error: "请选择根因" });
-    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "  ", caseId: "c1" })).toEqual({ error: "请填写修复方案" });
-    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "重新切块", caseId: undefined })).toEqual({ error: "请选择验证用例" });
-    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: " 重新切块 ", caseId: "c1" })).toEqual({
-      body: { status: "resolved", rootCause: "解析/切块遗漏", resolution: "重新切块", verificationCaseId: "c1" },
+    expect(closingBody("resolved", { rootCause: undefined, resolution: "已修复", caseId: "c1" }, 1)).toEqual({ error: "请选择根因" });
+    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "  ", caseId: "c1" }, 1)).toEqual({ error: "请填写修复方案" });
+    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: "重新切块", caseId: undefined }, 1)).toEqual({ error: "请选择验证用例" });
+    expect(closingBody("resolved", { rootCause: "解析/切块遗漏", resolution: " 重新切块 ", caseId: "c1" }, 2)).toEqual({
+      body: { expectedVersion: 2, status: "resolved", rootCause: "解析/切块遗漏", resolution: "重新切块", verificationCaseId: "c1" },
     });
   });
 
   it("requires a reason to close without a fix", () => {
-    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "", caseId: undefined })).toEqual({ error: "请填写不处理的理由" });
-    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "超出试点范围", caseId: "c1" })).toEqual({
-      body: { status: "wont_fix", resolution: "超出试点范围" },
+    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "", caseId: undefined }, 1)).toEqual({ error: "请填写不处理的理由" });
+    expect(closingBody("wont_fix", { rootCause: undefined, resolution: "超出试点范围", caseId: "c1" }, 1)).toEqual({
+      body: { expectedVersion: 1, status: "wont_fix", resolution: "超出试点范围" },
     });
   });
 
@@ -32,7 +32,7 @@ describe("closing feedback", () => {
   });
 
   it("offers only approved cases made from this feedback as verification", () => {
-    const base = { label: "answerable" as const, source: "feedback", createdAt: "", evidence: [], expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null };
+    const base = { label: "answerable" as const, source: "feedback", createdAt: "", evidence: [], expectedAnswer: null, requiredFacts: [], appliesTo: null, queryAt: null, sourceAvailable: true };
     const cases: EvalCase[] = [
       { ...base, id: "own", question: "a", status: "approved", originMessageId: "m1" },
       { ...base, id: "draft", question: "b", status: "candidate", originMessageId: "m1" },

@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Col, Modal, Progress, Row, Segmented, Select, Table, Tag, Typography } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type EvalCase, type FeedbackReason, type FeedbackStatus, type FeedbackUpdate, type HandlingEntry, type RecordItem, type RecordStats, type StoredTrace } from "../../api/client";
 import { CloseFeedbackModal, HandlingList, STATUS_LABEL, type ClosingStatus } from "./CloseFeedback";
 import { StoredTraceView } from "../debug/StoredTrace";
@@ -127,12 +128,17 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
   const [data, setData] = useState<{ items: RecordItem[]; stats: RecordStats; canReadOthers: boolean }>();
   const [error, setError] = useState<string>();
 
+  const gate = useRef(createRequestGate());
   const load = useCallback(async () => {
     if (!client || !kbId) return;
+    const g = gate.current.next();
     try {
-      setData(await client.records(kbId, filter));
+      const records = await client.records(kbId, filter);
+      if (!gate.current.isCurrent(g)) return;
+      setData(records);
       setError(undefined);
     } catch (e) {
+      if (!gate.current.isCurrent(g)) return;
       setError(e instanceof ApiError ? (e.status === 403 ? "需要知识库运营角色与该库授权" : `${e.message}（${e.code}）`) : "请求失败");
     }
   }, [client, kbId, filter]);
@@ -152,7 +158,8 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
   const onStatus = async (messageId: string, status: FeedbackStatus, rootCause: string | undefined) => {
     if (!client || !kbId) return;
     try {
-      await client.updateFeedback(kbId, messageId, rootCause ? { status, rootCause } : { status });
+      const expectedVersion = data?.items.find((i) => i.messageId === messageId)?.feedbackVersion ?? 1;
+      await client.updateFeedback(kbId, messageId, rootCause ? { expectedVersion, status, rootCause } : { expectedVersion, status });
     } catch (e) {
       setError(e instanceof ApiError ? `${e.message}（${e.code}）` : "更新失败");
     }
@@ -208,7 +215,7 @@ export function RecordsPage({ client, kbId }: { client: ApiClient | undefined; k
       <Modal open={trace !== undefined} title="检索与生成轨迹" footer={null} width={760} onCancel={() => setTrace(undefined)}>
         {trace && <StoredTraceView trace={trace} />}
       </Modal>
-      <CloseFeedbackModal status={closing?.status} messageId={closing?.item.messageId} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
+      <CloseFeedbackModal status={closing?.status} messageId={closing?.item.messageId} feedbackVersion={closing?.item.feedbackVersion ?? 1} initialRootCause={closing?.item.rootCause ?? undefined} cases={cases}
         onSubmit={submitClose} onCancel={() => setClosing(undefined)} />
       <Modal open={history !== undefined} title="处理记录" footer={null} onCancel={() => setHistory(undefined)}>
         {history && <HandlingList entries={history} />}

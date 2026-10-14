@@ -22,7 +22,9 @@ describe("live documents", () => {
     expect(shouldPoll(docs("pending"), 0)).toBe(false);
     expect(shouldPoll(docs("processing"), 0)).toBe(true);
     expect(shouldPoll(docs("pending"), 3)).toBe(true);
-    expect(shouldPoll(docs("ready"), 3)).toBe(false);
+    // 已就绪版本的重建不改变索引状态：发起后仍在观察期内就继续轮询，才能看到结果。
+    expect(shouldPoll(docs("ready"), 3)).toBe(true);
+    expect(shouldPoll(docs("ready"), 0)).toBe(false);
   });
 
   it("keeps polling a requested deletion only while watching and cleanup has not finished", () => {
@@ -31,8 +33,8 @@ describe("live documents", () => {
     expect(shouldPoll(deleted("pending"), 3)).toBe(true);
     expect(shouldPoll(deleted("running"), 3)).toBe(true);
     expect(shouldPoll(deleted("pending"), 0)).toBe(false);
-    expect(shouldPoll(deleted("done"), 3)).toBe(false);
-    expect(shouldPoll(deleted("failed"), 3)).toBe(false);
+    expect(shouldPoll(deleted("done"), 0)).toBe(false);
+    expect(shouldPoll(deleted("failed"), 0)).toBe(false);
   });
 
   it("states that access stopped before cleanup finished", () => {

@@ -170,6 +170,8 @@ export interface RecordItem {
   /** 回答（或其所依据的更早轮次）的某个来源不可用后为 false；非回答为 null。 */
   sourceAvailable: boolean | null;
   traceId?: string | null;
+  /** 处理操作须带上它，反馈被修改后旧操作会被拒绝。 */
+  feedbackVersion?: number | null;
 }
 
 export interface HandlingEntry {
@@ -180,9 +182,11 @@ export interface HandlingEntry {
   changedBy: string;
   changedAt: string;
   feedbackVersion: number | null;
+  sourceAvailable?: boolean | null;
 }
 
 export interface FeedbackUpdate {
+  expectedVersion: number;
   status: FeedbackStatus;
   rootCause?: string;
   resolution?: string;
@@ -289,6 +293,8 @@ export interface EvalCase {
   appliesTo: string | null;
   /** 按此时点判断版本效力；为空表示按运行时刻。 */
   queryAt: string | null;
+  /** 任一证据来源撤回或删除后为 false，参考答案与必要事实随之隐藏。 */
+  sourceAvailable: boolean;
 }
 
 export interface CaseDetails {
@@ -309,6 +315,8 @@ export interface EvalSummary {
   p95Ms: number | null;
   /** 证据版本当前不符合条件的用例；在开始上报此项之前保存的运行中不存在。 */
   sourceUnavailable?: number;
+  /** 运行期间有索引任务完成，结果可能混用新旧切块。 */
+  indexChangedDuringRun?: boolean;
 }
 
 export interface EvalResult {

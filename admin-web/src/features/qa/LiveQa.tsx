@@ -47,22 +47,27 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
     dispatch({ type: "reset" });
   }, []);
 
+  const loads = useRef(createRequestGate());
   const loadConversations = useCallback(async () => {
+    const g = loads.current.next();
     try {
-      setConversations((await client.conversations()).filter((c) => c.kbId === kbId));
+      const all = await client.conversations();
+      if (loads.current.isCurrent(g)) setConversations(all.filter((c) => c.kbId === kbId));
     } catch {
-      setError("无法读取会话历史");
+      if (loads.current.isCurrent(g)) setError("无法读取会话历史");
     }
   }, [client, kbId]);
 
   const loadHistory = useCallback(async (id: string | undefined) => {
     if (!id) return setHistory([]);
+    const g = loads.current.next();
     try {
       const messages = await client.messages(id);
+      if (!loads.current.isCurrent(g)) return;
       setHistory(messages);
       setSelected(messages.at(-1)?.id);
     } catch {
-      setError("无法读取该会话");
+      if (loads.current.isCurrent(g)) setError("无法读取该会话");
     }
   }, [client]);
 

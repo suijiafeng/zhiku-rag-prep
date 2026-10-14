@@ -30,5 +30,8 @@ describe("state views", () => {
     expect(errorTitle("SENSITIVE_INPUT")).toBe("问题含个人敏感信息");
     expect(errorTitle("ANSWER_TOO_LONG")).toBe("回答超出长度上限");
     expect(errorTitle("CITATION_INVALID")).toBe("引用无法核对");
+    expect(errorTitle("ALREADY_EXISTS")).toBe("已存在同名或同标签的对象");
+    expect(errorTitle("FEEDBACK_VERSION_CONFLICT")).toBe("反馈已被修改，请重新加载");
+    expect(errorTitle("CONVERSATION_TOO_LONG")).toBe("会话轮次已达上限");
   });
 });

@@ -68,19 +68,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
-/** 每个请求分配一个代次；已被取代的请求的事件和回调会被忽略（切换上下文时）。 */
-export function createRequestGate() {
-  let current = 0;
-  return {
-    next: () => ++current,
-    invalidate: () => {
-      current++;
-    },
-    isCurrent: (generation: number) => generation === current,
-  };
-}
+export { createRequestGate } from "../../api/requestGate";
 
-/** 生成过程中为正在生成的回答的来源；结束后始终为所选历史回答的来源。 */
 export function visibleCitations(running: boolean, streamCitations: Citation[], selected: { citations: Citation[] } | undefined) {
   return running ? streamCitations : selected?.citations ?? [];
 }

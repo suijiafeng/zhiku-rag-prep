@@ -6,6 +6,7 @@ import { LiveDocuments } from "./features/documents/LiveDocuments";
 import { LiveQa } from "./features/qa/LiveQa";
 import { LiveDebug } from "./features/debug/LiveDebug";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { EmptyState } from "./components/StateViews";
 import { UsersPage } from "./features/users/UsersPage";
 import { RecordsPage } from "./features/records/RecordsPage";
 import { LoginPage } from "./features/login/LoginPage";
@@ -49,6 +50,10 @@ export interface PageContext {
 /** 实时页面需要已连接的会话并选中知识库；否则显示示例页面并加以标注。 */
 export function pageFor(key: NavKey, ctx: PageContext = {}): ReactNode {
   const live = ctx.client && ctx.kbId ? { client: ctx.client, kbId: ctx.kbId } : undefined;
+  // 已登录但没有选中知识库（无授权库或列表未返回）：显示空态，不退回示例数据。
+  if (ctx.client && !ctx.kbId && ["overview", "documents", "qa", "debug", "evaluation"].includes(key)) {
+    return <div className="page"><EmptyState icon="doc" title="没有可访问的知识库" description="当前账号没有任何知识库授权，或知识库列表尚未返回；请联系管理员授权后再试。" /></div>;
+  }
   if (key === "overview") {
     return live
       ? <LiveOverview {...live} zone={ctx.status?.businessTimeZone ?? "Asia/Shanghai"} onNewQuestion={() => ctx.navigate?.("qa")} />

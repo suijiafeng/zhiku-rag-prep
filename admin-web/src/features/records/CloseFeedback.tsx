@@ -21,20 +21,21 @@ export function verificationCandidates(cases: EvalCase[], messageId: string) {
 }
 
 /** 与服务端规则一致，以便表单说明缺少什么；最终仍由服务端判定（最近运行检查）。 */
-export function closingBody(status: ClosingStatus, form: ClosingForm): { body: FeedbackUpdate } | { error: string } {
+export function closingBody(status: ClosingStatus, form: ClosingForm, expectedVersion: number): { body: FeedbackUpdate } | { error: string } {
   const resolution = form.resolution.trim();
   if (status === "wont_fix") {
-    return resolution ? { body: { status, resolution } } : { error: "请填写不处理的理由" };
+    return resolution ? { body: { expectedVersion, status, resolution } } : { error: "请填写不处理的理由" };
   }
   if (!form.rootCause) return { error: "请选择根因" };
   if (!resolution) return { error: "请填写修复方案" };
   if (!form.caseId) return { error: "请选择验证用例" };
-  return { body: { status, rootCause: form.rootCause, resolution, verificationCaseId: form.caseId } };
+  return { body: { expectedVersion, status, rootCause: form.rootCause, resolution, verificationCaseId: form.caseId } };
 }
 
-export function CloseFeedbackModal({ status, messageId, initialRootCause, cases, onSubmit, onCancel }: {
+export function CloseFeedbackModal({ status, messageId, feedbackVersion, initialRootCause, cases, onSubmit, onCancel }: {
   status: ClosingStatus | undefined;
   messageId: string | undefined;
+  feedbackVersion: number;
   initialRootCause: string | undefined;
   cases: EvalCase[];
   onSubmit: (body: FeedbackUpdate) => Promise<string | undefined>;
@@ -55,7 +56,7 @@ export function CloseFeedbackModal({ status, messageId, initialRootCause, cases,
 
   const submit = async () => {
     if (!status) return;
-    const result = closingBody(status, form);
+    const result = closingBody(status, form, feedbackVersion);
     if ("error" in result) {
       setError(result.error);
       return;

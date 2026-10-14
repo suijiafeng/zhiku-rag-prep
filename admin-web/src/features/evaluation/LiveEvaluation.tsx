@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Col, Input, InputNumber, Row, Select, Space, Table, Tag, Typography } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { createRequestGate } from "../../api/requestGate";
 import { ApiError, type ApiClient, type DocumentInfo, type EvalCase, type EvalResult, type EvalRun, type EvalSummary, type EvidenceInput, type CaseDetails } from "../../api/client";
 import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews";
 
@@ -43,6 +44,18 @@ export function missingForApproval(c: EvalCase): string[] {
   ];
 }
 
+/** 把服务端的 ISO 时刻转成 datetime-local 的本地值，回填后再提交不改变时刻。 */
+export function localDateTimeValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function runWarnings(summary: EvalSummary | undefined): string[] {
+  return summary?.indexChangedDuringRun ? ["运行期间索引发生变化，结果可能混用新旧切块，请重新运行后再比较。"] : [];
+}
+
 export function parseFacts(text: string) {
   return text.split("\n").map((f) => f.trim()).filter(Boolean);
 }
@@ -71,7 +84,7 @@ export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onAp
       {cases.map((c) => {
         const missing = c.status === "candidate" ? missingForApproval(c) : [];
         // 样本字段加入之前批准的用例已冻结，只做说明不提示补齐。
-        const legacy = c.status === "approved" && c.label === "answerable" && (!c.expectedAnswer || c.requiredFacts.length === 0);
+        const legacy = c.sourceAvailable && c.status === "approved" && c.label === "answerable" && (!c.expectedAnswer || c.requiredFacts.length === 0);
         return (
           <li key={c.id} className="eval-case">
             <div>
@@ -81,6 +94,7 @@ export function CaseList({ cases, onApprove, onEdit }: { cases: EvalCase[]; onAp
               {legacy && <Tag>批准时未要求参考答案与必要事实</Tag>}
               <span>{c.question}</span>
             </div>
+            {!c.sourceAvailable && <div className="card-unit">来源已撤回或删除，参考答案与必要事实不再显示</div>}
             {c.expectedAnswer && <div className="card-unit">参考答案：{c.expectedAnswer}</div>}
             {c.requiredFacts.length > 0 && <div className="card-unit">必要事实：{c.requiredFacts.join("；")}</div>}
             {(c.appliesTo || c.queryAt) && (
@@ -119,7 +133,7 @@ function EvidenceForm({ docs, initial, onSubmit, onCancel, submitLabel }: {
     expectedAnswer: initial?.expectedAnswer ?? "",
     facts: (initial?.requiredFacts ?? []).join("\n"),
     appliesTo: initial?.appliesTo ?? "",
-    queryAt: "",
+    queryAt: localDateTimeValue(initial?.queryAt ?? null),
   });
   const [question, setQuestion] = useState(initialQuestion ?? "");
   const [label, setLabel] = useState<EvalCase["label"]>("answerable");
@@ -172,9 +186,12 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
   const [error, setError] = useState<ApiError>();
 
   const fail = (e: unknown) => setError(e instanceof ApiError ? e : new ApiError(0, "NETWORK", "请求失败"));
+  const gate = useRef(createRequestGate());
   const load = useCallback(async () => {
+    const g = gate.current.next();
     try {
       const [c, r, d] = await Promise.all([client.evalCases(kbId), client.latestRun(kbId), client.documents(kbId)]);
+      if (!gate.current.isCurrent(g)) return;
       setCases(c);
       setRun(r ?? undefined);
       setDocs(d);
@@ -223,6 +240,7 @@ export function LiveEvaluation({ client, kbId }: { client: ApiClient; kbId: stri
         </Space>
       </div>
       {error && <div className="scaffold-alert"><ErrorState code={error.code} message={error.message} requestId={error.requestId} /></div>}
+      {runWarnings(run?.summary).map((w) => <Alert key={w} type="warning" showIcon className="scaffold-alert" title={w} />)}
       <Alert type="info" showIcon className="scaffold-alert" title="小样本只支持试点结论"
         description="回答正确与完整、引用语义支持需要人工判定，本页暂不计算；不得把检索命中率当作回答质量。" />
       <Row gutter={[16, 16]}>

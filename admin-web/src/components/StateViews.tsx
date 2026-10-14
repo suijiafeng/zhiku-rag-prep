@@ -34,6 +34,9 @@ export function errorTitle(code: string) {
   if (code === "SENSITIVE_INPUT") return "问题含个人敏感信息";
   if (code === "ANSWER_TOO_LONG") return "回答超出长度上限";
   if (code === "CITATION_INVALID") return "引用无法核对";
+  if (code === "ALREADY_EXISTS") return "已存在同名或同标签的对象";
+  if (code === "FEEDBACK_VERSION_CONFLICT") return "反馈已被修改，请重新加载";
+  if (code === "CONVERSATION_TOO_LONG") return "会话轮次已达上限";
   if (code === "NETWORK" || code === "STREAM_INCOMPLETE") return "连接中断";
   return "请求失败";
 }
