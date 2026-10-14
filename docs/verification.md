@@ -149,6 +149,7 @@ Python yaml.safe_load 成功解析 compose.yaml、contracts/openapi.yaml、.gith
 - 并发：版本创建与状态流转持有文档共享锁，删除与版本写入互斥（C59，事务交错测试）；反馈处理绑定独立的处理修订号，陈旧操作 409（C58，Flyway V23）。
 - 管理端：引入 happy-dom 与 Testing Library 交互测试；配置表单有未保存修改时禁止验证与发布（C53），首次加载失败显示原因与重试（C54）。挂件交互测试覆盖切库清空对话并中止在途请求（C41）。
 - T01 余项：检索调试可选配置版本再运行，每次新 traceId 并记录版本，不改变或发布配置；页面与同一问题的上一次运行对比候选排名。只对比检索，不调用对话模型。
-- server：`mvn -B clean verify` 228 项通过，空库 Flyway 迁移到 V23；admin-web `npm run check` 137 项通过并构建成功；widget `npm run check` 37 项通过并构建成功。
+- C64 补修（另一评审会话复现：前序对话不计入裁剪、首块无条件保留）：预算覆盖系统提示、补充规则、问题、前序对话与证据标签；先为第一块证据留位，前序对话从最近一轮起纳入、放不下的最早轮次省略，送出前按实际 prompt 总长核对，放不下任何依据时以 CONTEXT_TOO_LONG 停止。ChatTest 用三个 8000 字的前序回答续问，实际 prompt ≤ 16000 字符，轨迹记录省略 2 轮。
+- server：`mvn -B clean verify` 230 项通过，空库 Flyway 迁移到 V23；admin-web `npm run check` 137 项通过并构建成功；widget `npm run check` 37 项通过并构建成功。
 - 未验证：V23 在已有数据的本地库上升级；真实 Ollama 下的上下文预算与并发摄取；浏览器中的调试对比与配置页交互（仅 DOM 测试）；C57 与 C43 的剩余路径未处理。
 
