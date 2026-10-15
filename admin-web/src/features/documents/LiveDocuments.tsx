@@ -138,7 +138,17 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
           <Button size="small" onClick={() => { uploadTarget.current = { doc: doc.id, version: v.id }; fileInput.current?.click(); }}>上传内容</Button>
           <Button size="small" disabled={v.approved || v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "approve"))}>批准</Button>
           <Button size="small" disabled={!v.approved || v.published || v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "publish"))}>发布</Button>
-          <Button size="small" danger disabled={v.withdrawn} onClick={() => act(() => client.transition(kbId, doc.id, v.id, "withdraw"))}>撤回</Button>
+          <Popconfirm
+            title="撤回该版本？"
+            description="立即停止检索、引用与问答，依赖它的历史回答将被隐藏；撤回后不能再批准或发布该版本。"
+            okText="确认撤回"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+            disabled={v.withdrawn}
+            onConfirm={() => act(() => client.transition(kbId, doc.id, v.id, "withdraw"))}
+          >
+            <Button size="small" danger disabled={v.withdrawn}>撤回</Button>
+          </Popconfirm>
           <Button size="small" disabled={v.indexStatus === "pending" || v.indexStatus === "processing"} onClick={() => act(() => client.reindex(kbId, doc.id, v.id), true)}>重建索引</Button>
         </Space>
       ),
@@ -175,7 +185,7 @@ export function LiveDocuments({ client, kbId, status }: { client: ApiClient; kbI
       <Card className="doc-table">
         {docs === undefined && !error && <div className="state-pad"><LoadingList /></div>}
         {docs?.length === 0 && (
-          <EmptyState icon="doc" title="暂无文档" description="在右上角新建文档，再为版本上传 .md / .txt，解析完成后即可问答。" />
+          <EmptyState icon="doc" title="暂无文档" description="在右上角新建文档，再为版本上传 .md / .txt；版本需批准、发布、处于有效期且索引就绪后才能用于问答。" />
         )}
         {docs && docs.length > 0 && <Table<DocumentInfo>
           rowKey="id"
