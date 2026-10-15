@@ -45,6 +45,30 @@ describe("LiveConfig in a DOM", () => {
     await waitFor(() => expect(screen.queryByText("未保存")).toBeNull());
   });
 
+  it("keeps unsaved edits when saving fails", async () => {
+    const client = clientWith({ saveConfigCandidate: vi.fn(async () => { throw new ApiError(503, "UNAVAILABLE", "服务暂不可用", "req-2"); }) });
+    render(<LiveConfig client={client} kbId="kb1" />);
+    await screen.findByRole("button", named("发布"));
+    fireEvent.change(screen.getByLabelText("召回 K"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", named("保存候选")));
+    await waitFor(() => expect(client.config).toHaveBeenCalledTimes(2));
+    expect((screen.getByLabelText("召回 K") as HTMLInputElement).value).toBe("20");
+    expect(screen.getByText("未保存")).toBeTruthy();
+  });
+
+  it("keeps unsaved edits on a revision conflict and compares them against the reloaded candidate", async () => {
+    const newer = { ...overview, candidate: { ...validated, revision: 2, retrievalK: 12 } };
+    const config = vi.fn().mockResolvedValueOnce(overview).mockResolvedValue(newer);
+    const client = clientWith({ config, saveConfigCandidate: vi.fn(async () => { throw new ApiError(409, "CONFIG_CONFLICT", "冲突", "req-3"); }) });
+    render(<LiveConfig client={client} kbId="kb1" />);
+    await screen.findByRole("button", named("发布"));
+    fireEvent.change(screen.getByLabelText("召回 K"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", named("保存候选")));
+    expect(await screen.findByText(/你的修改仍保留在表单中/)).toBeTruthy();
+    expect((screen.getByLabelText("召回 K") as HTMLInputElement).value).toBe("20");
+    expect(screen.getByText("未保存")).toBeTruthy();
+  });
+
   it("shows the reason and a retry when the first load fails", async () => {
     const config = vi.fn()
       .mockRejectedValueOnce(new ApiError(403, "FORBIDDEN", "没有配置权限", "req-1"))

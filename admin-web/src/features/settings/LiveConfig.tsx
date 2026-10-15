@@ -124,14 +124,15 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
   const [busy, setBusy] = useState(false);
 
   const gate = useRef(createRequestGate());
-  const load = useCallback(async () => {
+  /** keepForm：只刷新服务端状态，保留用户尚未保存的表单输入。 */
+  const load = useCallback(async (keepForm = false) => {
     const g = gate.current.next();
     setLoadError(undefined);
     try {
       const o = await client.config(kbId);
       if (!gate.current.isCurrent(g)) return;
       setOverview(o);
-      setForm(formOf(o.candidate ?? o.published ?? undefined, o.defaults));
+      if (!keepForm) setForm(formOf(o.candidate ?? o.published ?? undefined, o.defaults));
     } catch (e) {
       if (!gate.current.isCurrent(g)) return;
       setLoadError(failure(e));
@@ -143,16 +144,18 @@ export function LiveConfig({ client, kbId }: { client: ApiClient; kbId: string }
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
+    let failed = false;
     try {
       await fn();
       setNotice(done);
     } catch (e) {
-      if (e instanceof ApiError && e.code === "CONFIG_CONFLICT") setError("候选配置已被他人修改，已重新加载最新内容，请核对后再确认。");
+      failed = true;
+      if (e instanceof ApiError && e.code === "CONFIG_CONFLICT") setError("候选配置已被他人修改，已刷新到最新版本；你的修改仍保留在表单中，请核对后再保存。");
       else setError(failure(e));
     } finally {
       setBusy(false);
     }
-    await load();
+    await load(failed);
   };
 
   if (!overview || !form) {
