@@ -9,10 +9,10 @@
 | 包 | 命令 | 结果 |
 |---|---|---|
 | server | `mvn -B clean verify` | 239 项通过，BUILD SUCCESS |
-| admin-web | `npm run check` | 141 项中 140 通过、1 项失败（`LiveEvaluation.dom.test.tsx` 的"两份文档证据"用例，按文本定位下拉选项时命中两处；待修复），退出码 1 |
-| widget | `npm run check` | 37 项通过，构建成功 |
+| admin-web | `npm run check` | 151 项通过，构建成功，退出码 0 |
+| widget | `npm run check` | 40 项通过，构建成功 |
 
-**因此 CI 当前不会全绿。** 修复前不要把 admin-web 的检查结果写成"通过"。
+admin-web 曾有 1 项交互测试失败：第二个下拉打开时第一个仍在关闭动画中，按文本定位选项命中两处。已把选项查找限定为排除离场动画中的下拉，断言未改。
 
 ## 脚手架阶段（历史，已过时）
 
