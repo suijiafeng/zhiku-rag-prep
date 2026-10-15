@@ -19,6 +19,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("widget composer", () => {
+  it("does not send while an input method is composing, and sends on a plain Enter", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => pendingStream(init.signal));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ZhikuWidget endpoint="/api/chat" knowledgeBaseId="kb-a" defaultOpen />);
+    const input = screen.getByLabelText("问题") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "虚构问题" } });
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(input.value).toBe("虚构问题");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  });
+});
+
 describe("widget context switch", () => {
   it("drops the conversation and aborts the in-flight request when the host switches knowledge base", async () => {
     const calls: { kbId: string; conversationId?: string; signal: AbortSignal | null | undefined }[] = [];

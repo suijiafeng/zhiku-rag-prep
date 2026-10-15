@@ -206,7 +206,12 @@ export function ZhikuWidget({
           <form className="zhiku-form" onSubmit={submit}>
             <textarea value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={2000} rows={2} aria-label="问题"
               placeholder="输入问题…" disabled={running}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void ask(question); } }} />
+              onKeyDown={(e) => {
+                // 输入法组字时的 Enter 只用于确认候选词
+                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return;
+                e.preventDefault();
+                void ask(question);
+              }} />
             <button type="submit" className="zhiku-send" disabled={running || !question.trim()}>发送</button>
           </form>
         </section>

@@ -191,7 +191,12 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
             <Input.TextArea rows={3} value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={2000}
               placeholder={modelEnabled ? "输入问题…（Enter 发送，Shift+Enter 换行）" : "对话模型未配置"} disabled={!modelEnabled || running}
               aria-label="问题输入"
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(question); } }} />
+              onKeyDown={(e) => {
+                // 输入法组字时的 Enter 只用于确认候选词
+                if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return;
+                e.preventDefault();
+                void send(question);
+              }} />
             <div className="composer-foot">
               <span>精确向量检索 · 引用元数据检查</span>
               <Button type="primary" disabled={!modelEnabled || running || !question.trim()} onClick={() => void send(question)}>发送</Button>
