@@ -58,6 +58,43 @@ describe("widget feedback", () => {
   });
 });
 
+describe("widget scrolling", () => {
+  it("follows new text only while the reader is near the bottom", async () => {
+    let push!: (text: string) => void;
+    let seq = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (text) => controller.enqueue(new TextEncoder().encode(`event: draft\ndata: ${JSON.stringify({ text, seq: ++seq })}\n\n`));
+      },
+    }), { status: 200, headers: { "Content-Type": "text/event-stream" } })));
+    const { container } = render(<ZhikuWidget endpoint="/api/chat" knowledgeBaseId="kb-a" defaultOpen />);
+    const body = container.querySelector(".zhiku-body") as HTMLDivElement;
+    Object.defineProperty(body, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(body, "clientHeight", { configurable: true, value: 200 });
+    const scrollTo = vi.fn();
+    body.scrollTo = scrollTo as unknown as typeof body.scrollTo;
+
+    fireEvent.change(screen.getByLabelText("问题"), { target: { value: "虚构问题" } });
+    fireEvent.click(screen.getByText("发送"));
+    await waitFor(() => expect(push).toBeTypeOf("function"));
+    act(() => push("第一段"));
+    await screen.findByText(/第一段/);
+
+    body.scrollTop = 100;
+    fireEvent.scroll(body);
+    scrollTo.mockClear();
+    act(() => push("第二段"));
+    await screen.findByText(/第二段/);
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    body.scrollTop = 790;
+    fireEvent.scroll(body);
+    act(() => push("第三段"));
+    await screen.findByText(/第三段/);
+    expect(scrollTo).toHaveBeenCalled();
+  });
+});
+
 describe("widget context switch", () => {
   it("drops the conversation and aborts the in-flight request when the host switches knowledge base", async () => {
     const calls: { kbId: string; conversationId?: string; signal: AbortSignal | null | undefined }[] = [];

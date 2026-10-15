@@ -82,6 +82,8 @@ export function ZhikuWidget({
   const conversation = useRef<string | undefined>(undefined);
   const controller = useRef<AbortController | null>(null);
   const body = useRef<HTMLDivElement>(null);
+  // 读者离底部较远时不跟随新内容滚动，以免打断阅读
+  const followBottom = useRef(true);
   const running = turns.some((t) => t.state === "running");
   const tokenOpts = getAccessToken ? { getAccessToken } : {};
 
@@ -97,7 +99,7 @@ export function ZhikuWidget({
     return () => controller.current?.abort();
   }, [endpoint, knowledgeBaseId]);
   useEffect(() => {
-    body.current?.scrollTo?.({ top: body.current.scrollHeight });
+    if (followBottom.current) body.current?.scrollTo?.({ top: body.current.scrollHeight });
   }, [turns]);
 
   const update = (id: number, patch: Partial<Turn> | ((t: Turn) => Partial<Turn>)) =>
@@ -110,6 +112,7 @@ export function ZhikuWidget({
     const key = context.current;
     const abort = new AbortController();
     controller.current = abort;
+    followBottom.current = true;
     setQuestion("");
     setTurns((all) => [...all, { id, question: q, state: "running", text: "", citations: [] }]);
     const outcome = await streamChat({
@@ -163,7 +166,10 @@ export function ZhikuWidget({
             </div>
             <button type="button" className="zhiku-close" aria-label="关闭" onClick={() => setOpen(false)}>×</button>
           </header>
-          <div className="zhiku-body" ref={body}>
+          <div className="zhiku-body" ref={body} onScroll={(e) => {
+            const el = e.currentTarget;
+            followBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+          }}>
             <div className="zhiku-bot">{greeting}</div>
             {turns.length === 0 && quickQuestions.length > 0 && (
               <div className="zhiku-quick">
