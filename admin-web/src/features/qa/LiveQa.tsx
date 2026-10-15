@@ -157,8 +157,9 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
                     <FeedbackBar current={m.feedback} onSubmit={async (body) => {
                       try {
                         await client.rate(m.id, body);
-                      } catch {
+                      } catch (e) {
                         setError("反馈提交失败");
+                        throw e;
                       }
                       await loadHistory(conversationId);
                     }} />

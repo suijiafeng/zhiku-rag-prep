@@ -25,6 +25,8 @@ export function FeedbackBar({ current, onSubmit }: {
     try {
       await onSubmit(body);
       setPicking(false);
+    } catch {
+      // 失败原因由调用方展示；保留表单和已填内容以便重新提交
     } finally {
       setBusy(false);
     }

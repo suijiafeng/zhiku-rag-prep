@@ -37,6 +37,27 @@ describe("widget composer", () => {
   });
 });
 
+describe("widget feedback", () => {
+  it("keeps the reason choices open when a down-vote fails, so it can be resent", async () => {
+    const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const answer = [sse("draft", { text: "中性回答", seq: 1 }), sse("validated", { citations: [], validation: "metadata-only" }),
+      sse("done", { status: "complete", messageId: "m1" })].join("");
+    const fetchMock = vi.fn(async (url: string) => url.endsWith("/feedback")
+      ? new Response(null, { status: 503 })
+      : new Response(answer, { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ZhikuWidget endpoint="/api/chat" knowledgeBaseId="kb-a" defaultOpen />);
+    fireEvent.change(screen.getByLabelText("问题"), { target: { value: "虚构问题" } });
+    fireEvent.click(screen.getByText("发送"));
+    fireEvent.click(await screen.findByText("踩"));
+    fireEvent.click(screen.getByText("答错了"));
+
+    expect(await screen.findByText("反馈提交失败")).toBeTruthy();
+    fireEvent.click(screen.getByText("答错了"));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/feedback"))).toHaveLength(2));
+  });
+});
+
 describe("widget context switch", () => {
   it("drops the conversation and aborts the in-flight request when the host switches knowledge base", async () => {
     const calls: { kbId: string; conversationId?: string; signal: AbortSignal | null | undefined }[] = [];

@@ -36,7 +36,7 @@ type Turn = {
   state: "running" | "complete" | "failed" | "cancelled";
   text: string;
   citations: Citation[];
-  error?: string;
+  error?: string | undefined;
   messageId?: string;
   rating?: "up" | "down";
   picking?: boolean;
@@ -137,7 +137,7 @@ export function ZhikuWidget({
   const rate = async (turn: Turn, rating: "up" | "down", reason?: FeedbackReason) => {
     if (!turn.messageId) return;
     const result = await rateMessage({ endpoint, messageId: turn.messageId, rating, ...(reason ? { reason } : {}), ...tokenOpts });
-    update(turn.id, result.ok ? { rating, picking: false } : { picking: false, error: "反馈提交失败" });
+    update(turn.id, result.ok ? { rating, picking: false, error: undefined } : { error: "反馈提交失败" });
   };
 
   const submit = (e: FormEvent) => {
