@@ -61,3 +61,57 @@ describe("answer feedback", () => {
     await waitFor(() => expect((screen.getByRole("button", { name: /提\s*交$/ }) as HTMLButtonElement).disabled).toBe(false));
   });
 });
+
+describe("conversation switching", () => {
+  const second: Conversation = { ...conversation, id: "conv2", title: "另一个会话" };
+  const later: HistoryMessage = { ...answered, id: "m2", question: "另一个问题", answer: "另一个回答" };
+
+  it("clears the previous conversation at once and blocks sending until the new one loads", async () => {
+    let resolve!: (m: HistoryMessage[]) => void;
+    const messages = vi.fn(async (id: string) => id === "conv" ? [answered] : new Promise<HistoryMessage[]>((r) => { resolve = r; }));
+    render(<LiveQa client={clientWith({ conversations: vi.fn(async () => [conversation, second]), messages })} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    await screen.findByText("中性回答");
+
+    fireEvent.click(screen.getByText("另一个会话"));
+    expect(screen.queryByText("中性回答")).toBeNull();
+    expect(screen.queryByText("暂无问答记录")).toBeNull();
+    expect((screen.getByLabelText("问题输入") as HTMLTextAreaElement).disabled).toBe(true);
+
+    resolve([later]);
+    expect(await screen.findByText("另一个回答")).toBeTruthy();
+    expect((screen.getByLabelText("问题输入") as HTMLTextAreaElement).disabled).toBe(false);
+  });
+
+  it("does not show the previous conversation when loading the next one fails", async () => {
+    const messages = vi.fn(async (id: string) => { if (id === "conv") return [answered]; throw new Error("network"); });
+    render(<LiveQa client={clientWith({ conversations: vi.fn(async () => [conversation, second]), messages })} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    await screen.findByText("中性回答");
+    fireEvent.click(screen.getByText("另一个会话"));
+    expect(await screen.findByText("无法读取该会话")).toBeTruthy();
+    expect(screen.queryByText("中性回答")).toBeNull();
+    expect((screen.getByLabelText("问题输入") as HTMLTextAreaElement).disabled).toBe(false);
+  });
+
+  it("does not stay in the loading state when the knowledge base changes mid-load", async () => {
+    const messages = vi.fn(() => new Promise<HistoryMessage[]>(() => {}));
+    const client = clientWith({ conversations: vi.fn(async () => [conversation]), messages });
+    const { rerender } = render(<LiveQa client={client} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    expect((screen.getByLabelText("问题输入") as HTMLTextAreaElement).disabled).toBe(true);
+    rerender(<LiveQa client={client} kbId="kb2" modelEnabled />);
+    await waitFor(() => expect((screen.getByLabelText("问题输入") as HTMLTextAreaElement).disabled).toBe(false));
+  });
+
+  it("ignores a late history response after starting a new conversation", async () => {
+    let resolve!: (m: HistoryMessage[]) => void;
+    const messages = vi.fn(() => new Promise<HistoryMessage[]>((r) => { resolve = r; }));
+    render(<LiveQa client={clientWith({ conversations: vi.fn(async () => [conversation]), messages })} kbId="kb" modelEnabled />);
+    fireEvent.click(await screen.findByText("虚构会话"));
+    fireEvent.click(screen.getByRole("button", { name: /新会话/ }));
+    resolve([answered]);
+    expect(await screen.findByText("暂无问答记录")).toBeTruthy();
+    expect(screen.queryByText("中性回答")).toBeNull();
+  });
+});

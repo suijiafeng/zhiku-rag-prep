@@ -5,7 +5,7 @@ import { streamAnswer } from "../../api/chatStream";
 import { AnswerText } from "./AnswerText";
 import { FeedbackBar } from "./FeedbackBar";
 import { OutcomeNote } from "./outcome";
-import { EmptyState, ErrorState } from "../../components/StateViews";
+import { EmptyState, ErrorState, LoadingList } from "../../components/StateViews";
 import { chatReducer, createRequestGate, initialChatState, visibleCitations, type Citation } from "./chatState";
 
 const VALIDATED_NOTE = "来源信息检查通过，请核对内容";
@@ -32,6 +32,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<string>();
   const [history, setHistory] = useState<HistoryMessage[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [selected, setSelected] = useState<string>();
   const [question, setQuestion] = useState("");
   const [active, setActive] = useState<number>();
@@ -68,13 +69,27 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
       setSelected(messages.at(-1)?.id);
     } catch {
       if (loads.current.isCurrent(g)) setError("无法读取该会话");
+    } finally {
+      if (loads.current.isCurrent(g)) setHistoryLoading(false);
     }
   }, [client]);
+
+  /** 切换或新建会话：作废迟到的历史响应，并立即清空上一会话的内容。 */
+  const openConversation = (id: string | undefined) => {
+    leave();
+    loads.current.invalidate();
+    setConversationId(id);
+    setHistory([]);
+    setSelected(undefined);
+    setHistoryLoading(id !== undefined);
+    if (id) void loadHistory(id);
+  };
 
   useEffect(() => {
     leave();
     setConversationId(undefined);
     setHistory([]);
+    setHistoryLoading(false);
     void loadConversations();
   }, [loadConversations, leave]);
 
@@ -83,7 +98,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
   const running = stream.status === "streaming" || stream.status === "validated";
   const send = async (text: string) => {
     const q = text.trim();
-    if (!q || running) return;
+    if (!q || running || historyLoading) return;
     setQuestion("");
     setError(undefined);
     abort.current = new AbortController();
@@ -121,12 +136,12 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
       {error && <Alert type="error" showIcon closable className="scaffold-alert" title={error} onClose={() => setError(undefined)} />}
       <div className="qa-grid">
         <Card size="small" title="会话历史">
-          <Button type="primary" block onClick={() => { leave(); setConversationId(undefined); setHistory([]); }}>+ 新会话</Button>
+          <Button type="primary" block onClick={() => openConversation(undefined)}>+ 新会话</Button>
           <ul className="session-list">
             {conversations.map((c) => (
               <li key={c.id}>
                 <button type="button" className={c.id === conversationId ? "session active" : "session"}
-                  onClick={() => { leave(); setConversationId(c.id); void loadHistory(c.id); }}>
+                  onClick={() => openConversation(c.id)}>
                   <span>{c.title}</span>
                   <span className="mono session-time">{new Date(c.updatedAt).toLocaleString("zh-CN")}</span>
                 </button>
@@ -136,7 +151,8 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
         </Card>
 
         <Card size="small" className="qa-main">
-          {history.length === 0 && stream.status === "idle" && (
+          {historyLoading && <LoadingList rows={3} />}
+          {!historyLoading && history.length === 0 && stream.status === "idle" && (
             <EmptyState icon="chat" title="暂无问答记录" description="输入问题开始提问；回答只依据当前授权且生效的版本。" />
           )}
           {history.map((m) => (
@@ -190,7 +206,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
           )}
           <div className="composer">
             <Input.TextArea rows={3} value={question} onChange={(e) => setQuestion(e.target.value)} maxLength={2000}
-              placeholder={modelEnabled ? "输入问题…（Enter 发送，Shift+Enter 换行）" : "对话模型未配置"} disabled={!modelEnabled || running}
+              placeholder={modelEnabled ? "输入问题…（Enter 发送，Shift+Enter 换行）" : "对话模型未配置"} disabled={!modelEnabled || running || historyLoading}
               aria-label="问题输入"
               onKeyDown={(e) => {
                 // 输入法组字时的 Enter 只用于确认候选词
@@ -200,7 +216,7 @@ export function LiveQa({ client, kbId, modelEnabled }: { client: ApiClient; kbId
               }} />
             <div className="composer-foot">
               <span>精确向量检索 · 引用元数据检查</span>
-              <Button type="primary" disabled={!modelEnabled || running || !question.trim()} onClick={() => void send(question)}>发送</Button>
+              <Button type="primary" disabled={!modelEnabled || running || historyLoading || !question.trim()} onClick={() => void send(question)}>发送</Button>
             </div>
           </div>
         </Card>
