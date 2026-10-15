@@ -72,6 +72,8 @@ docker compose up -d postgres
 ```
 
 ```bash
+# 后端不会自动读取 .env，需先导出到环境变量
+set -a; source .env; set +a
 cd server && mvn spring-boot:run
 ```
 
